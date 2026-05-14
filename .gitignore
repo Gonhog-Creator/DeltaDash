@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+ENV/
+env/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Storage
+storage/uploads/*
+storage/material_docs/*
+storage/reports/*
+storage/model_artifacts/*
+!storage/uploads/.gitkeep
+!storage/material_docs/.gitkeep
+!storage/reports/.gitkeep
+!storage/model_artifacts/.gitkeep
+
+# Logs
+*.log
+
+# Node
+node_modules/
+dist/
+.nuxt/
+.cache/
+.vuepress/dist/
+
+# Alembic
+alembic/versions/*.py
+!alembic/versions/.gitkeep
