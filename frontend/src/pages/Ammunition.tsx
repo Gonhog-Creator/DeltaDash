@@ -1,21 +1,29 @@
 import { useState } from 'react';
 import { useAmmunition, useCreateAmmunition, useUpdateAmmunition, useDeleteAmmunition } from '../hooks/useAmmunition';
+import { useAuth } from '../hooks/useAuth';
 import { Ammunition, AmmunitionCreate, AmmunitionUpdate } from '../api/ammunition';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export function AmmunitionPage() {
   const { data: ammunitionList, isLoading, error } = useAmmunition();
   const createMutation = useCreateAmmunition();
   const updateMutation = useUpdateAmmunition();
   const deleteMutation = useDeleteAmmunition();
+  const { isAdmin } = useAuth();
   
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingItem, setEditingItem] = useState<Ammunition | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Ammunition | null>(null);
   const [formData, setFormData] = useState<AmmunitionCreate>({
     name: '',
     caliber: '',
+    caliber_unit: 'mm',
+    caliber_diameter_mm: null,
+    caliber_length_mm: null,
+    caliber_inch: null,
     projectile_type: '',
-    projectile_mass_grains: null,
-    nominal_velocity_fps: null,
+    projectile_mass_grains: 0,
+    nominal_velocity_fps: 0,
     manufacturer: '',
   });
 
@@ -27,7 +35,7 @@ export function AmmunitionPage() {
     try {
       await createMutation.mutateAsync(formData);
       setShowCreateForm(false);
-      setFormData({ name: '', caliber: '', projectile_type: '', projectile_mass_grains: null, nominal_velocity_fps: null, manufacturer: '' });
+      setFormData({ name: '', caliber: '', caliber_unit: 'mm', caliber_diameter_mm: null, caliber_length_mm: null, caliber_inch: null, projectile_type: '', projectile_mass_grains: 0, nominal_velocity_fps: 0, manufacturer: '' });
     } catch (err) {
       console.error('Failed to create ammunition:', err);
     }
@@ -37,20 +45,25 @@ export function AmmunitionPage() {
     e.preventDefault();
     if (!editingItem) return;
     try {
-      await updateMutation.mutateAsync({ id: editingItem.id, ammunition: formData as AmmunitionUpdate });
+      const updatePayload = Object.fromEntries(
+        Object.entries(formData).filter(([, v]) => v !== '' && v !== undefined)
+      ) as AmmunitionUpdate;
+      await updateMutation.mutateAsync({ id: editingItem.id, ammunition: updatePayload });
       setEditingItem(null);
-      setFormData({ name: '', caliber: '', projectile_type: '', projectile_mass_grains: null, nominal_velocity_fps: null, manufacturer: '' });
+      setFormData({ name: '', caliber: '', caliber_unit: 'mm', caliber_diameter_mm: null, caliber_length_mm: null, caliber_inch: null, projectile_type: '', projectile_mass_grains: 0, nominal_velocity_fps: 0, manufacturer: '' });
     } catch (err) {
       console.error('Failed to update ammunition:', err);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this ammunition?')) return;
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
     try {
-      await deleteMutation.mutateAsync(id);
+      await deleteMutation.mutateAsync(deleteTarget.id);
     } catch (err) {
       console.error('Failed to delete ammunition:', err);
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -59,31 +72,37 @@ export function AmmunitionPage() {
     setFormData({
       name: item.name,
       caliber: item.caliber || '',
+      caliber_unit: item.caliber_unit || 'mm',
+      caliber_diameter_mm: item.caliber_diameter_mm,
+      caliber_length_mm: item.caliber_length_mm,
+      caliber_inch: item.caliber_inch,
       projectile_type: item.projectile_type || '',
-      projectile_mass_grains: item.projectile_mass_grains,
-      nominal_velocity_fps: item.nominal_velocity_fps,
+      projectile_mass_grains: item.projectile_mass_grains || 0,
+      nominal_velocity_fps: item.nominal_velocity_fps || 0,
       manufacturer: item.manufacturer || '',
     });
   };
 
   const cancelEdit = () => {
     setEditingItem(null);
-    setFormData({ name: '', caliber: '', projectile_type: '', projectile_mass_grains: null, nominal_velocity_fps: null, manufacturer: '' });
+    setFormData({ name: '', caliber: '', caliber_unit: 'mm', caliber_diameter_mm: null, caliber_length_mm: null, caliber_inch: null, projectile_type: '', projectile_mass_grains: 0, nominal_velocity_fps: 0, manufacturer: '' });
   };
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Ammunition Library</h1>
-        <button
-          onClick={() => setShowCreateForm(!showCreateForm)}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-        >
-          {showCreateForm ? 'Cancel' : 'Add Ammunition'}
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+          >
+            {showCreateForm ? 'Cancel' : 'Add Ammunition'}
+          </button>
+        )}
       </div>
 
-      {(showCreateForm || editingItem) && (
+      {(showCreateForm || editingItem) && isAdmin && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-lg font-medium mb-4">
             {editingItem ? 'Edit Ammunition' : 'Create New Ammunition'}
@@ -101,14 +120,71 @@ export function AmmunitionPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Caliber</label>
-                <input
-                  type="text"
-                  value={formData.caliber}
-                  onChange={(e) => setFormData({ ...formData, caliber: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                />
+                <label className="block text-sm font-medium text-gray-700">Caliber Unit</label>
+                <div className="mt-1 flex space-x-4">
+                  <label className="inline-flex items-center">
+                    <input
+                      type="radio"
+                      name="caliber_unit"
+                      value="mm"
+                      checked={formData.caliber_unit === 'mm'}
+                      onChange={(e) => setFormData({ ...formData, caliber_unit: e.target.value })}
+                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">mm</span>
+                  </label>
+                  <label className="inline-flex items-center">
+                    <input
+                      type="radio"
+                      name="caliber_unit"
+                      value="inches"
+                      checked={formData.caliber_unit === 'inches'}
+                      onChange={(e) => setFormData({ ...formData, caliber_unit: e.target.value })}
+                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">Inches</span>
+                  </label>
+                </div>
               </div>
+              {formData.caliber_unit === 'mm' ? (
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700">Dimensions (Diameter x Length, mm) *</label>
+                  <div className="mt-1 flex items-center space-x-2">
+                    <input
+                      type="number"
+                      step="0.001"
+                      required
+                      placeholder="Diameter"
+                      value={formData.caliber_diameter_mm ?? ''}
+                      onChange={(e) => setFormData({ ...formData, caliber_diameter_mm: e.target.value ? parseFloat(e.target.value) : null })}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                    />
+                    <span className="text-gray-500">x</span>
+                    <input
+                      type="number"
+                      step="0.001"
+                      required
+                      placeholder="Length"
+                      value={formData.caliber_length_mm ?? ''}
+                      onChange={(e) => setFormData({ ...formData, caliber_length_mm: e.target.value ? parseFloat(e.target.value) : null })}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Caliber (inches) *</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    required
+                    placeholder="e.g., 0.308"
+                    value={formData.caliber_inch ?? ''}
+                    onChange={(e) => setFormData({ ...formData, caliber_inch: e.target.value ? parseFloat(e.target.value) : null })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700">Projectile Type</label>
                 <select
@@ -135,22 +211,24 @@ export function AmmunitionPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Projectile Mass (grains)</label>
+                <label className="block text-sm font-medium text-gray-700">Projectile Mass (grains) *</label>
                 <input
                   type="number"
                   step="0.1"
+                  required
                   value={formData.projectile_mass_grains || ''}
-                  onChange={(e) => setFormData({ ...formData, projectile_mass_grains: e.target.value ? parseFloat(e.target.value) : null })}
+                  onChange={(e) => setFormData({ ...formData, projectile_mass_grains: e.target.value ? parseFloat(e.target.value) : 0 })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Nominal Velocity (fps)</label>
+                <label className="block text-sm font-medium text-gray-700">Nominal Velocity (fps) *</label>
                 <input
                   type="number"
                   step="1"
+                  required
                   value={formData.nominal_velocity_fps || ''}
-                  onChange={(e) => setFormData({ ...formData, nominal_velocity_fps: e.target.value ? parseFloat(e.target.value) : null })}
+                  onChange={(e) => setFormData({ ...formData, nominal_velocity_fps: e.target.value ? parseFloat(e.target.value) : 0 })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
@@ -192,37 +270,60 @@ export function AmmunitionPage() {
             {ammunitionList?.map((item) => (
               <tr key={item.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.caliber || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {item.caliber_unit === 'mm' 
+                    ? `${item.caliber_diameter_mm && item.caliber_length_mm 
+                        ? `${parseFloat(item.caliber_diameter_mm).toFixed(2).replace(/\.00$/, '')}x${parseFloat(item.caliber_length_mm).toFixed(2).replace(/\.00$/, '')}mm`
+                        : '-'
+                      }`
+                    : item.caliber_inch ? `${parseFloat(item.caliber_inch).toFixed(4).replace(/\.?0+$/, '')} in` : '-'
+                  }
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.projectile_type || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.manufacturer || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.projectile_mass_grains || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.nominal_velocity_fps || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <button
-                    onClick={() => startEdit(item)}
-                    className="text-indigo-600 hover:text-indigo-900 mr-3"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="text-red-600 hover:text-red-900"
-                  >
-                    Delete
-                  </button>
+                  {isAdmin && (
+                    <>
+                      <button
+                        onClick={() => startEdit(item)}
+                        className="text-indigo-600 hover:text-indigo-900 mr-3"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget(item)}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}
             {ammunitionList?.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
-                  No ammunition found. Click "Add Ammunition" to create one.
+                  No ammunition found.
+                  {isAdmin && ' Click "Add Ammunition" to create one.'}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+      {deleteTarget && (
+        <ConfirmModal
+          title="Delete Ammunition"
+          message={`Are you sure you want to delete "${deleteTarget.name}"? This action cannot be undone.`}
+          confirmLabel="Delete"
+          variant="danger"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }

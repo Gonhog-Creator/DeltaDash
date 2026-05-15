@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { materialsApi, Material, MaterialCreate, MaterialUpdate } from '../api/materials';
+import { materialsApi, MaterialCreate, MaterialUpdate } from '../api/materials';
 
 export function useMaterials(params?: { skip?: number; limit?: number; material_class?: string; manufacturer?: string }) {
   return useQuery({
@@ -20,7 +20,8 @@ export function useCreateMaterial() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (material: MaterialCreate) => materialsApi.create(material),
+    mutationFn: ({ material, files }: { material: MaterialCreate; files?: { mss?: File; sds?: File } }) =>
+      materialsApi.create(material, files),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['materials'] });
     },
@@ -33,6 +34,19 @@ export function useUpdateMaterial() {
   return useMutation({
     mutationFn: ({ id, material }: { id: string; material: MaterialUpdate }) =>
       materialsApi.update(id, material),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['materials'] });
+      queryClient.invalidateQueries({ queryKey: ['material', id] });
+    },
+  });
+}
+
+export function useUploadMaterialFiles() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, files }: { id: string; files: { mss?: File; sds?: File } }) =>
+      materialsApi.uploadFiles(id, files),
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['materials'] });
       queryClient.invalidateQueries({ queryKey: ['material', id] });

@@ -7,6 +7,8 @@ import { Materials } from './pages/Materials'
 import { Dashboard } from './pages/Dashboard'
 import { AmmunitionPage } from './pages/Ammunition'
 import { TestSessions } from './pages/TestSessions'
+import { TestSessionDetail } from './pages/TestSessionDetail'
+import { Analytics } from './pages/Analytics'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,8 +35,8 @@ function App() {
                     <Route path="/materials" element={<Materials />} />
                     <Route path="/ammunition" element={<AmmunitionPage />} />
                     <Route path="/test-sessions" element={<TestSessions />} />
-                    <Route path="/panels" element={<div className="p-8">Panels - Coming Soon</div>} />
-                    <Route path="/shots" element={<div className="p-8">Shots - Coming Soon</div>} />
+                    <Route path="/test-sessions/:id" element={<TestSessionDetail />} />
+                    <Route path="/analytics" element={<Analytics />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </Layout>

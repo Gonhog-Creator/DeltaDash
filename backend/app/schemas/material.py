@@ -2,26 +2,31 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import UUID
 from decimal import Decimal
+from typing import Optional
 
 
 class MaterialBase(BaseModel):
     name: str
-    normalized_name: str | None = None
-    manufacturer: str | None = None
-    supplier: str | None = None
-    material_class: str | None = None
-    fiber_type: str | None = None
-    weave_type: str | None = None
-    coating: str | None = None
-    color: str | None = None
-    areal_density_g_m2: Decimal | None = Field(None, ge=0)
-    thickness_mm: Decimal | None = Field(None, ge=0)
-    density_g_cm3: Decimal | None = Field(None, ge=0)
-    tensile_strength_mpa: Decimal | None = Field(None, ge=0)
-    modulus_gpa: Decimal | None = Field(None, ge=0)
-    elongation_percent: Decimal | None = Field(None, ge=0)
-    notes: str | None = None
-    source_confidence: str | None = None
+    normalized_name: Optional[str] = None
+    manufacturer: Optional[str] = None
+    supplier: Optional[str] = None
+    material_class: Optional[str] = None
+    fiber_type: Optional[str] = None
+    weave_type: Optional[str] = None
+    coating: Optional[str] = None
+    color: Optional[str] = None
+    areal_density_g_m2: Optional[Decimal] = Field(None, ge=0)
+    thickness_mm: Optional[Decimal] = Field(None, ge=0)
+    density_g_cm3: Optional[Decimal] = Field(None, ge=0)
+    tensile_strength_mpa: Optional[Decimal] = Field(None, ge=0)
+    modulus_gpa: Optional[Decimal] = Field(None, ge=0)
+    elongation_percent: Optional[Decimal] = Field(None, ge=0)
+    material_function: Optional[str] = None
+    created_by_username: Optional[str] = None
+    mss_file_path: Optional[str] = None
+    sds_file_path: Optional[str] = None
+    notes: Optional[str] = None
+    source_confidence: Optional[str] = None
 
 
 class MaterialCreate(MaterialBase):
@@ -29,23 +34,27 @@ class MaterialCreate(MaterialBase):
 
 
 class MaterialUpdate(BaseModel):
-    name: str | None = None
-    normalized_name: str | None = None
-    manufacturer: str | None = None
-    supplier: str | None = None
-    material_class: str | None = None
-    fiber_type: str | None = None
-    weave_type: str | None = None
-    coating: str | None = None
-    color: str | None = None
-    areal_density_g_m2: Decimal | None = Field(None, ge=0)
-    thickness_mm: Decimal | None = Field(None, ge=0)
-    density_g_cm3: Decimal | None = Field(None, ge=0)
-    tensile_strength_mpa: Decimal | None = Field(None, ge=0)
-    modulus_gpa: Decimal | None = Field(None, ge=0)
-    elongation_percent: Decimal | None = Field(None, ge=0)
-    notes: str | None = None
-    source_confidence: str | None = None
+    name: Optional[str] = None
+    normalized_name: Optional[str] = None
+    manufacturer: Optional[str] = None
+    supplier: Optional[str] = None
+    material_class: Optional[str] = None
+    fiber_type: Optional[str] = None
+    weave_type: Optional[str] = None
+    coating: Optional[str] = None
+    color: Optional[str] = None
+    areal_density_g_m2: Optional[Decimal] = Field(None, ge=0)
+    thickness_mm: Optional[Decimal] = Field(None, ge=0)
+    density_g_cm3: Optional[Decimal] = Field(None, ge=0)
+    tensile_strength_mpa: Optional[Decimal] = Field(None, ge=0)
+    modulus_gpa: Optional[Decimal] = Field(None, ge=0)
+    elongation_percent: Optional[Decimal] = Field(None, ge=0)
+    material_function: Optional[str] = None
+    created_by_username: Optional[str] = None
+    mss_file_path: Optional[str] = None
+    sds_file_path: Optional[str] = None
+    notes: Optional[str] = None
+    source_confidence: Optional[str] = None
 
 
 class MaterialInDB(MaterialBase):
@@ -64,10 +73,14 @@ class Material(MaterialInDB):
 class MaterialListItem(BaseModel):
     id: UUID
     name: str
-    manufacturer: str | None
-    material_class: str | None
-    areal_density_g_m2: Decimal | None
-    thickness_mm: Decimal | None
+    manufacturer: Optional[str]
+    material_class: Optional[str]
+    areal_density_g_m2: Optional[Decimal]
+    thickness_mm: Optional[Decimal]
+    material_function: Optional[str]
+    created_by_username: Optional[str]
+    mss_file_path: Optional[str]
+    sds_file_path: Optional[str]
 
     class Config:
         from_attributes = True

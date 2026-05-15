@@ -1,23 +1,24 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-
 from app.db.session import get_db
 from app.db.models import ShotPattern, ShotPatternPosition
 from app.api.v1.auth import get_current_active_user
-from app.schemas.user import User
 from app.schemas.shot_pattern import ShotPatternCreate, ShotPatternUpdate, ShotPattern, ShotPatternPositionCreate
+from app.db.models.user import User as UserModel
 
-router = APIRouter()
+
+
+router = APIRouter(redirect_slashes=False)
 
 
 @router.get("/", response_model=List[ShotPattern])
 def list_shot_patterns(
     skip: int = 0,
     limit: int = 100,
-    vest_type: str | None = None,
+    vest_type: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
     query = db.query(ShotPattern)
     
@@ -32,7 +33,7 @@ def list_shot_patterns(
 def create_shot_pattern(
     pattern: ShotPatternCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
     # Create pattern without positions first
     pattern_data = pattern.model_dump(exclude={"positions"})
@@ -57,7 +58,7 @@ def create_shot_pattern(
 def get_shot_pattern(
     shot_pattern_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
     pattern = db.query(ShotPattern).filter(ShotPattern.id == shot_pattern_id).first()
     if not pattern:
@@ -70,7 +71,7 @@ def update_shot_pattern(
     shot_pattern_id: str,
     pattern_update: ShotPatternUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
     pattern = db.query(ShotPattern).filter(ShotPattern.id == shot_pattern_id).first()
     if not pattern:
@@ -89,7 +90,7 @@ def update_shot_pattern(
 def delete_shot_pattern(
     shot_pattern_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
     pattern = db.query(ShotPattern).filter(ShotPattern.id == shot_pattern_id).first()
     if not pattern:
@@ -103,7 +104,7 @@ def delete_shot_pattern(
 def get_shot_pattern_positions(
     shot_pattern_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
     pattern = db.query(ShotPattern).filter(ShotPattern.id == shot_pattern_id).first()
     if not pattern:
@@ -118,7 +119,7 @@ def update_shot_pattern_positions(
     shot_pattern_id: str,
     positions: list[ShotPatternPositionCreate],
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
     pattern = db.query(ShotPattern).filter(ShotPattern.id == shot_pattern_id).first()
     if not pattern:

@@ -1,28 +1,29 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-
 from app.db.session import get_db
-from app.db.models import ArmorPanel, ArmorPanelLayer
+from app.db.models import ArmorPanel as ArmorPanelModel, ArmorPanelLayer
 from app.api.v1.auth import get_current_active_user
-from app.schemas.user import User
 from app.schemas.armor_panel import ArmorPanelCreate, ArmorPanelUpdate, ArmorPanel, ArmorPanelListItem, ArmorPanelLayerCreate
+from app.db.models.user import User as UserModel
 
-router = APIRouter()
+
+
+router = APIRouter(redirect_slashes=False)
 
 
 @router.get("/", response_model=List[ArmorPanelListItem])
 def list_panels(
     skip: int = 0,
     limit: int = 100,
-    vest_type: str | None = None,
+    vest_type: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
-    query = db.query(ArmorPanel)
+    query = db.query(ArmorPanelModel)
     
     if vest_type:
-        query = query.filter(ArmorPanel.vest_type == vest_type)
+        query = query.filter(ArmorPanelModel.vest_type == vest_type)
     
     panels = query.offset(skip).limit(limit).all()
     return panels
@@ -32,11 +33,11 @@ def list_panels(
 def create_panel(
     panel: ArmorPanelCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
     # Create panel without layers first
     panel_data = panel.model_dump(exclude={"layers"})
-    db_panel = ArmorPanel(**panel_data)
+    db_panel = ArmorPanelModel(**panel_data)
     db.add(db_panel)
     db.flush()
     
@@ -57,9 +58,9 @@ def create_panel(
 def get_panel(
     panel_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
-    panel = db.query(ArmorPanel).filter(ArmorPanel.id == panel_id).first()
+    panel = db.query(ArmorPanelModel).filter(ArmorPanelModel.id == panel_id).first()
     if not panel:
         raise HTTPException(status_code=404, detail="Panel not found")
     return panel
@@ -70,9 +71,9 @@ def update_panel(
     panel_id: str,
     panel_update: ArmorPanelUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
-    panel = db.query(ArmorPanel).filter(ArmorPanel.id == panel_id).first()
+    panel = db.query(ArmorPanelModel).filter(ArmorPanelModel.id == panel_id).first()
     if not panel:
         raise HTTPException(status_code=404, detail="Panel not found")
     
@@ -89,9 +90,9 @@ def update_panel(
 def delete_panel(
     panel_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
-    panel = db.query(ArmorPanel).filter(ArmorPanel.id == panel_id).first()
+    panel = db.query(ArmorPanelModel).filter(ArmorPanelModel.id == panel_id).first()
     if not panel:
         raise HTTPException(status_code=404, detail="Panel not found")
     
@@ -103,9 +104,9 @@ def delete_panel(
 def get_panel_layers(
     panel_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
-    panel = db.query(ArmorPanel).filter(ArmorPanel.id == panel_id).first()
+    panel = db.query(ArmorPanelModel).filter(ArmorPanelModel.id == panel_id).first()
     if not panel:
         raise HTTPException(status_code=404, detail="Panel not found")
     
@@ -118,9 +119,9 @@ def update_panel_layers(
     panel_id: str,
     layers: list[ArmorPanelLayerCreate],
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
-    panel = db.query(ArmorPanel).filter(ArmorPanel.id == panel_id).first()
+    panel = db.query(ArmorPanelModel).filter(ArmorPanelModel.id == panel_id).first()
     if not panel:
         raise HTTPException(status_code=404, detail="Panel not found")
     

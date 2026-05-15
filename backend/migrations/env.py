@@ -10,7 +10,22 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app.core.config import settings
 from app.db.base import Base
-from app.db.models import *  # noqa: F401, F403
+# Import all models for Alembic autogenerate support
+from app.db.models import (  # noqa: F401, F403
+    User,
+    Material,
+    MaterialDocument,
+    Ammunition,
+    TestSession,
+    ShotData,
+    Shot,
+    ArmorPanel,
+    ArmorPanelLayer,
+    ShotPattern,
+    ShotPatternPosition,
+    AuditLog,
+    ModelRun,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

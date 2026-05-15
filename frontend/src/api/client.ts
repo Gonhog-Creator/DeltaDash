@@ -12,27 +12,44 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
+    const token = localStorage.getItem('token');
+    const isFormData = options.body instanceof FormData;
     const config: RequestInit = {
       ...options,
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers: isFormData
+        ? {
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            ...options.headers,
+          }
+        : {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            ...options.headers,
+          },
     };
 
     const response = await fetch(url, config);
 
     if (!response.ok) {
       if (response.status === 401) {
-        // Unauthorized - redirect to login
-        window.location.href = '/login';
+        // Only redirect to login if not already on login page or checking auth
+        if (!window.location.pathname.includes('/login') && !endpoint.includes('/auth/me')) {
+          window.location.href = '/login';
+        }
+        // Suppress console error for auth/me endpoint to clean up console
+        if (!endpoint.includes('/auth/me')) {
+          console.error('Unauthorized request to', endpoint);
+        }
         throw new Error('Unauthorized');
       }
       const error = await response.json().catch(() => ({ detail: 'An error occurred' }));
       throw new Error(error.detail || 'An error occurred');
     }
 
+    if (response.status === 204 || response.headers.get('content-length') === '0') {
+      return undefined as T;
+    }
     return response.json();
   }
 
@@ -43,7 +60,7 @@ class ApiClient {
   async post<T>(endpoint: string, data?: unknown): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
-      body: data ? JSON.stringify(data) : undefined,
+      body: data instanceof FormData ? data : (data ? JSON.stringify(data) : undefined),
     });
   }
 

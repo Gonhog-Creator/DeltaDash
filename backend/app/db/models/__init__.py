@@ -11,6 +11,9 @@ from app.db.models.shot import Shot
 from app.db.models.model_run import ModelRun
 from app.db.models.prediction import Prediction
 from app.db.models.audit_log import AuditLog
+from app.db.models.shot_data import ShotData
+from app.db.models.location import Location
+from app.db.models.protocol import Protocol
 
 __all__ = [
     "User",
@@ -26,4 +29,7 @@ __all__ = [
     "ModelRun",
     "Prediction",
     "AuditLog",
+    "ShotData",
+    "Location",
+    "Protocol",
 ]

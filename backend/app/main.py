@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns
+from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns, analytics, locations, protocols, shot_data
 
 setup_logging()
 
@@ -27,6 +27,10 @@ app.include_router(test_sessions.router, prefix="/api/v1/test-sessions", tags=["
 app.include_router(panels.router, prefix="/api/v1/panels", tags=["panels"])
 app.include_router(shots.router, prefix="/api/v1/shots", tags=["shots"])
 app.include_router(shot_patterns.router, prefix="/api/v1/shot-patterns", tags=["shot-patterns"])
+app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
+app.include_router(locations.router, prefix="/api/v1/locations", tags=["locations"])
+app.include_router(protocols.router, prefix="/api/v1/protocols", tags=["protocols"])
+app.include_router(shot_data.router, prefix="/api/v1/shot-data", tags=["shot-data"])
 
 
 @app.get("/health")
@@ -36,4 +40,4 @@ def health_check():
 
 @app.get("/")
 def root():
-    return {"message": "Ballistic Test Analytics Platform API", "status": "🚀 Ready for Development"}
+    return {"message": "Ballistic Test Analytics Platform API", "status": "🚀 Ready for Development", "optimized": True}

@@ -4,22 +4,24 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host 0.0.0.0 --force",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@hookform/resolvers": "^3.3.4",
     "@tanstack/react-query": "^5.17.0",
     "@tanstack/react-table": "^8.11.2",
+    "lucide-react": "^0.303.0",
+    "plotly.js": "^3.5.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.49.2",
+    "react-plotly.js": "^2.6.0",
     "react-router-dom": "^6.21.1",
     "recharts": "^2.10.3",
-    "zod": "^3.22.4",
-    "@hookform/resolvers": "^3.3.4",
-    "lucide-react": "^0.303.0"
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

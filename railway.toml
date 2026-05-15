@@ -1,0 +1,24 @@
+[build]
+dockerfilePath = "backend/Dockerfile"
+
+[deploy]
+startCommand = "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+
+# ---
+# Railway setup (do this in the Railway dashboard):
+#
+# 1. New Project -> Deploy from GitHub repo
+# 2. Add a Postgres plugin (Railway injects DATABASE_URL automatically)
+# 3. Add a second service from the same repo for the frontend:
+#      - Root directory: frontend
+#      - Dockerfile path: frontend/Dockerfile
+# 4. Set environment variables on the backend service:
+#      SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
+#      CORS_ORIGINS=https://<your-frontend-railway-domain>
+#      APP_ENV=production
+# 5. Set environment variables on the frontend service:
+#      VITE_API_URL=https://<your-backend-railway-domain>
+# ---

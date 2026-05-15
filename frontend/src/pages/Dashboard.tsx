@@ -1,21 +1,51 @@
+import { Link } from 'react-router-dom';
 import { useMaterials } from '../hooks/useMaterials';
+import { useShots } from '../hooks/useShots';
+import { usePanels } from '../hooks/usePanels';
+import { useEffect, useState } from 'react';
 
 export function Dashboard() {
   const { data: materials } = useMaterials();
+  const { data: shots } = useShots();
+  const { data: panels } = usePanels();
+  const [stats, setStats] = useState({ test_session_count: 0, total_shots: 0 });
 
-  const stats = [
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const response = await fetch('/api/v1/test-sessions/stats', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          },
+        });
+        console.log('Stats response status:', response.status);
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Stats data:', data);
+          setStats({ test_session_count: data.test_session_count, total_shots: data.total_shots });
+        } else {
+          console.error('Stats response not ok:', response.statusText);
+        }
+      } catch (error) {
+        console.error('Failed to fetch stats:', error);
+      }
+    };
+    fetchStats();
+  }, []);
+
+  const dashboardStats = [
     { label: 'Total Materials', value: materials?.length || 0, color: 'bg-blue-500' },
-    { label: 'Total Panels', value: 0, color: 'bg-green-500' },
-    { label: 'Total Shots', value: 0, color: 'bg-purple-500' },
-    { label: 'Test Sessions', value: 0, color: 'bg-orange-500' },
+    { label: 'Total Shots', value: stats.total_shots || 0, color: 'bg-purple-500' },
+    { label: 'Total Products', value: panels?.length || 0, color: 'bg-green-500' },
+    { label: 'Test Sessions', value: stats.test_session_count || 0, color: 'bg-orange-500' },
   ];
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">🎯 Ballistic Analytics Dashboard</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">DeltaDash</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {stats.map((stat) => (
+        {dashboardStats.map((stat) => (
           <div key={stat.label} className="bg-white shadow rounded-lg p-6">
             <div className="flex items-center">
               <div className={`${stat.color} rounded-md p-3`}>
@@ -50,20 +80,17 @@ export function Dashboard() {
         </div>
 
         <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h2>
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Pages</h2>
           <div className="space-y-3">
-            <button className="w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-md text-sm text-gray-700">
-              Add New Material
-            </button>
-            <button className="w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-md text-sm text-gray-700">
-              Create Test Session
-            </button>
-            <button className="w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-md text-sm text-gray-700">
-              Build Armor Panel
-            </button>
-            <button className="w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-md text-sm text-gray-700">
-              Import Spreadsheet
-            </button>
+            <Link to="/materials" className="block w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-md text-sm text-gray-700">
+              Materials
+            </Link>
+            <Link to="/ammunition" className="block w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-md text-sm text-gray-700">
+              Ammunition
+            </Link>
+            <Link to="/test-sessions" className="block w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-md text-sm text-gray-700">
+              Test Sessions
+            </Link>
           </div>
         </div>
       </div>

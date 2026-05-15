@@ -1,14 +1,14 @@
 from pydantic import BaseModel
 from datetime import datetime
 from uuid import UUID
-from typing import Any
+from typing import Any, Optional
 
 
 class AuditLogBase(BaseModel):
-    user_id: UUID | None = None
+    user_id: Optional[UUID] = None
     action: str
-    entity_type: str | None = None
-    entity_id: UUID | None = None
+    entity_type: Optional[str] = None
+    entity_id: Optional[UUID] = None
     before_json: dict[str, Any] | None = None
     after_json: dict[str, Any] | None = None
 

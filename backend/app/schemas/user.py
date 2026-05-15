@@ -1,13 +1,15 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from datetime import datetime
 from uuid import UUID
+from typing import Optional
 
 
 class UserBase(BaseModel):
-    email: EmailStr
-    full_name: str | None = None
+    username: str
+    full_name: Optional[str] = None
     role: str = "viewer"
     is_active: bool = True
+    is_admin: bool = False
 
 
 class UserCreate(UserBase):
@@ -15,9 +17,10 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    full_name: str | None = None
-    role: str | None = None
-    is_active: bool | None = None
+    full_name: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
 
 
 class UserInDB(UserBase):
@@ -39,4 +42,4 @@ class Token(BaseModel):
 
 
 class TokenData(BaseModel):
-    email: str | None = None
+    username: Optional[str] = None

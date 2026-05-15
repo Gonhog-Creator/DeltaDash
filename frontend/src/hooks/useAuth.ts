@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { authApi, User } from '../api/auth';
+import { authApi } from '../api/auth';
 
 export function useAuth() {
   const queryClient = useQueryClient();
@@ -8,6 +8,8 @@ export function useAuth() {
     queryKey: ['currentUser'],
     queryFn: authApi.getCurrentUser,
     retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const loginMutation = useMutation({
@@ -20,7 +22,8 @@ export function useAuth() {
   const logoutMutation = useMutation({
     mutationFn: authApi.logout,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+      queryClient.setQueryData(['currentUser'], null);
+      queryClient.removeQueries({ queryKey: ['currentUser'] });
     },
   });
 
@@ -33,6 +36,7 @@ export function useAuth() {
     user,
     isLoading,
     isAuthenticated: !!user,
+    isAdmin: user?.is_admin || false,
     error,
     login: loginMutation.mutateAsync,
     logout: logoutMutation.mutateAsync,

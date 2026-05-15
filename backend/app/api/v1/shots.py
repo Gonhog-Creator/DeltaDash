@@ -1,40 +1,41 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-
 from app.db.session import get_db
-from app.db.models import Shot
+from app.db.models import Shot as ShotModel
 from app.api.v1.auth import get_current_active_user
-from app.schemas.user import User
 from app.schemas.shot import ShotCreate, ShotUpdate, Shot
+from app.db.models.user import User as UserModel
 
-router = APIRouter()
+
+
+router = APIRouter(redirect_slashes=False)
 
 
 @router.get("/", response_model=List[Shot])
 def list_shots(
     skip: int = 0,
     limit: int = 100,
-    test_session_id: str | None = None,
-    panel_id: str | None = None,
-    ammunition_id: str | None = None,
-    penetration: bool | None = None,
-    anomaly_flag: bool | None = None,
+    test_session_id: Optional[str] = None,
+    panel_id: Optional[str] = None,
+    ammunition_id: Optional[str] = None,
+    penetration: Optional[bool] = None,
+    anomaly_flag: Optional[bool] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
-    query = db.query(Shot)
+    query = db.query(ShotModel)
     
     if test_session_id:
-        query = query.filter(Shot.test_session_id == test_session_id)
+        query = query.filter(ShotModel.test_session_id == test_session_id)
     if panel_id:
-        query = query.filter(Shot.panel_id == panel_id)
+        query = query.filter(ShotModel.panel_id == panel_id)
     if ammunition_id:
-        query = query.filter(Shot.ammunition_id == ammunition_id)
+        query = query.filter(ShotModel.ammunition_id == ammunition_id)
     if penetration is not None:
-        query = query.filter(Shot.penetration == penetration)
+        query = query.filter(ShotModel.penetration == penetration)
     if anomaly_flag is not None:
-        query = query.filter(Shot.anomaly_flag == anomaly_flag)
+        query = query.filter(ShotModel.anomaly_flag == anomaly_flag)
     
     shots = query.offset(skip).limit(limit).all()
     return shots
@@ -44,9 +45,9 @@ def list_shots(
 def create_shot(
     shot: ShotCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
-    db_shot = Shot(**shot.model_dump())
+    db_shot = ShotModel(**shot.model_dump())
     db.add(db_shot)
     db.commit()
     db.refresh(db_shot)
@@ -57,9 +58,9 @@ def create_shot(
 def get_shot(
     shot_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
-    shot = db.query(Shot).filter(Shot.id == shot_id).first()
+    shot = db.query(ShotModel).filter(ShotModel.id == shot_id).first()
     if not shot:
         raise HTTPException(status_code=404, detail="Shot not found")
     return shot
@@ -70,9 +71,9 @@ def update_shot(
     shot_id: str,
     shot_update: ShotUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
-    shot = db.query(Shot).filter(Shot.id == shot_id).first()
+    shot = db.query(ShotModel).filter(ShotModel.id == shot_id).first()
     if not shot:
         raise HTTPException(status_code=404, detail="Shot not found")
     
@@ -89,9 +90,9 @@ def update_shot(
 def delete_shot(
     shot_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
-    shot = db.query(Shot).filter(Shot.id == shot_id).first()
+    shot = db.query(ShotModel).filter(ShotModel.id == shot_id).first()
     if not shot:
         raise HTTPException(status_code=404, detail="Shot not found")
     

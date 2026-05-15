@@ -1,21 +1,27 @@
 import { useState } from 'react';
-import { useMaterials, useCreateMaterial, useUpdateMaterial, useDeleteMaterial } from '../hooks/useMaterials';
-import { Material, MaterialCreate, MaterialUpdate } from '../types/material';
+import { useMaterials, useCreateMaterial, useUpdateMaterial, useDeleteMaterial, useUploadMaterialFiles } from '../hooks/useMaterials';
+import { Material, MaterialCreate, MaterialUpdate } from '../api/materials';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export function Materials() {
   const { data: materials, isLoading, error } = useMaterials();
   const createMutation = useCreateMaterial();
   const updateMutation = useUpdateMaterial();
+  const uploadFilesMutation = useUploadMaterialFiles();
   const deleteMutation = useDeleteMaterial();
-  
+
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Material | null>(null);
+  const [mssFile, setMssFile] = useState<File | null>(null);
+  const [sdsFile, setSdsFile] = useState<File | null>(null);
   const [formData, setFormData] = useState<MaterialCreate>({
     name: '',
     material_class: '',
     manufacturer: '',
     areal_density_g_m2: null,
     thickness_mm: null,
+    material_function: '',
   });
 
   if (isLoading) return <div>Loading...</div>;
@@ -24,9 +30,14 @@ export function Materials() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await createMutation.mutateAsync(formData);
+      const files: { mss?: File; sds?: File } = {};
+      if (mssFile) files.mss = mssFile;
+      if (sdsFile) files.sds = sdsFile;
+      await createMutation.mutateAsync({ material: formData, files });
       setShowCreateForm(false);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, material_function: '' });
+      setMssFile(null);
+      setSdsFile(null);
     } catch (err) {
       console.error('Failed to create material:', err);
     }
@@ -36,20 +47,36 @@ export function Materials() {
     e.preventDefault();
     if (!editingMaterial) return;
     try {
-      await updateMutation.mutateAsync({ id: editingMaterial.id, material: formData as MaterialUpdate });
+      const updatePayload = Object.fromEntries(
+        Object.entries(formData).filter(([, v]) => v !== '' && v !== undefined)
+      ) as MaterialUpdate;
+      await updateMutation.mutateAsync({ id: editingMaterial.id, material: updatePayload });
+
+      // Upload files if any are selected
+      if (mssFile || sdsFile) {
+        const files: { mss?: File; sds?: File } = {};
+        if (mssFile) files.mss = mssFile;
+        if (sdsFile) files.sds = sdsFile;
+        await uploadFilesMutation.mutateAsync({ id: editingMaterial.id, files });
+      }
+
       setEditingMaterial(null);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, material_function: '' });
+      setMssFile(null);
+      setSdsFile(null);
     } catch (err) {
       console.error('Failed to update material:', err);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this material?')) return;
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
     try {
-      await deleteMutation.mutateAsync(id);
+      await deleteMutation.mutateAsync(deleteTarget.id);
     } catch (err) {
       console.error('Failed to delete material:', err);
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -61,12 +88,15 @@ export function Materials() {
       manufacturer: material.manufacturer || '',
       areal_density_g_m2: material.areal_density_g_m2,
       thickness_mm: material.thickness_mm,
+      material_function: material.material_function || '',
     });
   };
 
   const cancelEdit = () => {
     setEditingMaterial(null);
-    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null });
+    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, material_function: '' });
+    setMssFile(null);
+    setSdsFile(null);
   };
 
   return (
@@ -118,34 +148,70 @@ export function Materials() {
                   <option value="rubber">Rubber</option>
                   <option value="film">Film</option>
                   <option value="coating">Coating</option>
+                  <option value="other">Other</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Manufacturer</label>
+                <label className="block text-sm font-medium text-gray-700">Function *</label>
+                <select
+                  required
+                  value={formData.material_function || ''}
+                  onChange={(e) => setFormData({ ...formData, material_function: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                >
+                  <option value="">Select function...</option>
+                  <option value="antiballistic">Antiballistic</option>
+                  <option value="anti-trauma">Anti-Trauma</option>
+                  <option value="anti-AP">Anti-AP</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Manufacturer *</label>
                 <input
                   type="text"
-                  value={formData.manufacturer}
+                  required
+                  value={formData.manufacturer || ''}
                   onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Areal Density (g/m²)</label>
+                <label className="block text-sm font-medium text-gray-700">Areal Density (g/m²) *</label>
                 <input
                   type="number"
                   step="0.01"
-                  value={formData.areal_density_g_m2 || ''}
+                  required
+                  value={formData.areal_density_g_m2 ?? ''}
                   onChange={(e) => setFormData({ ...formData, areal_density_g_m2: e.target.value ? parseFloat(e.target.value) : null })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Thickness (mm)</label>
+                <label className="block text-sm font-medium text-gray-700">Thickness (mm) *</label>
                 <input
                   type="number"
                   step="0.001"
-                  value={formData.thickness_mm || ''}
+                  required
+                  value={formData.thickness_mm ?? ''}
                   onChange={(e) => setFormData({ ...formData, thickness_mm: e.target.value ? parseFloat(e.target.value) : null })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">MSS (Material Specification Sheet) *</label>
+                <input
+                  type="file"
+                  required={!editingMaterial}
+                  onChange={(e) => setMssFile(e.target.files?.[0] || null)}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">SDS (Safety Data Sheet)</label>
+                <input
+                  type="file"
+                  onChange={(e) => setSdsFile(e.target.files?.[0] || null)}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
@@ -179,6 +245,8 @@ export function Materials() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Manufacturer</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Areal Density</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thickness</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Files</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
@@ -190,6 +258,32 @@ export function Materials() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.manufacturer || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.areal_density_g_m2 || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.thickness_mm || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.created_by_username || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <div className="space-x-2">
+                    {material.mss_file_path && (
+                      <a
+                        href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/materials/${material.id}/download/mss`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-600 hover:text-indigo-900"
+                      >
+                        MSS
+                      </a>
+                    )}
+                    {material.sds_file_path && (
+                      <a
+                        href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/materials/${material.id}/download/sds`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-600 hover:text-indigo-900"
+                      >
+                        SDS
+                      </a>
+                    )}
+                    {!material.mss_file_path && !material.sds_file_path && '-'}
+                  </div>
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <button
                     onClick={() => startEdit(material)}
@@ -198,7 +292,7 @@ export function Materials() {
                     Edit
                   </button>
                   <button
-                    onClick={() => handleDelete(material.id)}
+                    onClick={() => setDeleteTarget(material)}
                     className="text-red-600 hover:text-red-900"
                   >
                     Delete
@@ -208,7 +302,7 @@ export function Materials() {
             ))}
             {materials?.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
                   No materials found. Click "Add Material" to create one.
                 </td>
               </tr>
@@ -216,6 +310,16 @@ export function Materials() {
           </tbody>
         </table>
       </div>
+      {deleteTarget && (
+        <ConfirmModal
+          title="Delete Material"
+          message={`Are you sure you want to delete "${deleteTarget.name}"? This action cannot be undone.`}
+          confirmLabel="Delete"
+          variant="danger"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }

@@ -6,10 +6,10 @@ from typing import Optional
 
 
 class ArmorPanelLayerBase(BaseModel):
-    material_id: UUID | None = None
-    orientation_degrees: Decimal | None = None
+    material_id: Optional[UUID] = None
+    orientation_degrees: Optional[Decimal] = None
     layer_count: int = 1
-    notes: str | None = None
+    notes: Optional[str] = None
 
 
 class ArmorPanelLayerCreate(ArmorPanelLayerBase):
@@ -27,19 +27,19 @@ class ArmorPanelLayer(ArmorPanelLayerBase):
 
 class ArmorPanelBase(BaseModel):
     panel_code: str
-    test_session_id: UUID | None = None
-    vest_type: str | None = None
-    panel_shape: str | None = None
-    panel_width_mm: Decimal | None = Field(None, ge=0)
-    panel_height_mm: Decimal | None = Field(None, ge=0)
-    panel_thickness_mm: Decimal | None = Field(None, ge=0)
-    total_layers: int | None = Field(None, ge=0)
-    total_areal_density_g_m2: Decimal | None = Field(None, ge=0)
-    total_mass_g: Decimal | None = Field(None, ge=0)
-    construction_notes: str | None = None
-    stitch_pattern: str | None = None
-    curvature: str | None = None
-    backing_material: str | None = None
+    test_session_id: Optional[UUID] = None
+    vest_type: Optional[str] = None
+    panel_shape: Optional[str] = None
+    panel_width_mm: Optional[Decimal] = Field(None, ge=0)
+    panel_height_mm: Optional[Decimal] = Field(None, ge=0)
+    panel_thickness_mm: Optional[Decimal] = Field(None, ge=0)
+    total_layers: Optional[int] = Field(None, ge=0)
+    total_areal_density_g_m2: Optional[Decimal] = Field(None, ge=0)
+    total_mass_g: Optional[Decimal] = Field(None, ge=0)
+    construction_notes: Optional[str] = None
+    stitch_pattern: Optional[str] = None
+    curvature: Optional[str] = None
+    backing_material: Optional[str] = None
 
 
 class ArmorPanelCreate(ArmorPanelBase):
@@ -47,19 +47,19 @@ class ArmorPanelCreate(ArmorPanelBase):
 
 
 class ArmorPanelUpdate(BaseModel):
-    panel_code: str | None = None
-    vest_type: str | None = None
-    panel_shape: str | None = None
-    panel_width_mm: Decimal | None = Field(None, ge=0)
-    panel_height_mm: Decimal | None = Field(None, ge=0)
-    panel_thickness_mm: Decimal | None = Field(None, ge=0)
-    total_layers: int | None = Field(None, ge=0)
-    total_areal_density_g_m2: Decimal | None = Field(None, ge=0)
-    total_mass_g: Decimal | None = Field(None, ge=0)
-    construction_notes: str | None = None
-    stitch_pattern: str | None = None
-    curvature: str | None = None
-    backing_material: str | None = None
+    panel_code: Optional[str] = None
+    vest_type: Optional[str] = None
+    panel_shape: Optional[str] = None
+    panel_width_mm: Optional[Decimal] = Field(None, ge=0)
+    panel_height_mm: Optional[Decimal] = Field(None, ge=0)
+    panel_thickness_mm: Optional[Decimal] = Field(None, ge=0)
+    total_layers: Optional[int] = Field(None, ge=0)
+    total_areal_density_g_m2: Optional[Decimal] = Field(None, ge=0)
+    total_mass_g: Optional[Decimal] = Field(None, ge=0)
+    construction_notes: Optional[str] = None
+    stitch_pattern: Optional[str] = None
+    curvature: Optional[str] = None
+    backing_material: Optional[str] = None
 
 
 class ArmorPanelInDB(ArmorPanelBase):
@@ -78,9 +78,9 @@ class ArmorPanel(ArmorPanelInDB):
 class ArmorPanelListItem(BaseModel):
     id: UUID
     panel_code: str
-    vest_type: str | None
-    total_layers: int | None
-    total_areal_density_g_m2: Decimal | None
+    vest_type: Optional[str]
+    total_layers: Optional[int]
+    total_areal_density_g_m2: Optional[Decimal]
 
     class Config:
         from_attributes = True

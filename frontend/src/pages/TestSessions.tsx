@@ -1,272 +1,660 @@
-import { useState } from 'react';
-import { Plus, Search, Calendar, MapPin, User } from 'lucide-react';
-
-interface TestSession {
-  id: string;
-  name: string;
-  test_date: string;
-  lab_name: string;
-  operator: string;
-  protocol: string;
-  clay_temperature_c?: number;
-  ambient_temperature_c?: number;
-  humidity_percent?: number;
-  conditioning?: string;
-  notes?: string;
-  created_at: string;
-}
+import { useState, Fragment } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useTestSessions, useDeleteTestSession, useUploadExcel, useCreateFromExcel } from '../hooks/useTestSessions';
+import { useLocations, useDeleteLocation, useUpdateLocation } from '../hooks/useLocations';
+import { useProtocols, useDeleteProtocol, useUpdateProtocol } from '../hooks/useProtocols';
+import { useAuth } from '../hooks/useAuth';
+import { TestSession } from '../api/test_session';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { LocationManagementModal } from '../components/LocationManagementModal';
+import { ProtocolManagementModal } from '../components/ProtocolManagementModal';
 
 export function TestSessions() {
-  const [sessions] = useState<TestSession[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  const navigate = useNavigate();
+  const { data: testSessions, isLoading, error } = useTestSessions();
+  const { data: locations } = useLocations();
+  const { data: protocols } = useProtocols();
+  const { isAdmin } = useAuth();
+  const deleteLocationMutation = useDeleteLocation();
+  const updateLocationMutation = useUpdateLocation();
+  const deleteProtocolMutation = useDeleteProtocol();
+  const updateProtocolMutation = useUpdateProtocol();
+  const deleteMutation = useDeleteTestSession();
+  const uploadExcelMutation = useUploadExcel();
+  const createFromExcelMutation = useCreateFromExcel();
 
-  const filteredSessions = sessions.filter(session =>
-    session.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    session.lab_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    session.operator?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const formatConditioning = (value: string | null | undefined) => {
+    if (!value) return '-';
+    if (value === 'ballistic_limit') return 'Ballistic Limit';
+    // Replace underscores with spaces and capitalize each word
+    return value
+      .replace(/_/g, ' ')
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
+  const [deleteTarget, setDeleteTarget] = useState<TestSession | null>(null);
+  const [uploadTarget, setUploadTarget] = useState<TestSession | null>(null);
+  const [showCreateFromExcel, setShowCreateFromExcel] = useState(false);
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [testName, setTestName] = useState('');
+  const [selectedLocationId, setSelectedLocationId] = useState('');
+  const [protocol, setProtocol] = useState('');
+  const [testDate, setTestDate] = useState(new Date().toISOString().split('T')[0]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminModalType, setAdminModalType] = useState<'locations' | 'protocols' | 'bulk-reupload'>('locations');
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleteTargetType, setDeleteTargetType] = useState<'location' | 'protocol'>('location');
+  const [editTargetId, setEditTargetId] = useState<string | null>(null);
+  const [editTargetType, setEditTargetType] = useState<'location' | 'protocol'>('location');
+  const [newLocationName, setNewLocationName] = useState('');
+  const [newLocationAddress, setNewLocationAddress] = useState('');
+  const [newProtocolName, setNewProtocolName] = useState('');
+  const [newProtocolDescription, setNewProtocolDescription] = useState('');
+
+  // Group test sessions by parent_test_group_id
+  const groupedTests = testSessions?.reduce((acc, session) => {
+    if (session.parent_test_group_id) {
+      if (!acc[session.parent_test_group_id]) {
+        acc[session.parent_test_group_id] = [];
+      }
+      acc[session.parent_test_group_id].push(session);
+    } else {
+      // This is a parent session or has no parent
+      if (!acc[session.id]) {
+        acc[session.id] = [];
+      }
+    }
+    return acc;
+  }, {} as Record<string, TestSession[]>) || {};
+
+  const parentSessions = testSessions?.filter(s => !s.parent_test_group_id) || [];
+
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Error loading test sessions</div>;
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteMutation.mutateAsync(deleteTarget.id);
+    } catch (err) {
+      console.error('Failed to delete test session:', err);
+    } finally {
+      setDeleteTarget(null);
+    }
+  };
+
+  
+  const handleExcelUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadTarget || !excelFile) return;
+    try {
+      await uploadExcelMutation.mutateAsync({ id: uploadTarget.id, file: excelFile });
+      setUploadTarget(null);
+      setExcelFile(null);
+    } catch (err) {
+      console.error('Failed to upload Excel:', err);
+    }
+  };
+
+  const handleCreateFromExcel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!excelFile || !testName) return;
+    try {
+      await createFromExcelMutation.mutateAsync({
+        file: excelFile,
+        testName,
+        locationId: selectedLocationId || undefined,
+        protocol: protocol || undefined,
+        testDate: testDate || undefined,
+      });
+      setShowCreateFromExcel(false);
+      setExcelFile(null);
+      setTestName('');
+      setSelectedLocationId('');
+      setProtocol('');
+      setTestDate(new Date().toISOString().split('T')[0]);
+    } catch (err) {
+      console.error('Failed to create test session from Excel:', err);
+    }
+  };
+
+  const handleBulkReupload = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/test-sessions/admin/bulk-reupload-all', {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to bulk re-upload');
+      }
+
+      setShowAdminModal(false);
+      window.location.reload();
+    } catch (err) {
+      console.error('Failed to bulk re-upload:', err);
+      alert('Failed to bulk re-upload. Check console for details.');
+    }
+  };
+
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupId)) {
+        newSet.delete(groupId);
+      } else {
+        newSet.add(groupId);
+      }
+      return newSet;
+    });
+  };
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Test Sessions</h1>
-        <button
-          onClick={() => setShowCreateForm(true)}
-          className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New Test Session
-        </button>
-      </div>
-
-      {/* Search Bar */}
-      <div className="mb-6">
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-gray-400" />
-          </div>
-          <input
-            type="text"
-            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            placeholder="Search test sessions..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div className="flex gap-2">
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => {
+                  setAdminModalType('locations');
+                  setShowAdminModal(true);
+                }}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+              >
+                Manage Labs
+              </button>
+              <button
+                onClick={() => {
+                  setAdminModalType('protocols');
+                  setShowAdminModal(true);
+                }}
+                className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+              >
+                Manage Protocols
+              </button>
+              <button
+                onClick={() => {
+                  setAdminModalType('bulk-reupload');
+                  setShowAdminModal(true);
+                }}
+                className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700"
+              >
+                Bulk Re-upload
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => setShowCreateFromExcel(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+          >
+            Upload Excel
+          </button>
         </div>
       </div>
 
-      {/* Test Sessions List */}
-      {filteredSessions.length === 0 ? (
-        <div className="text-center py-12">
-          <div className="text-gray-500">
-            <Calendar className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No test sessions yet</h3>
-            <p className="text-sm text-gray-500 mb-4">Create your first test session to get started with ballistic testing data.</p>
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Create Test Session
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-white shadow overflow-hidden sm:rounded-md">
-          <ul className="divide-y divide-gray-200">
-            {filteredSessions.map((session) => (
-              <li key={session.id}>
-                <div className="px-4 py-4 sm:px-6 hover:bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center">
-                        <p className="text-sm font-medium text-blue-600 truncate">{session.name}</p>
-                        {session.conditioning && (
-                          <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                            {session.conditioning}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-2 sm:flex sm:justify-between">
-                        <div className="sm:flex">
-                          <p className="flex items-center text-sm text-gray-500">
-                            <Calendar className="flex-shrink-0 mr-1.5 h-4 w-4 text-gray-400" />
-                            {session.test_date || 'No date'}
-                          </p>
-                          <p className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0 sm:ml-6">
-                            <MapPin className="flex-shrink-0 mr-1.5 h-4 w-4 text-gray-400" />
-                            {session.lab_name || 'No lab specified'}
-                          </p>
-                          <p className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0 sm:ml-6">
-                            <User className="flex-shrink-0 mr-1.5 h-4 w-4 text-gray-400" />
-                            {session.operator || 'No operator specified'}
-                          </p>
-                        </div>
-                        <div className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0">
-                          {session.ambient_temperature_c && (
-                            <span className="mr-4">🌡️ {session.ambient_temperature_c}°C</span>
-                          )}
-                          {session.humidity_percent && (
-                            <span className="mr-4">💧 {session.humidity_percent}%</span>
-                          )}
-                          {session.clay_temperature_c && (
-                            <span>🧱 {session.clay_temperature_c}°C</span>
-                          )}
-                        </div>
-                      </div>
-                      {session.notes && (
-                        <div className="mt-2">
-                          <p className="text-sm text-gray-600 line-clamp-2">{session.notes}</p>
-                        </div>
+      <div className="bg-white shadow rounded-lg overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lab</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Operator</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Protocol</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Characteristic</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Excel</th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {parentSessions.map((parent) => {
+              const children = groupedTests[parent.id] || [];
+              const hasChildren = children.length > 0;
+              const isExpanded = expandedGroups.has(parent.id);
+
+              return (
+                <Fragment key={parent.id}>
+                  <tr 
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => hasChildren && toggleGroup(parent.id)}
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {hasChildren && (
+                        <span className="mr-2 text-gray-500">
+                          {isExpanded ? '▼' : '▶'}
+                        </span>
                       )}
-                    </div>
-                    <div className="ml-4 flex-shrink-0">
-                      <button className="font-medium text-blue-600 hover:text-blue-500">
-                        View Details
+                      {parent.name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{parent.test_date || '-'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{parent.lab_name || '-'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{parent.operator || '-'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{parent.protocol || '-'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatConditioning(parent.conditioning)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {parent.excel_file_path ? (
+                        <span className="text-green-600">Uploaded</span>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setUploadTarget(parent);
+                          }}
+                          className="text-indigo-600 hover:text-indigo-900"
+                        >
+                          Upload
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget(parent);
+                        }}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        Delete
                       </button>
-                    </div>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
+                    </td>
+                  </tr>
+                  {isExpanded && hasChildren && children.map((child) => (
+                    <tr key={child.id} className="bg-gray-50 hover:bg-gray-100">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 pl-12">
+                        {child.name.replace(parent.name + ' - ', '')}
+                        {child.size && `, ${child.size}`}
+                        {child.conditioning && `, ${formatConditioning(child.conditioning)}`}
+                        {child.ballistic_limit && ' (Ballistic Limit)'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{child.test_date || '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{child.lab_name || '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{child.operator || '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{child.protocol || '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatConditioning(child.conditioning)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {child.excel_file_path ? (
+                          <span className="text-green-600">Uploaded</span>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setUploadTarget(child);
+                            }}
+                            className="text-indigo-600 hover:text-indigo-900"
+                          >
+                            Upload
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button
+                          onClick={() => navigate(`/test-sessions/${child.id}`)}
+                          className="text-indigo-600 hover:text-indigo-900 mr-3"
+                        >
+                          View
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(child)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
+              );
+            })}
+            {testSessions?.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
+                  No test sessions found. Click "Upload Excel" to create one.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {deleteTarget && (
+        <ConfirmModal
+          title="Delete Test Session"
+          message={`Are you sure you want to delete "${deleteTarget.name}"? This action cannot be undone.`}
+          confirmLabel="Delete"
+          variant="danger"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
 
-      {/* Create Form Modal */}
-      {showCreateForm && (
-        <div className="fixed z-10 inset-0 overflow-y-auto">
-          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
-              <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
+      {uploadTarget && (
+        <ConfirmModal
+          title="Upload Excel File"
+          message={
+            <div>
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={(e) => setExcelFile(e.target.files?.[0] || null)}
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+              />
             </div>
-            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <div className="sm:flex sm:items-start">
-                  <div className="w-full">
-                    <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                      Create New Test Session
-                    </h3>
-                    <form className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Session Name</label>
-                        <input
-                          type="text"
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                          placeholder="e.g., NIJ Level IIIA Testing - Round 1"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">Test Date</label>
-                          <input
-                            type="date"
-                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">Lab Name</label>
-                          <input
-                            type="text"
-                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            placeholder="e.g., Ballistics Testing Lab"
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">Operator</label>
-                          <input
-                            type="text"
-                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            placeholder="e.g., John Smith"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">Protocol</label>
-                          <input
-                            type="text"
-                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            placeholder="e.g., NIJ 0101.06"
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">Clay Temp (°C)</label>
-                          <input
-                            type="number"
-                            step="0.1"
-                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            placeholder="21.1"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">Ambient Temp (°C)</label>
-                          <input
-                            type="number"
-                            step="0.1"
-                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            placeholder="22.0"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">Humidity (%)</label>
-                          <input
-                            type="number"
-                            step="0.1"
-                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            placeholder="50.0"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Conditioning</label>
-                        <select className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                          <option value="">Select conditioning...</option>
-                          <option value="ambient">Ambient</option>
-                          <option value="wet">Wet</option>
-                          <option value="hot">Hot</option>
-                          <option value="cold">Cold</option>
-                          <option value="tumbled">Tumbled</option>
-                          <option value="aged">Aged</option>
-                          <option value="unknown">Unknown</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Notes</label>
-                        <textarea
-                          rows={3}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                          placeholder="Additional notes about the test session..."
-                        />
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                <button
-                  type="button"
-                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
-                  onClick={() => setShowCreateForm(false)}
-                >
-                  Create Session
-                </button>
-                <button
-                  type="button"
-                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
-                  onClick={() => setShowCreateForm(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+          }
+          confirmLabel="Upload"
+          variant="default"
+          onConfirm={handleExcelUpload}
+          onCancel={() => {
+            setUploadTarget(null);
+            setExcelFile(null);
+          }}
+        />
       )}
+
+      {showCreateFromExcel && (
+        <ConfirmModal
+          title="Create Test Session from Excel"
+          message={
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Test Name</label>
+                <input
+                  type="text"
+                  value={testName}
+                  onChange={(e) => setTestName(e.target.value)}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  placeholder="Enter test name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                <select
+                  value={selectedLocationId}
+                  onChange={(e) => setSelectedLocationId(e.target.value)}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                >
+                  <option value="">Select location (optional)</option>
+                  {locations?.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Protocol</label>
+                <select
+                  value={protocol}
+                  onChange={(e) => setProtocol(e.target.value)}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                >
+                  <option value="">Select protocol (optional)</option>
+                  {protocols?.map((prot) => (
+                    <option key={prot.id} value={prot.name}>
+                      {prot.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Test Date</label>
+                <input
+                  type="date"
+                  value={testDate}
+                  onChange={(e) => setTestDate(e.target.value)}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Excel File</label>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={(e) => setExcelFile(e.target.files?.[0] || null)}
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                />
+              </div>
+            </div>
+          }
+          confirmLabel="Create"
+          variant="default"
+          onConfirm={handleCreateFromExcel}
+          onCancel={() => {
+            setShowCreateFromExcel(false);
+            setExcelFile(null);
+            setTestName('');
+            setSelectedLocationId('');
+            setProtocol('');
+            setTestDate(new Date().toISOString().split('T')[0]);
+          }}
+        />
+      )}
+
+      {showAdminModal && adminModalType === 'locations' && (
+        <LocationManagementModal
+          isOpen={showAdminModal}
+          locations={locations || []}
+          newLocationName={newLocationName}
+          newLocationAddress={newLocationAddress}
+          onNameChange={setNewLocationName}
+          onAddressChange={setNewLocationAddress}
+          onEdit={(loc) => {
+            setEditTargetId(loc.id);
+            setEditTargetType('location');
+            setNewLocationName(loc.name);
+            setNewLocationAddress(loc.address || '');
+            setShowAdminModal(false);
+          }}
+          onDelete={(locationId) => {
+            setDeleteTargetId(locationId);
+            setDeleteTargetType('location');
+            setShowAdminModal(false);
+          }}
+          onAdd={async () => {
+            try {
+              if (newLocationName) {
+                await createLocationMutation.mutateAsync({
+                  name: newLocationName,
+                  address: newLocationAddress || undefined,
+                });
+              }
+              setShowAdminModal(false);
+              setNewLocationName('');
+              setNewLocationAddress('');
+            } catch (err) {
+              console.error('Failed to create location:', err);
+            }
+          }}
+          onCancel={() => {
+            setShowAdminModal(false);
+            setNewLocationName('');
+            setNewLocationAddress('');
+          }}
+        />
+      )}
+
+      {showAdminModal && adminModalType === 'protocols' && (
+        <ProtocolManagementModal
+          isOpen={showAdminModal}
+          protocols={protocols || []}
+          newProtocolName={newProtocolName}
+          newProtocolDescription={newProtocolDescription}
+          onNameChange={setNewProtocolName}
+          onDescriptionChange={setNewProtocolDescription}
+          onEdit={(prot) => {
+            setEditTargetId(prot.id);
+            setEditTargetType('protocol');
+            setNewProtocolName(prot.name);
+            setNewProtocolDescription(prot.description || '');
+            setShowAdminModal(false);
+          }}
+          onDelete={(protocolId) => {
+            setDeleteTargetId(protocolId);
+            setDeleteTargetType('protocol');
+            setShowAdminModal(false);
+          }}
+          onAdd={async () => {
+            try {
+              if (newProtocolName) {
+                await createProtocolMutation.mutateAsync({
+                  name: newProtocolName,
+                  description: newProtocolDescription || undefined,
+                });
+              }
+              setShowAdminModal(false);
+              setNewProtocolName('');
+              setNewProtocolDescription('');
+            } catch (err) {
+              console.error('Failed to create protocol:', err);
+            }
+          }}
+          onCancel={() => {
+            setShowAdminModal(false);
+            setNewProtocolName('');
+            setNewProtocolDescription('');
+          }}
+        />
+      )}
+
+      {deleteTargetId && (
+        <ConfirmModal
+          title={`Delete ${deleteTargetType === 'location' ? 'Lab' : 'Protocol'}`}
+          message={`Are you sure you want to delete this ${deleteTargetType}? This action cannot be undone.`}
+          confirmLabel="Delete"
+          variant="danger"
+          onConfirm={async () => {
+            try {
+              if (deleteTargetType === 'location') {
+                await deleteLocationMutation.mutateAsync(deleteTargetId);
+              } else {
+                await deleteProtocolMutation.mutateAsync(deleteTargetId);
+              }
+              setDeleteTargetId(null);
+            } catch (err) {
+              console.error('Failed to delete:', err);
+            }
+          }}
+          onCancel={() => setDeleteTargetId(null)}
+        />
+      )}
+
+      {editTargetId && (
+        <ConfirmModal
+          title={`Edit ${editTargetType === 'location' ? 'Lab' : 'Protocol'}`}
+          message={
+            <div className="space-y-4">
+              {editTargetType === 'location' ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Lab Name</label>
+                    <input
+                      type="text"
+                      value={newLocationName}
+                      onChange={(e) => setNewLocationName(e.target.value)}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                      placeholder="Lab name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                    <input
+                      type="text"
+                      value={newLocationAddress}
+                      onChange={(e) => setNewLocationAddress(e.target.value)}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                      placeholder="Address (optional)"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Protocol Name</label>
+                    <input
+                      type="text"
+                      value={newProtocolName}
+                      onChange={(e) => setNewProtocolName(e.target.value)}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                      placeholder="Protocol name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <input
+                      type="text"
+                      value={newProtocolDescription}
+                      onChange={(e) => setNewProtocolDescription(e.target.value)}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                      placeholder="Description (optional)"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          }
+          confirmLabel="Save"
+          variant="default"
+          onConfirm={async () => {
+            try {
+              if (editTargetType === 'location') {
+                await updateLocationMutation.mutateAsync({
+                  id: editTargetId,
+                  location: { name: newLocationName, address: newLocationAddress || undefined },
+                });
+              } else {
+                await updateProtocolMutation.mutateAsync({
+                  id: editTargetId,
+                  protocol: { name: newProtocolName, description: newProtocolDescription || undefined },
+                });
+              }
+              setEditTargetId(null);
+              setNewLocationName('');
+              setNewLocationAddress('');
+              setNewProtocolName('');
+              setNewProtocolDescription('');
+            } catch (err) {
+              console.error('Failed to update:', err);
+            }
+          }}
+          onCancel={() => {
+            setEditTargetId(null);
+            setNewLocationName('');
+            setNewLocationAddress('');
+            setNewProtocolName('');
+            setNewProtocolDescription('');
+          }}
+        />
+      )}
+
+      {showAdminModal && adminModalType === 'bulk-reupload' && (
+        <ConfirmModal
+          title="Bulk Re-upload All Test Sessions"
+          message={
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                This will delete all test sessions with associated Excel files and re-upload them using the corrected parsing logic.
+              </p>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                <p className="text-sm text-yellow-800">
+                  <strong>Warning:</strong> This action will delete and recreate all test sessions that were created from Excel uploads.
+                </p>
+              </div>
+            </div>
+          }
+          confirmLabel="Re-upload All"
+          variant="danger"
+          onConfirm={handleBulkReupload}
+          onCancel={() => {
+            setShowAdminModal(false);
+          }}
+        />
+      )}
+
     </div>
   );
 }

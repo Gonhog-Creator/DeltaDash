@@ -1,18 +1,19 @@
 from pydantic import BaseModel
+from typing import Optional
 from datetime import datetime
 from uuid import UUID
 from decimal import Decimal
 
 
 class MaterialDocumentBase(BaseModel):
-    material_id: UUID | None = None
-    document_type: str | None = None
+    material_id: Optional[UUID] = None
+    document_type: Optional[str] = None
     original_filename: str
     stored_path: str
-    parsed_text: str | None = None
-    manufacturer_detected: str | None = None
-    extraction_confidence: Decimal | None = None
-    uploaded_by: UUID | None = None
+    parsed_text: Optional[str] = None
+    manufacturer_detected: Optional[str] = None
+    extraction_confidence: Optional[Decimal] = None
+    uploaded_by: Optional[UUID] = None
 
 
 class MaterialDocumentCreate(MaterialDocumentBase):

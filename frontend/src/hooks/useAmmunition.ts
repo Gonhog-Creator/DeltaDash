@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ammunitionApi, Ammunition, AmmunitionCreate, AmmunitionUpdate } from '../api/ammunition';
+import { ammunitionApi, AmmunitionCreate, AmmunitionUpdate } from '../api/ammunition';
 
 export function useAmmunition(params?: { skip?: number; limit?: number; caliber?: string }) {
   return useQuery({

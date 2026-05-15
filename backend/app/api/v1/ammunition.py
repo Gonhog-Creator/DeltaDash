@@ -1,28 +1,29 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-
 from app.db.session import get_db
-from app.db.models import Ammunition
-from app.api.v1.auth import get_current_active_user
-from app.schemas.user import User
+from app.db.models import Ammunition as AmmunitionModel
+from app.api.v1.auth import get_current_active_user, require_admin
 from app.schemas.ammunition import AmmunitionCreate, AmmunitionUpdate, Ammunition, AmmunitionListItem
+from app.db.models.user import User as UserModel
 
-router = APIRouter()
+
+
+router = APIRouter(redirect_slashes=False)
 
 
 @router.get("/", response_model=List[AmmunitionListItem])
 def list_ammunition(
     skip: int = 0,
     limit: int = 100,
-    caliber: str | None = None,
+    caliber: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
-    query = db.query(Ammunition)
+    query = db.query(AmmunitionModel)
     
     if caliber:
-        query = query.filter(Ammunition.caliber == caliber)
+        query = query.filter(AmmunitionModel.caliber == caliber)
     
     ammunition = query.offset(skip).limit(limit).all()
     return ammunition
@@ -32,9 +33,9 @@ def list_ammunition(
 def create_ammunition(
     ammunition: AmmunitionCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_admin)
 ):
-    db_ammunition = Ammunition(**ammunition.model_dump())
+    db_ammunition = AmmunitionModel(**ammunition.model_dump())
     db.add(db_ammunition)
     db.commit()
     db.refresh(db_ammunition)
@@ -45,9 +46,9 @@ def create_ammunition(
 def get_ammunition(
     ammunition_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(get_current_active_user)
 ):
-    ammunition = db.query(Ammunition).filter(Ammunition.id == ammunition_id).first()
+    ammunition = db.query(AmmunitionModel).filter(AmmunitionModel.id == ammunition_id).first()
     if not ammunition:
         raise HTTPException(status_code=404, detail="Ammunition not found")
     return ammunition
@@ -58,9 +59,9 @@ def update_ammunition(
     ammunition_id: str,
     ammunition_update: AmmunitionUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_admin)
 ):
-    ammunition = db.query(Ammunition).filter(Ammunition.id == ammunition_id).first()
+    ammunition = db.query(AmmunitionModel).filter(AmmunitionModel.id == ammunition_id).first()
     if not ammunition:
         raise HTTPException(status_code=404, detail="Ammunition not found")
     
@@ -77,9 +78,9 @@ def update_ammunition(
 def delete_ammunition(
     ammunition_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_admin)
 ):
-    ammunition = db.query(Ammunition).filter(Ammunition.id == ammunition_id).first()
+    ammunition = db.query(AmmunitionModel).filter(AmmunitionModel.id == ammunition_id).first()
     if not ammunition:
         raise HTTPException(status_code=404, detail="Ammunition not found")
     

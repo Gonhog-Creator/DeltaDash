@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Optional
 from datetime import datetime, date
 from uuid import UUID
 from decimal import Decimal
@@ -6,15 +7,19 @@ from decimal import Decimal
 
 class TestSessionBase(BaseModel):
     name: str
-    test_date: date | None = None
-    lab_name: str | None = None
-    operator: str | None = None
-    protocol: str | None = None
-    clay_temperature_c: Decimal | None = None
-    ambient_temperature_c: Decimal | None = None
-    humidity_percent: Decimal | None = None
-    conditioning: str | None = None
-    notes: str | None = None
+    test_date: Optional[date] = None
+    lab_name: Optional[str] = None
+    operator: Optional[str] = None
+    protocol: Optional[str] = None
+    clay_temperature_c: Optional[Decimal] = None
+    ambient_temperature_c: Optional[Decimal] = None
+    humidity_percent: Optional[Decimal] = None
+    conditioning: Optional[str] = None
+    size: Optional[str] = None
+    ballistic_limit: Optional[bool] = None
+    parent_test_group_id: Optional[UUID] = None
+    excel_file_path: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class TestSessionCreate(TestSessionBase):
@@ -22,16 +27,20 @@ class TestSessionCreate(TestSessionBase):
 
 
 class TestSessionUpdate(BaseModel):
-    name: str | None = None
-    test_date: date | None = None
-    lab_name: str | None = None
-    operator: str | None = None
-    protocol: str | None = None
-    clay_temperature_c: Decimal | None = None
-    ambient_temperature_c: Decimal | None = None
-    humidity_percent: Decimal | None = None
-    conditioning: str | None = None
-    notes: str | None = None
+    name: Optional[str] = None
+    test_date: Optional[date] = None
+    lab_name: Optional[str] = None
+    operator: Optional[str] = None
+    protocol: Optional[str] = None
+    clay_temperature_c: Optional[Decimal] = None
+    ambient_temperature_c: Optional[Decimal] = None
+    humidity_percent: Optional[Decimal] = None
+    conditioning: Optional[str] = None
+    size: Optional[str] = None
+    ballistic_limit: Optional[bool] = None
+    parent_test_group_id: Optional[UUID] = None
+    excel_file_path: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class TestSessionInDB(TestSessionBase):
