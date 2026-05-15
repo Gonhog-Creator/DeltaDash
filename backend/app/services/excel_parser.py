@@ -1,5 +1,5 @@
 from openpyxl import load_workbook
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Union
 from decimal import Decimal
 from pathlib import Path
 import re
@@ -15,8 +15,13 @@ class ExcelParser:
         self.workbook = load_workbook(file_path, data_only=True)
         self.sheet = self.workbook.active
 
-    def parse(self) -> Tuple[List[Dict], Optional[float], Optional[float]]:
-        """Try to parse Excel with auto-detection of format"""
+    def parse(self) -> Union[Tuple[List[Dict], Optional[float], Optional[float]], Dict[str, Tuple[List[Dict], Optional[float], Optional[float]]]]:
+        """Try to parse Excel with auto-detection of format
+        
+        Returns:
+            For single-sheet files: (data, temperature, humidity)
+            For multi-sheet files: {sheet_name: (data, temperature, humidity)}
+        """
         # Try multi-sheet parsing first (for files like STOP FORCE HG II)
         if len(self.workbook.sheetnames) > 1:
             try:
@@ -223,11 +228,13 @@ class ExcelParser:
         
         return tests
 
-    def _parse_multi_sheet(self) -> Tuple[List[Dict], Optional[float], Optional[float]]:
-        """Parse multi-sheet Excel files (e.g., STOP FORCE HG II, Formulario de Ensayos Internos)"""
-        all_data = []
-        temperature = 22.0
-        humidity = 50.0
+    def _parse_multi_sheet(self) -> Dict[str, List[Tuple[List[Dict], Optional[float], Optional[float], str]]]:
+        """Parse multi-sheet Excel files (e.g., STOP FORCE HG II, Formulario de Ensayos Internos)
+        
+        Returns:
+            Dict mapping sheet_name to list of (data, temperature, humidity, series_identifier) for each series in the sheet
+        """
+        sheets_data = {}
         
         # Skip non-certification sheets (like "Ensayo C" for COMPOLITE testing, "Punzocortante")
         skip_sheets = ['Ensayo C', 'Probetas', 'COMPOLITE', 'Punzocortante', 'Puntas y cuchillas']
@@ -235,6 +242,7 @@ class ExcelParser:
         # Detect if this is a Formulario file by filename
         is_formulario_file = 'formulario' in self.file_path.lower()
         
+        # Parse all sheets (for files with different sizes on different sheets like MDS files)
         for sheet_name in self.workbook.sheetnames:
             if any(skip_word in sheet_name.upper() for skip_word in skip_sheets):
                 continue
@@ -247,19 +255,54 @@ class ExcelParser:
                 else:
                     sheet_data, sheet_temp, sheet_humidity = self._parse_fie_format()
                 
-                all_data.extend(sheet_data)
-                # Use temperature/humidity from first valid sheet
-                if temperature == 22.0 and sheet_temp:
-                    temperature = sheet_temp
-                if humidity == 50.0 and sheet_humidity:
-                    humidity = sheet_humidity
+                # For MDS-style files with multiple series, split data by series
+                # Check if we have multiple series by looking for "SERIE N°X" pattern in vest_number
+                series_data = []
+                current_series_data = []
+                current_series_id = None
+                current_conditioning = None
+                
+                for row in sheet_data:
+                    if row.get('vest_number') and 'SERIE' in str(row['vest_number']).upper():
+                        # Save previous series data if exists
+                        if current_series_data:
+                            series_data.append((current_series_data, sheet_temp, sheet_humidity, current_series_id, current_conditioning))
+                        # Start new series
+                        current_series_id = str(row['vest_number'])
+                        current_series_data = [row]
+                        # Parse conditioning from series_id
+                        series_id_upper = str(row['vest_number']).upper()
+                        if 'SECO' in series_id_upper or 'AMBIENT' in series_id_upper or 'DRY' in series_id_upper:
+                            current_conditioning = 'ambient'
+                        elif 'HUMEDO' in series_id_upper or 'WET' in series_id_upper:
+                            current_conditioning = 'wet'
+                        elif 'TUMBLED' in series_id_upper or 'TAMBALEADO' in series_id_upper or 'GIRADO' in series_id_upper:
+                            current_conditioning = 'tumbled'
+                        elif 'LIM BALISTICO' in series_id_upper or 'LIMITE BALISTICO' in series_id_upper or 'LIM BALÍSTICO' in series_id_upper or 'LIMITE BALÍSTICO' in series_id_upper:
+                            current_conditioning = 'ballistic_limit'
+                        else:
+                            current_conditioning = None
+                    else:
+                        # Add to current series
+                        current_series_data.append(row)
+                
+                # Don't forget the last series
+                if current_series_data:
+                    series_data.append((current_series_data, sheet_temp, sheet_humidity, current_series_id, current_conditioning))
+                
+                # If no series markers found, treat entire sheet as one series
+                if not series_data and sheet_data:
+                    series_data.append((sheet_data, sheet_temp, sheet_humidity, sheet_name, None))
+                
+                if series_data:
+                    sheets_data[sheet_name] = series_data
             except ExcelParseError:
                 continue
         
-        if not all_data:
+        if not sheets_data:
             raise ExcelParseError("No valid data found in any sheet")
         
-        return all_data, temperature, humidity
+        return sheets_data
 
     def _parse_fie_format(self) -> Tuple[List[Dict], Optional[float], Optional[float]]:
         """Parse FIE format (MDS II, III, LIGHT II, STOP FORCE)"""
@@ -321,17 +364,22 @@ class ExcelParser:
             trauma_qualitative = None
             if trauma_mm:
                 trauma_str = str(trauma_mm).strip()
-                # Remove arrows and other special characters
-                trauma_clean = re.sub(r'[↑↓←→↔]', '', trauma_str)
-                if trauma_clean.replace('.', '', 1).replace(',', '', 1).isdigit():
-                    # Handle both decimal separators
-                    trauma_clean = trauma_clean.replace(',', '.')
-                    try:
-                        trauma_numeric = Decimal(trauma_clean)
-                    except:
-                        pass
-                elif trauma_clean.upper() in ['OK', 'PERFORO', 'PERFORACIÓN', 'PUNCTURED']:
-                    trauma_qualitative = trauma_clean.upper()
+                # Skip "-" values (no trauma measurement) - these are typically back side shots
+                if trauma_str == '-' or trauma_str.lower() in ['none', 'n/a', '']:
+                    # Skip this row entirely if it has no trauma data
+                    continue
+                else:
+                    # Remove arrows and other special characters
+                    trauma_clean = re.sub(r'[↑↓←→↔]', '', trauma_str)
+                    if trauma_clean.replace('.', '', 1).replace(',', '', 1).isdigit():
+                        # Handle both decimal separators
+                        trauma_clean = trauma_clean.replace(',', '.')
+                        try:
+                            trauma_numeric = Decimal(trauma_clean)
+                        except:
+                            pass
+                    elif trauma_clean.upper() in ['OK', 'PERFORO', 'PERFORACIÓN', 'PUNCTURED']:
+                        trauma_qualitative = trauma_clean.upper()
             
             data.append({
                 'row': row,
@@ -428,20 +476,32 @@ class ExcelParser:
         }
         
         # Try to detect actual column positions from headers
+        # Track if we've found the preferred trauma column
+        found_trauma = False
+        found_velocity = False
+        
         for col in range(1, min(11, self.sheet.max_column + 1)):
             cell_value = self.sheet.cell(row=header_row, column=col).value
             if cell_value:
                 cell_str = str(cell_value).lower()
                 if 'disparo' in cell_str or 'shot' in cell_str:
-                    mapping['shot_number'] = col
+                    if mapping['shot_number'] == 3:  # Only override default
+                        mapping['shot_number'] = col
                 elif 'nivel' in cell_str:
-                    mapping['protection_level'] = col
+                    if mapping['protection_level'] == 4:  # Only override default
+                        mapping['protection_level'] = col
                 elif 'calibre' in cell_str or 'caliber' in cell_str:
-                    mapping['caliber'] = col
-                elif 'trauma' in cell_str:
+                    if mapping['caliber'] == 5:  # Only override default
+                        mapping['caliber'] = col
+                elif 'trauma' in cell_str and not found_trauma:
+                    # Prefer "Trauma (mm)" over "Trauma Promedio" etc.
+                    # Only set if we haven't found a trauma column yet
                     mapping['trauma'] = col
-                elif 'velocidad' in cell_str or 'vo' in cell_str or 'velocity' in cell_str:
-                    mapping['velocity'] = col
+                    found_trauma = True
+                elif ('velocidad' in cell_str or 'vo' in cell_str or 'velocity' in cell_str) and not found_velocity:
+                    if mapping['velocity'] == 7:  # Only override default
+                        mapping['velocity'] = col
+                        found_velocity = True
         
         return mapping
 
@@ -510,6 +570,10 @@ class ExcelParser:
             trauma_numeric = None
             if trauma_mm:
                 trauma_str = str(trauma_mm).strip()
+                # Skip "-" values (no trauma measurement)
+                if trauma_str == '-' or trauma_str.lower() in ['none', 'n/a', '']:
+                    # Skip this row entirely if it has no trauma data
+                    continue
                 # Remove arrows and special characters
                 trauma_clean = re.sub(r'[↑↓←→↔/]', ' ', trauma_str)
                 # Handle ranges - take first value
@@ -639,7 +703,14 @@ class ExcelParser:
             trauma_numeric = None
             trauma_qualitative = None
             if trauma_mm:
-                trauma_str = str(trauma_mm)
+                trauma_str = str(trauma_mm).strip()
+                # Skip "-" values (no trauma measurement)
+                if trauma_str == '-' or trauma_str.lower() in ['none', 'n/a', '']:
+                    # Skip this row entirely if it has no trauma data
+                    continue
+                # Skip "Average" rows
+                if trauma_str.lower() == 'average' or trauma_str.lower() == 'promedio':
+                    continue
                 if trauma_str.replace('.', '', 1).isdigit():
                     trauma_numeric = Decimal(trauma_str)
                 else:

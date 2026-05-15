@@ -59,12 +59,12 @@ def create_material(
         'created_by_username': current_user.username,
     }
 
-    os.makedirs(settings.MATERIAL_DOCS_DIR, exist_ok=True)
+    os.makedirs(settings.material_docs_dir, exist_ok=True)
 
     if mss_file:
         file_ext = Path(mss_file.filename).suffix
         unique_filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join(settings.MATERIAL_DOCS_DIR, unique_filename)
+        file_path = os.path.join(settings.material_docs_dir, unique_filename)
         with open(file_path, 'wb') as f:
             f.write(mss_file.file.read())
         material_data['mss_file_path'] = unique_filename
@@ -72,7 +72,7 @@ def create_material(
     if sds_file:
         file_ext = Path(sds_file.filename).suffix
         unique_filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join(settings.MATERIAL_DOCS_DIR, unique_filename)
+        file_path = os.path.join(settings.material_docs_dir, unique_filename)
         with open(file_path, 'wb') as f:
             f.write(sds_file.file.read())
         material_data['sds_file_path'] = unique_filename
@@ -142,12 +142,12 @@ def upload_material_file(
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
 
-    os.makedirs(settings.MATERIAL_DOCS_DIR, exist_ok=True)
+    os.makedirs(settings.material_docs_dir, exist_ok=True)
 
     if mss_file:
         file_ext = Path(mss_file.filename).suffix
         unique_filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join(settings.MATERIAL_DOCS_DIR, unique_filename)
+        file_path = os.path.join(settings.material_docs_dir, unique_filename)
         with open(file_path, 'wb') as f:
             f.write(mss_file.file.read())
         material.mss_file_path = unique_filename
@@ -155,7 +155,7 @@ def upload_material_file(
     if sds_file:
         file_ext = Path(sds_file.filename).suffix
         unique_filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join(settings.MATERIAL_DOCS_DIR, unique_filename)
+        file_path = os.path.join(settings.material_docs_dir, unique_filename)
         with open(file_path, 'wb') as f:
             f.write(sds_file.file.read())
         material.sds_file_path = unique_filename
@@ -186,7 +186,7 @@ def download_material_file(
     if not file_path:
         raise HTTPException(status_code=404, detail="File not found")
     
-    full_path = os.path.join(settings.MATERIAL_DOCS_DIR, file_path)
+    full_path = os.path.join(settings.material_docs_dir, file_path)
     if not os.path.exists(full_path):
         raise HTTPException(status_code=404, detail="File not found on disk")
     

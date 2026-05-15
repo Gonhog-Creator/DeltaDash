@@ -55,10 +55,10 @@ def create_test_session_from_excel(
     current_user: UserModel = Depends(get_current_active_user)
 ):
     # Save Excel file
-    os.makedirs(settings.MATERIAL_DOCS_DIR, exist_ok=True)
+    os.makedirs(settings.material_docs_dir, exist_ok=True)
     file_ext = Path(excel_file.filename).suffix
     unique_filename = f"{uuid.uuid4()}{file_ext}"
-    file_path = os.path.join(settings.MATERIAL_DOCS_DIR, unique_filename)
+    file_path = os.path.join(settings.material_docs_dir, unique_filename)
     with open(file_path, 'wb') as f:
         f.write(excel_file.file.read())
     
@@ -69,20 +69,19 @@ def create_test_session_from_excel(
         location = db.query(LocationModel).filter(LocationModel.id == location_id).first()
         location_name = location.name if location else None
     
-    # Get temperature and humidity for service call
-    parser = ExcelParser(file_path)
-    _, temperature, humidity = parser.parse()
-    
+    # Parse the Excel file - service will handle multi-sheet vs single-sheet
+    # No need to extract temperature/humidity here - the service handles it
     return create_sessions_from_excel_data(
         db=db,
-        excel_file_path=unique_filename,
+        excel_file_path=file_path,  # Pass full path since file was just saved
         test_name=test_name,
         location_name=location_name,
         operator=None,
         protocol=protocol,
         test_date=test_date,
-        temperature=temperature,
-        humidity=humidity,
+        temperature=None,  # Service will extract from parsed data
+        humidity=None,    # Service will extract from parsed data
+        is_full_path=True,
     )
 
 
@@ -180,10 +179,10 @@ def upload_excel_to_test_session(
         raise HTTPException(status_code=404, detail="Test session not found")
     
     # Save Excel file
-    os.makedirs(settings.MATERIAL_DOCS_DIR, exist_ok=True)
+    os.makedirs(settings.material_docs_dir, exist_ok=True)
     file_ext = Path(excel_file.filename).suffix
     unique_filename = f"{uuid.uuid4()}{file_ext}"
-    file_path = os.path.join(settings.MATERIAL_DOCS_DIR, unique_filename)
+    file_path = os.path.join(settings.material_docs_dir, unique_filename)
     with open(file_path, 'wb') as f:
         f.write(excel_file.file.read())
     
@@ -243,7 +242,7 @@ def bulk_reupload_all_test_sessions(
         if excel_file_path.startswith('./'):
             original_file_path = excel_file_path
         else:
-            original_file_path = os.path.join(settings.MATERIAL_DOCS_DIR, excel_file_path)
+            original_file_path = os.path.join(settings.material_docs_dir, excel_file_path)
         
         if not os.path.exists(original_file_path):
             print(f"Excel file not found for {parent_session.name}: {excel_file_path}")
@@ -260,13 +259,7 @@ def bulk_reupload_all_test_sessions(
         db.commit()
         
         # Re-upload the Excel file
-        try:
-            parser = ExcelParser(original_file_path)
-            _, temperature, humidity = parser.parse()
-        except ExcelParseError as e:
-            print(f"Failed to parse Excel for {parent_session.name}: {str(e)}")
-            continue
-        
+        # Note: Service now handles multi-sheet parsing internally
         # Get location name if lab_name is provided
         location_name = parent_session.lab_name
         
@@ -278,8 +271,8 @@ def bulk_reupload_all_test_sessions(
             operator=parent_session.operator,
             protocol=parent_session.protocol,
             test_date=parent_session.test_date,
-            temperature=temperature,
-            humidity=humidity,
+            temperature=None,  # Service will extract from parsed data
+            humidity=None,    # Service will extract from parsed data
             is_full_path=True,
         )
         all_created_sessions.extend(created_sessions)

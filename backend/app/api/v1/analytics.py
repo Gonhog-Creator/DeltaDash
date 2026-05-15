@@ -1,12 +1,14 @@
 from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.db.session import get_db
 from app.db.models import ShotData as ShotDataModel, TestSession as TestSessionModel, Ammunition as AmmunitionModel
 from app.api.v1.auth import get_current_active_user
 from app.schemas.analytics import AnalyticsData, AnalyticsPoint
 from app.db.models.user import User as UserModel
+from app.utils.equations import grams_to_kg, grains_to_kg, calculate_kinetic_energy
 
 
 router = APIRouter(redirect_slashes=False)
@@ -23,26 +25,28 @@ def get_velocity_vs_bfd(
     Queries ShotData table where test session library data is stored.
     """
     # Query shot data with test session names and ammunition data
+    # Join on normalized caliber (remove spaces, lowercase) to handle variations
     shot_data = db.query(ShotDataModel, TestSessionModel, AmmunitionModel).join(
         TestSessionModel, ShotDataModel.test_session_id == TestSessionModel.id, isouter=True
     ).join(
-        AmmunitionModel, ShotDataModel.caliber == AmmunitionModel.caliber, isouter=True
+        AmmunitionModel, 
+        func.lower(func.replace(ShotDataModel.caliber, ' ', '')) == func.lower(func.replace(AmmunitionModel.caliber, ' ', '')),
+        isouter=True
     ).all()
     
     points = []
     for shot, test_session, ammunition in shot_data:
-        # Calculate bullet energy: E = 0.5 * m * v^2
-        # Use actual bullet mass from ammunition data (in grams, convert to kg)
+        # Convert bullet mass to kg using centralized equations
         bullet_mass_kg = None
         if ammunition and ammunition.projectile_mass_grams:
-            bullet_mass_kg = float(ammunition.projectile_mass_grams) / 1000  # Convert grams to kg
+            bullet_mass_kg = grams_to_kg(float(ammunition.projectile_mass_grams))
         elif ammunition and ammunition.projectile_mass_grains:
-            bullet_mass_kg = float(ammunition.projectile_mass_grains) * 0.06479891  # Convert grains to kg
+            bullet_mass_kg = grains_to_kg(float(ammunition.projectile_mass_grains))
         else:
             bullet_mass_kg = 0.010  # Fallback to 10g if no ammunition data
         
         velocity = float(shot.velocity_m_s) if shot.velocity_m_s else 0
-        bullet_energy = 0.5 * bullet_mass_kg * (velocity ** 2) if velocity else None
+        bullet_energy = calculate_kinetic_energy(bullet_mass_kg, velocity)
         
         angle_degrees_value = float(shot.angle_degrees) if shot.angle_degrees is not None else None
         

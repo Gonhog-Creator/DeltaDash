@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Plot from 'react-plotly.js';
 import { apiClient } from '../api/client';
+import { useAuth } from '../hooks/useAuth';
 
 interface AnalyticsPoint {
   velocity: number | null;
@@ -40,6 +41,7 @@ const COLOR_GROUPING_OPTIONS: { value: ColorGroupingOption; label: string; type:
 ];
 
 export function Analytics() {
+  const { isAdmin } = useAuth();
   const { data: analyticsData, isLoading, error } = useQuery<AnalyticsData>({
     queryKey: ['analytics', 'velocity-vs-bfd'],
     queryFn: () => apiClient.get<AnalyticsData>('/api/v1/analytics/velocity-vs-bfd'),
@@ -401,7 +403,7 @@ export function Analytics() {
                               },
                             },
                             text: filteredPoints.map(p => 
-                              `Caliber: ${p.caliber || 'N/A'}<br>Velocity: ${p.velocity?.toFixed(2) || 'N/A'} m/s<br>BFD: ${p.bfd_mm?.toFixed(2) || 'N/A'} mm<br>Bullet Energy: ${p.bullet_energy?.toFixed(2) || 'N/A'} J`
+                              `Test Session: ${p.test_session_name || p.test_session_id || 'N/A'}<br>Shot: ${p.shot_number || 'N/A'}<br>Vest: ${p.vest_number || 'N/A'}<br>Side: ${p.side ? p.side.charAt(0).toUpperCase() + p.side.slice(1) : 'N/A'}${p.angle_degrees ? ` (${p.angle_degrees}°)` : ''}<br>Caliber: ${p.caliber || 'N/A'}<br>Protection Level: ${p.protection_level || 'N/A'}<br>Velocity: ${p.velocity?.toFixed(2) || 'N/A'} m/s<br>BFD: ${p.bfd_mm?.toFixed(2) || 'N/A'} mm<br>Bullet Energy: ${p.bullet_energy?.toFixed(2) || 'N/A'} J`
                             ),
                             hoverinfo: 'text+x+y',
                             name: 'Shots',
@@ -443,6 +445,23 @@ export function Analytics() {
               </div>
             )}
           </div>
+
+          {isAdmin && (
+            <div className="bg-gray-50 rounded-lg shadow p-4 border border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Debug Info</h3>
+              <div className="text-xs text-gray-600 space-y-1">
+                <p>Total points in dataset: {analyticsData?.points.length || 0}</p>
+                <p>Filtered points displayed: {filteredPoints.length}</p>
+                <p>Points filtered by caliber: {analyticsData?.points.filter(p => selectedCalibers.length > 0 && (!p.caliber || !selectedCalibers.includes(p.caliber))).length || 0}</p>
+                <p>Points filtered by protection level: {analyticsData?.points.filter(p => selectedProtectionLevels.length > 0 && (!p.protection_level || !selectedProtectionLevels.includes(p.protection_level))).length || 0}</p>
+                <p>Points filtered (no BFD): {analyticsData?.points.filter(p => xAxis !== 'ballistic_limit' && p.bfd_mm === null).length || 0}</p>
+                <p>Unique calibers: {uniqueCalibers.length}</p>
+                <p>Unique protection levels: {uniqueProtectionLevels.length}</p>
+                <p>Active caliber filters: {selectedCalibers.length > 0 ? selectedCalibers.join(', ') : 'None'}</p>
+                <p>Active protection level filters: {selectedProtectionLevels.length > 0 ? selectedProtectionLevels.join(', ') : 'None'}</p>
+              </div>
+            </div>
+          )}
         </div>
       ) : activeTab === 'energy-bfd' ? (
         <div className="bg-white rounded-lg shadow p-6">
@@ -474,7 +493,7 @@ export function Analytics() {
                       },
                     },
                     text: analyticsData.points.map(p => 
-                      `Caliber: ${p.caliber || 'N/A'}<br>Bullet Energy: ${p.bullet_energy?.toFixed(2) || 'N/A'} J<br>BFD: ${p.bfd_mm?.toFixed(2) || 'N/A'} mm`
+                      `Test Session: ${p.test_session_name || p.test_session_id || 'N/A'}<br>Shot: ${p.shot_number || 'N/A'}<br>Vest: ${p.vest_number || 'N/A'}<br>Side: ${p.side ? p.side.charAt(0).toUpperCase() + p.side.slice(1) : 'N/A'}${p.angle_degrees ? ` (${p.angle_degrees}°)` : ''}<br>Caliber: ${p.caliber || 'N/A'}<br>Protection Level: ${p.protection_level || 'N/A'}<br>Bullet Energy: ${p.bullet_energy?.toFixed(2) || 'N/A'} J<br>BFD: ${p.bfd_mm?.toFixed(2) || 'N/A'} mm`
                     ),
                     hoverinfo: 'text+x+y',
                     name: 'Shots',
@@ -514,6 +533,17 @@ export function Analytics() {
               <div className="text-gray-500">No data available</div>
             </div>
           )}
+
+          {isAdmin && (
+            <div className="bg-gray-50 rounded-lg shadow p-4 border border-gray-200 mt-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Debug Info</h3>
+              <div className="text-xs text-gray-600 space-y-1">
+                <p>Total points in dataset: {analyticsData?.points.length || 0}</p>
+                <p>Points with bullet energy: {analyticsData?.points.filter(p => p.bullet_energy !== null).length || 0}</p>
+                <p>Points with BFD: {analyticsData?.points.filter(p => p.bfd_mm !== null).length || 0}</p>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-lg shadow p-6">
@@ -545,7 +575,7 @@ export function Analytics() {
                       },
                     },
                     text: analyticsData.points.map(p => 
-                      `Caliber: ${p.caliber || 'N/A'}<br>Velocity: ${p.velocity?.toFixed(2) || 'N/A'} m/s<br>BFD: ${p.bfd_mm?.toFixed(2) || 'N/A'} mm`
+                      `Test Session: ${p.test_session_name || p.test_session_id || 'N/A'}<br>Shot: ${p.shot_number || 'N/A'}<br>Vest: ${p.vest_number || 'N/A'}<br>Side: ${p.side ? p.side.charAt(0).toUpperCase() + p.side.slice(1) : 'N/A'}${p.angle_degrees ? ` (${p.angle_degrees}°)` : ''}<br>Caliber: ${p.caliber || 'N/A'}<br>Protection Level: ${p.protection_level || 'N/A'}<br>Velocity: ${p.velocity?.toFixed(2) || 'N/A'} m/s<br>BFD: ${p.bfd_mm?.toFixed(2) || 'N/A'} mm`
                     ),
                     hoverinfo: 'text+x+y',
                     name: 'Shots',
@@ -583,6 +613,17 @@ export function Analytics() {
           ) : (
             <div className="flex items-center justify-center h-96">
               <div className="text-gray-500">No data available</div>
+            </div>
+          )}
+
+          {isAdmin && (
+            <div className="bg-gray-50 rounded-lg shadow p-4 border border-gray-200 mt-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Debug Info</h3>
+              <div className="text-xs text-gray-600 space-y-1">
+                <p>Total points in dataset: {analyticsData?.points.length || 0}</p>
+                <p>Points with velocity: {analyticsData?.points.filter(p => p.velocity !== null).length || 0}</p>
+                <p>Points with BFD: {analyticsData?.points.filter(p => p.bfd_mm !== null).length || 0}</p>
+              </div>
             </div>
           )}
         </div>
