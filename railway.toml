@@ -7,21 +7,54 @@ healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 
+# Railway volumes for persistent storage
 [volumes."/app/storage/material_docs"]
+[volumes."/app/storage/uploads"]
+[volumes."/app/storage/reports"]
+[volumes."/app/storage/model_artifacts"]
 
 # ---
-# Railway setup (do this in the Railway dashboard):
+# RAILWAY SETUP INSTRUCTIONS
 #
-# 1. New Project -> Deploy from GitHub repo
-# 2. Add a Postgres plugin (Railway injects DATABASE_URL automatically)
-# 3. Add a second service from the same repo for the frontend:
-#      - Root directory: frontend
-#      - Dockerfile path: frontend/Dockerfile
-# 4. Set environment variables on the backend service:
-#      SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
-#      CORS_ORIGINS=https://<your-frontend-railway-domain>
-#      APP_ENV=production
-#      USE_RAILWAY_STORAGE=true
-# 5. Set environment variables on the frontend service:
-#      VITE_API_URL=https://<your-backend-railway-domain>
+# Step 1: Create Project
+# - Go to Railway dashboard
+# - Click "New Project" -> "Deploy from GitHub repo"
+# - Select your DeltaDash repository
+#
+# Step 2: Add Postgres Database
+# - Click "New Service" -> Select "Postgres"
+# - Railway will automatically inject DATABASE_URL environment variable
+#
+# Step 3: Configure Backend Service (already created from repo)
+# - Go to your backend service settings
+# - Add these environment variables:
+#   * SECRET_KEY: Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+#   * CORS_ORIGINS: Set to your frontend URL (e.g., https://your-frontend.railway.app)
+#   * APP_ENV: production
+#   * USE_RAILWAY_STORAGE: true
+#
+# Step 4: Add Frontend Service
+# - Click "New Service" -> "Deploy from GitHub repo"
+# - Select the same repository
+# - In the service settings:
+#   * Root Directory: frontend
+#   * Dockerfile Path: frontend/Dockerfile
+#   * Build Args: VITE_API_URL=https://your-backend-service.railway.app
+# - Or add VITE_API_URL as environment variable (frontend Dockerfile will pick it up)
+#
+# Step 5: Connect Services
+# - Once both services are deployed, copy their URLs
+# - Update CORS_ORIGINS on backend with frontend URL
+# - Update VITE_API_URL on frontend with backend URL
+#
+# Step 6: Database Users
+# - Railway Postgres creates a default user automatically
+# - The DATABASE_URL includes all credentials (user, password, host, port, db)
+# - No manual user creation needed - Railway handles this
+# - Alembic migrations will run automatically via the startCommand
+#
+# Troubleshooting:
+# - If build fails: Check Railway logs for specific error
+# - If migrations fail: Ensure DATABASE_URL is set correctly by Railway
+# - If CORS errors: Verify CORS_ORIGINS matches your frontend URL exactly
 # ---

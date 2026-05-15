@@ -11,7 +11,7 @@ A private, always-on, React-based web application for storing ballistic test dat
 ### 1. Clone and Setup
 ```bash
 git clone <repository-url>
-cd DeltaTest
+cd DeltaDash
 ```
 
 ### 2. Environment Configuration
@@ -73,7 +73,7 @@ docker-compose exec backend python seed_data.py
 
 ## Project Structure
 ```
-DeltaTest/
+DeltaDash/
 ├── backend/                 # FastAPI Python backend
 │   ├── app/
 │   │   ├── api/v1/        # API endpoints

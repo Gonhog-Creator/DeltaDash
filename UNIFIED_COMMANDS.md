@@ -70,7 +70,7 @@ npm run stop      # Stop all development servers
 ## 📁 Project Structure
 
 ```
-DeltaTest/
+DeltaDash/
 ├── package.json          # ← Unified commands (run from here)
 ├── backend/              # FastAPI backend
 │   ├── app/
