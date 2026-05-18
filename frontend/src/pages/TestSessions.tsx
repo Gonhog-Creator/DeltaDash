@@ -5,6 +5,7 @@ import { useLocations, useDeleteLocation, useUpdateLocation } from '../hooks/use
 import { useProtocols, useDeleteProtocol, useUpdateProtocol } from '../hooks/useProtocols';
 import { useAuth } from '../hooks/useAuth';
 import { TestSession } from '../api/test_session';
+import { apiClient } from '../api/client';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { LocationManagementModal } from '../components/LocationManagementModal';
 import { ProtocolManagementModal } from '../components/ProtocolManagementModal';
@@ -123,10 +124,7 @@ export function TestSessions() {
 
   const handleBulkReupload = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/v1/test-sessions/admin/bulk-reupload-all', {
-        method: 'POST',
-        credentials: 'include',
-      });
+      const response = await apiClient.post('/api/v1/test-sessions/admin/bulk-reupload-all', {});
 
       if (!response.ok) {
         const error = await response.json();
@@ -217,6 +215,17 @@ export function TestSessions() {
               const children = groupedTests[parent.id] || [];
               const hasChildren = children.length > 0;
               const isExpanded = expandedGroups.has(parent.id);
+              
+              const sortedChildren = [...children].sort((a, b) => {
+                const extractTestNumber = (name: string, parentName: string) => {
+                  const suffix = name.replace(parentName + ' - ', '');
+                  const match = suffix.match(/^(\d+)/);
+                  return match ? parseInt(match[1], 10) : 0;
+                };
+                const numA = extractTestNumber(a.name, parent.name);
+                const numB = extractTestNumber(b.name, parent.name);
+                return numA - numB;
+              });
 
               return (
                 <Fragment key={parent.id}>
@@ -264,7 +273,7 @@ export function TestSessions() {
                       </button>
                     </td>
                   </tr>
-                  {isExpanded && hasChildren && children.map((child) => (
+                  {isExpanded && hasChildren && sortedChildren.map((child) => (
                     <tr key={child.id} className="bg-gray-50 hover:bg-gray-100">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 pl-12">
                         {child.name.replace(parent.name + ' - ', '')}
@@ -362,6 +371,22 @@ export function TestSessions() {
           message={
             <div className="space-y-4">
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Excel File</label>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setExcelFile(file);
+                    if (file && !testName) {
+                      const fileName = file.name.replace(/\.[^/.]+$/, '');
+                      setTestName(fileName);
+                    }
+                  }}
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Test Name</label>
                 <input
                   type="text"
@@ -408,15 +433,6 @@ export function TestSessions() {
                   value={testDate}
                   onChange={(e) => setTestDate(e.target.value)}
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Excel File</label>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={(e) => setExcelFile(e.target.files?.[0] || null)}
-                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
                 />
               </div>
             </div>

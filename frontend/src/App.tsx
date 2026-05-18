@@ -9,6 +9,7 @@ import { AmmunitionPage } from './pages/Ammunition'
 import { TestSessions } from './pages/TestSessions'
 import { TestSessionDetail } from './pages/TestSessionDetail'
 import { Analytics } from './pages/Analytics'
+import { Vests } from './pages/Vests'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,6 +37,7 @@ function App() {
                     <Route path="/ammunition" element={<AmmunitionPage />} />
                     <Route path="/test-sessions" element={<TestSessions />} />
                     <Route path="/test-sessions/:id" element={<TestSessionDetail />} />
+                    <Route path="/vests" element={<Vests />} />
                     <Route path="/analytics" element={<Analytics />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>

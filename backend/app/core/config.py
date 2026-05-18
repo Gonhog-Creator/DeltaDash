@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    CORS_ORIGINS: str = "http://localhost:5173"
+    CORS_ORIGINS: str = "http://localhost:5173,https://deltadash-production.up.railway.app"
     
     # Storage configuration
     USE_RAILWAY_STORAGE: bool = False  # Set to True to use Railway storage

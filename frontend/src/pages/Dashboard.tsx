@@ -3,6 +3,7 @@ import { useMaterials } from '../hooks/useMaterials';
 import { useShots } from '../hooks/useShots';
 import { usePanels } from '../hooks/usePanels';
 import { useEffect, useState } from 'react';
+import { apiClient } from '../api/client';
 
 export function Dashboard() {
   const { data: materials } = useMaterials();
@@ -13,11 +14,7 @@ export function Dashboard() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch('/api/v1/test-sessions/stats', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          },
-        });
+        const response = await apiClient.get<{ test_session_count: number; total_shots: number }>('/api/v1/test-sessions/stats');
         console.log('Stats response status:', response.status);
         if (response.ok) {
           const data = await response.json();

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import Plot from 'react-plotly.js';
 import { apiClient } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
@@ -12,6 +13,7 @@ interface AnalyticsPoint {
   protection_level: string | null;
   test_session_id: string | null;
   test_session_name: string | null;
+  parent_test_session_name: string | null;
   vest_number: string | null;
   side: string | null;
   shot_number: string | null;
@@ -24,7 +26,7 @@ interface AnalyticsData {
 }
 
 type AxisOption = 'velocity' | 'bullet_energy' | 'bfd_mm' | 'ballistic_limit';
-type ColorGroupingOption = 'test_session' | 'side' | 'shot_number' | 'result';
+type ColorGroupingOption = 'test_session' | 'side' | 'shot_number' | 'result' | 'protection_level';
 
 const AXIS_OPTIONS: { value: AxisOption; label: string }[] = [
   { value: 'velocity', label: 'Velocity (m/s)' },
@@ -38,9 +40,11 @@ const COLOR_GROUPING_OPTIONS: { value: ColorGroupingOption; label: string; type:
   { value: 'side', label: 'Side (Front/Back)', type: 'category' },
   { value: 'shot_number', label: 'Shot Number (Group)', type: 'category' },
   { value: 'result', label: 'Test Result (OK/Punctured)', type: 'category' },
+  { value: 'protection_level', label: 'Protection Level', type: 'category' },
 ];
 
 export function Analytics() {
+  const navigate = useNavigate();
   const { isAdmin } = useAuth();
   const { data: analyticsData, isLoading, error } = useQuery<AnalyticsData>({
     queryKey: ['analytics', 'velocity-vs-bfd'],
@@ -129,6 +133,8 @@ export function Analytics() {
         }
         // If it's some other value, treat as Unknown
         return 'Unknown';
+      case 'protection_level':
+        return point.protection_level || 'Unknown';
       default:
         return null;
     }
@@ -175,6 +181,14 @@ export function Analytics() {
 
     // For ballistic limit chart, only include ballistic limit tests (bfd_mm === null)
     if (xAxis === 'ballistic_limit' && p.bfd_mm !== null) {
+      return false;
+    }
+
+    // Filter out points with null values for selected axes
+    if (getAxisValue(p, xAxis) === null) {
+      return false;
+    }
+    if (getAxisValue(p, yAxis) === null) {
       return false;
     }
 
@@ -378,9 +392,27 @@ export function Analytics() {
                                 ? (groupName === 'OK' ? '#16a34a' : '#dc2626')
                                 : colors[index % colors.length],
                             },
-                            text: points.map(p => 
-                              `Caliber: ${p.caliber || 'N/A'}<br>Velocity: ${p.velocity?.toFixed(2) || 'N/A'} m/s<br>BFD: ${p.bfd_mm?.toFixed(2) || 'N/A'} mm<br>Bullet Energy: ${p.bullet_energy?.toFixed(2) || 'N/A'} J`
-                            ),
+                            text: points.map(p => {
+                              const sessionName = p.test_session_name || p.test_session_id || 'N/A';
+                              let parentFolder = p.parent_test_session_name;
+                              if (!parentFolder && sessionName.includes(' - ')) {
+                                const parts = sessionName.split(' - ');
+                                // If there are at least 3 parts and the first two parts are the same (e.g., "4 - 4 - S - Ambient"),
+                                // use just one of them as the parent indicator
+                                if (parts.length >= 3 && parts[0] === parts[1]) {
+                                  parentFolder = parts[0];
+                                } else if (parts.length >= 3) {
+                                  parentFolder = parts[0];
+                                } else {
+                                  parentFolder = parts[0];
+                                }
+                              }
+                              if (!parentFolder) {
+                                parentFolder = sessionName;
+                              }
+                              return `Test: ${parentFolder} - ${sessionName}<br>Caliber: ${p.caliber || 'N/A'}<br>Velocity: ${p.velocity?.toFixed(2) || 'N/A'} m/s<br>BFD: ${p.bfd_mm?.toFixed(2) || 'N/A'} mm<br>Bullet Energy: ${p.bullet_energy?.toFixed(2) || 'N/A'} J`;
+                            }),
+                            customdata: points.map(p => p.test_session_id),
                             hoverinfo: 'text+x+y',
                             name: groupName,
                             showlegend: true,
@@ -402,9 +434,19 @@ export function Analytics() {
                                 x: 1.02,
                               },
                             },
-                            text: filteredPoints.map(p => 
-                              `Test Session: ${p.test_session_name || p.test_session_id || 'N/A'}<br>Shot: ${p.shot_number || 'N/A'}<br>Vest: ${p.vest_number || 'N/A'}<br>Side: ${p.side ? p.side.charAt(0).toUpperCase() + p.side.slice(1) : 'N/A'}${p.angle_degrees ? ` (${p.angle_degrees}°)` : ''}<br>Caliber: ${p.caliber || 'N/A'}<br>Protection Level: ${p.protection_level || 'N/A'}<br>Velocity: ${p.velocity?.toFixed(2) || 'N/A'} m/s<br>BFD: ${p.bfd_mm?.toFixed(2) || 'N/A'} mm<br>Bullet Energy: ${p.bullet_energy?.toFixed(2) || 'N/A'} J`
-                            ),
+                            text: filteredPoints.map(p => {
+                              const sessionName = p.test_session_name || p.test_session_id || 'N/A';
+                              let parentFolder = p.parent_test_session_name;
+                              if (!parentFolder && sessionName.includes(' - ')) {
+                                const parts = sessionName.split(' - ');
+                                parentFolder = parts.length >= 3 ? parts[0] : parts[0];
+                              }
+                              if (!parentFolder) {
+                                parentFolder = sessionName;
+                              }
+                              return `Test: ${parentFolder} - ${sessionName}<br>Shot: ${p.shot_number || 'N/A'}<br>Vest: ${p.vest_number || 'N/A'}<br>Side: ${p.side ? p.side.charAt(0).toUpperCase() + p.side.slice(1) : 'N/A'}${p.angle_degrees ? ` (${p.angle_degrees}°)` : ''}<br>Caliber: ${p.caliber || 'N/A'}<br>Protection Level: ${p.protection_level || 'N/A'}<br>Velocity: ${p.velocity?.toFixed(2) || 'N/A'} m/s<br>BFD: ${p.bfd_mm?.toFixed(2) || 'N/A'} mm<br>Bullet Energy: ${p.bullet_energy?.toFixed(2) || 'N/A'} J`;
+                            }),
+                            customdata: filteredPoints.map(p => p.test_session_id),
                             hoverinfo: 'text+x+y',
                             name: 'Shots',
                           },
@@ -436,6 +478,14 @@ export function Analytics() {
                     modeBarButtonsToRemove: ['lasso2d', 'select2d'],
                     displaylogo: false,
                   }}
+                  onClick={(data: any) => {
+                    if (data.points && data.points.length > 0) {
+                      const testSessionId = data.points[0].customdata;
+                      if (testSessionId) {
+                        navigate(`/test-sessions/${testSessionId}`);
+                      }
+                    }
+                  }}
                   style={{ width: '100%', height: '100%' }}
                 />
               </div>
@@ -455,6 +505,8 @@ export function Analytics() {
                 <p>Points filtered by caliber: {analyticsData?.points.filter(p => selectedCalibers.length > 0 && (!p.caliber || !selectedCalibers.includes(p.caliber))).length || 0}</p>
                 <p>Points filtered by protection level: {analyticsData?.points.filter(p => selectedProtectionLevels.length > 0 && (!p.protection_level || !selectedProtectionLevels.includes(p.protection_level))).length || 0}</p>
                 <p>Points filtered (no BFD): {analyticsData?.points.filter(p => xAxis !== 'ballistic_limit' && p.bfd_mm === null).length || 0}</p>
+                <p>Points filtered (null x-axis): {analyticsData?.points.filter(p => getAxisValue(p, xAxis) === null).length || 0}</p>
+                <p>Points filtered (null y-axis): {analyticsData?.points.filter(p => getAxisValue(p, yAxis) === null).length || 0}</p>
                 <p>Unique calibers: {uniqueCalibers.length}</p>
                 <p>Unique protection levels: {uniqueProtectionLevels.length}</p>
                 <p>Active caliber filters: {selectedCalibers.length > 0 ? selectedCalibers.join(', ') : 'None'}</p>

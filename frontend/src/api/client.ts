@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = 'https://deltadash-backend-production.up.railway.app';
 
 class ApiClient {
   private baseUrl: string;
@@ -7,10 +7,92 @@ class ApiClient {
     this.baseUrl = baseUrl;
   }
 
+  private async getMockData<T>(endpoint: string, options: RequestInit): Promise<T> {
+    // Simulate network delay
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Return mock data based on endpoint
+    if (endpoint.includes('/auth/me')) {
+      return {
+        id: '1',
+        username: 'admin',
+        email: 'admin@example.com',
+        full_name: 'Admin User',
+        role: 'admin',
+        is_active: true,
+        is_admin: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as T;
+    }
+
+    if (endpoint.includes('/test-sessions')) {
+      if (endpoint.includes('/stats')) {
+        return { test_session_count: 0, total_shots: 0 } as T;
+      }
+      return [] as T;
+    }
+
+    if (endpoint.includes('/materials')) {
+      return [] as T;
+    }
+
+    if (endpoint.includes('/vests')) {
+      return [] as T;
+    }
+
+    if (endpoint.includes('/ammunition')) {
+      return [] as T;
+    }
+
+    if (endpoint.includes('/panels')) {
+      return [] as T;
+    }
+
+    if (endpoint.includes('/shots')) {
+      return [] as T;
+    }
+
+    if (endpoint.includes('/shot-patterns')) {
+      return [] as T;
+    }
+
+    if (endpoint.includes('/analytics')) {
+      return {
+        points: [],
+      } as T;
+    }
+
+    if (endpoint.includes('/logout')) {
+      localStorage.removeItem('token');
+      return { message: 'Logged out successfully' } as T;
+    }
+
+    if (endpoint.includes('/locations')) {
+      return [] as T;
+    }
+
+    if (endpoint.includes('/protocols')) {
+      return [] as T;
+    }
+
+    if (endpoint.includes('/shot-data')) {
+      return [] as T;
+    }
+
+    // Default empty response
+    return {} as T;
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
+    // Development bypass: return mock data for all API calls in dev mode
+    if (import.meta.env.DEV) {
+      return this.getMockData<T>(endpoint, options);
+    }
+
     const url = `${this.baseUrl}${endpoint}`;
     const token = localStorage.getItem('token');
     const isFormData = options.body instanceof FormData;

@@ -21,6 +21,8 @@ from app.db.models import (  # noqa: F401, F403
     Shot,
     ArmorPanel,
     ArmorPanelLayer,
+    Vest,
+    VestLayer,
     ShotPattern,
     ShotPatternPosition,
     AuditLog,

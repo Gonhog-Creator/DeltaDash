@@ -10,6 +10,10 @@ from app.schemas.analytics import AnalyticsData, AnalyticsPoint
 from app.db.models.user import User as UserModel
 from app.utils.equations import grams_to_kg, grains_to_kg, calculate_kinetic_energy
 
+# Create a self-join alias for parent test session
+from sqlalchemy.orm import aliased
+ParentTestSession = aliased(TestSessionModel)
+
 
 router = APIRouter(redirect_slashes=False)
 
@@ -26,16 +30,17 @@ def get_velocity_vs_bfd(
     """
     # Query shot data with test session names and ammunition data
     # Join on normalized caliber (remove spaces, lowercase) to handle variations
-    shot_data = db.query(ShotDataModel, TestSessionModel, AmmunitionModel).join(
-        TestSessionModel, ShotDataModel.test_session_id == TestSessionModel.id, isouter=True
-    ).join(
-        AmmunitionModel, 
-        func.lower(func.replace(ShotDataModel.caliber, ' ', '')) == func.lower(func.replace(AmmunitionModel.caliber, ' ', '')),
-        isouter=True
+    shot_data = db.query(ShotDataModel, TestSessionModel, AmmunitionModel, ParentTestSession).outerjoin(
+        TestSessionModel, ShotDataModel.test_session_id == TestSessionModel.id
+    ).outerjoin(
+        ParentTestSession, TestSessionModel.parent_test_group_id == ParentTestSession.id
+    ).outerjoin(
+        AmmunitionModel,
+        func.lower(func.replace(ShotDataModel.caliber, ' ', '')) == func.lower(func.replace(AmmunitionModel.caliber, ' ', ''))
     ).all()
     
     points = []
-    for shot, test_session, ammunition in shot_data:
+    for shot, test_session, ammunition, parent_session in shot_data:
         # Convert bullet mass to kg using centralized equations
         bullet_mass_kg = None
         if ammunition and ammunition.projectile_mass_grams:
@@ -58,6 +63,7 @@ def get_velocity_vs_bfd(
             protection_level=shot.protection_level,
             test_session_id=str(shot.test_session_id) if shot.test_session_id else None,
             test_session_name=test_session.name if test_session else None,
+            parent_test_session_name=parent_session.name if parent_session else None,
             vest_number=shot.vest_number,
             side=shot.side,
             shot_number=shot.shot_number,

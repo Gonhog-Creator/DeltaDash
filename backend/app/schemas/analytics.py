@@ -12,6 +12,7 @@ class AnalyticsPoint(BaseModel):
     protection_level: Optional[str] = None
     test_session_id: Optional[str] = None
     test_session_name: Optional[str] = None
+    parent_test_session_name: Optional[str] = None  # Parent test session name
     vest_number: Optional[str] = None
     side: Optional[str] = None  # Front or back
     shot_number: Optional[str] = None

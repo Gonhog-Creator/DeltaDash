@@ -34,3 +34,17 @@ class ShotDataInDB(ShotDataBase):
 
 class ShotData(ShotDataInDB):
     pass
+
+
+class ShotDataUpdate(BaseModel):
+    vest_number: Optional[str] = None
+    side: Optional[str] = None
+    angle_degrees: Optional[Decimal] = None
+    shot_number: Optional[str] = None
+    protection_level: Optional[str] = None
+    caliber: Optional[str] = None
+    trauma_mm: Optional[Decimal] = None
+    trauma_qualitative: Optional[str] = None
+    velocity_m_s: Optional[Decimal] = None
+    temperature_c: Optional[Decimal] = None
+    humidity_percent: Optional[Decimal] = None

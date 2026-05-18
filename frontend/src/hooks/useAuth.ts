@@ -1,8 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { authApi } from '../api/auth';
 
 export function useAuth() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: user, isLoading, error } = useQuery({
     queryKey: ['currentUser'],
@@ -24,6 +26,7 @@ export function useAuth() {
     onSuccess: () => {
       queryClient.setQueryData(['currentUser'], null);
       queryClient.removeQueries({ queryKey: ['currentUser'] });
+      navigate('/login');
     },
   });
 
@@ -38,9 +41,9 @@ export function useAuth() {
     isAuthenticated: !!user,
     isAdmin: user?.is_admin || false,
     error,
-    login: loginMutation.mutateAsync,
-    logout: logoutMutation.mutateAsync,
-    changePassword: changePasswordMutation.mutateAsync,
+    login: loginMutation.mutate,
+    logout: logoutMutation.mutate,
+    changePassword: changePasswordMutation.mutate,
     isLoggingIn: loginMutation.isPending,
     isLoggingOut: logoutMutation.isPending,
   };

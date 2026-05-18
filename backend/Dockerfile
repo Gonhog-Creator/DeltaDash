@@ -18,7 +18,9 @@ COPY backend/ .
 
 RUN mkdir -p /app/storage/uploads /app/storage/material_docs /app/storage/reports /app/storage/model_artifacts
 
+# Make docker-entrypoint.sh executable
+RUN chmod +x /app/docker-entrypoint.sh
+
 EXPOSE 8000
 
-# Run migrations and start the server
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

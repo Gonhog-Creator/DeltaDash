@@ -199,10 +199,9 @@ export function Materials() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">MSS (Material Specification Sheet) *</label>
+                <label className="block text-sm font-medium text-gray-700">MSS (Material Specification Sheet)</label>
                 <input
                   type="file"
-                  required={!editingMaterial}
                   onChange={(e) => setMssFile(e.target.files?.[0] || null)}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
@@ -263,7 +262,7 @@ export function Materials() {
                   <div className="space-x-2">
                     {material.mss_file_path && (
                       <a
-                        href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/materials/${material.id}/download/mss`}
+                        href={`https://deltadash-backend-production.up.railway.app/api/v1/materials/${material.id}/download/mss`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-indigo-600 hover:text-indigo-900"
@@ -273,7 +272,7 @@ export function Materials() {
                     )}
                     {material.sds_file_path && (
                       <a
-                        href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/materials/${material.id}/download/sds`}
+                        href={`https://deltadash-backend-production.up.railway.app/api/v1/materials/${material.id}/download/sds`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-indigo-600 hover:text-indigo-900"

@@ -38,20 +38,32 @@ env/
 *.swp
 *.swo
 *~
+.idea/
 
 # OS
 .DS_Store
 Thumbs.db
 
 # Storage
-storage/uploads/*
-storage/material_docs/*
-storage/reports/*
-storage/model_artifacts/*
-!storage/uploads/.gitkeep
-!storage/material_docs/.gitkeep
-!storage/reports/.gitkeep
-!storage/model_artifacts/.gitkeep
+storage/
+backend/storage/
+
+# Data files
+*.xlsx
+*.xls
+*.csv
+*.pdf
+*.doc
+*.docx
+*.zip
+*.tar
+*.gz
+
+# Local database data
+*.db-shm
+*.db-wal
+data/
+backend/data/
 
 # Logs
 *.log

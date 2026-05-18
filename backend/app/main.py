@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns, analytics, locations, protocols, shot_data
+from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns, analytics, locations, protocols, shot_data, vests
 
 setup_logging()
 
@@ -17,6 +17,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # API routes
@@ -31,6 +32,7 @@ app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytic
 app.include_router(locations.router, prefix="/api/v1/locations", tags=["locations"])
 app.include_router(protocols.router, prefix="/api/v1/protocols", tags=["protocols"])
 app.include_router(shot_data.router, prefix="/api/v1/shot-data", tags=["shot-data"])
+app.include_router(vests.router, prefix="/api/v1/vests", tags=["vests"])
 
 
 @app.get("/health")

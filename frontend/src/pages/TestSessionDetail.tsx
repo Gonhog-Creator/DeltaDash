@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTestSession, useUpdateTestSession, useDeleteTestSession } from '../hooks/useTestSessions';
-import { useShotDataByTestSession } from '../hooks/useShotData';
+import { useShotDataByTestSession, useUpdateShotData } from '../hooks/useShotData';
 import { TestSessionUpdate } from '../api/test_session';
+import { ShotDataUpdate } from '../api/shot_data';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export function TestSessionDetail() {
@@ -12,6 +13,7 @@ export function TestSessionDetail() {
   const { data: shotData } = useShotDataByTestSession(id || '');
   const updateMutation = useUpdateTestSession();
   const deleteMutation = useDeleteTestSession();
+  const updateShotMutation = useUpdateShotData();
 
   console.log('Test session ID:', id);
   console.log('Test session data:', testSession);
@@ -20,6 +22,8 @@ export function TestSessionDetail() {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<TestSessionUpdate>({});
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [editingShot, setEditingShot] = useState<any>(null);
+  const [shotFormData, setShotFormData] = useState<ShotDataUpdate>({});
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error loading test session</div>;
@@ -42,6 +46,35 @@ export function TestSessionDetail() {
       navigate('/test-sessions');
     } catch (err) {
       console.error('Failed to delete:', err);
+    }
+  };
+
+  const handleShotEdit = (shot: any) => {
+    setEditingShot(shot);
+    setShotFormData({
+      shot_number: shot.shot_number?.toString(),
+      velocity_m_s: shot.velocity_m_s || shot.measured_velocity_m_s || undefined,
+      trauma_mm: shot.trauma_mm || shot.bfd_mm || undefined,
+      trauma_qualitative: shot.trauma_qualitative || undefined,
+      angle_degrees: shot.angle_degrees || undefined,
+      side: shot.side || undefined,
+      vest_number: shot.vest_number || undefined,
+      protection_level: shot.protection_level || undefined,
+      caliber: shot.caliber || undefined,
+      temperature_c: shot.temperature_c || undefined,
+      humidity_percent: shot.humidity_percent || undefined,
+    });
+  };
+
+  const handleShotUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingShot) return;
+    try {
+      await updateShotMutation.mutateAsync({ id: editingShot.id, shotData: shotFormData });
+      setEditingShot(null);
+      setShotFormData({});
+    } catch (err) {
+      console.error('Failed to update shot:', err);
     }
   };
 
@@ -295,6 +328,7 @@ export function TestSessionDetail() {
                       )}
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Velocity (m/s)</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{hasQualitativeTrauma ? 'Result' : 'Trauma (mm)'}</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -316,6 +350,14 @@ export function TestSessionDetail() {
                             shot.trauma_mm || shot.bfd_mm || '-'
                           )}
                         </td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                          <button
+                            onClick={() => handleShotEdit(shot)}
+                            className="text-indigo-600 hover:text-indigo-900"
+                          >
+                            Edit
+                          </button>
+                        </td>
                       </tr>
                     ))}
                     <tr className="bg-gray-100 font-semibold">
@@ -329,6 +371,7 @@ export function TestSessionDetail() {
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                         {avgTrauma.toFixed(2)}
                       </td>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900"></td>
                     </tr>
                   </tbody>
                 </table>
@@ -354,6 +397,147 @@ export function TestSessionDetail() {
           variant="danger"
           onConfirm={handleDeleteConfirm}
           onCancel={() => setShowDeleteModal(false)}
+        />
+      )}
+
+      {editingShot && (
+        <ConfirmModal
+          title="Edit Shot Data"
+          message={
+            <form onSubmit={handleShotUpdate} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Shot Number</label>
+                  <input
+                    type="text"
+                    value={shotFormData.shot_number || ''}
+                    onChange={(e) => setShotFormData({ ...shotFormData, shot_number: e.target.value })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Velocity (m/s)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={shotFormData.velocity_m_s ?? ''}
+                    onChange={(e) => setShotFormData({ ...shotFormData, velocity_m_s: e.target.value ? parseFloat(e.target.value) : undefined })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Trauma (mm)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={shotFormData.trauma_mm ?? ''}
+                    onChange={(e) => setShotFormData({ ...shotFormData, trauma_mm: e.target.value ? parseFloat(e.target.value) : undefined })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Angle (°)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={shotFormData.angle_degrees ?? ''}
+                    onChange={(e) => setShotFormData({ ...shotFormData, angle_degrees: e.target.value ? parseFloat(e.target.value) : undefined })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Side</label>
+                  <select
+                    value={shotFormData.side || ''}
+                    onChange={(e) => setShotFormData({ ...shotFormData, side: e.target.value || undefined })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  >
+                    <option value="">Select side...</option>
+                    <option value="front">Front</option>
+                    <option value="back">Back</option>
+                    <option value="frente">Frente</option>
+                    <option value="espalda">Espalda</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Result</label>
+                  <select
+                    value={shotFormData.trauma_qualitative || ''}
+                    onChange={(e) => setShotFormData({ ...shotFormData, trauma_qualitative: e.target.value || undefined })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  >
+                    <option value="">Select result...</option>
+                    <option value="OK">OK</option>
+                    <option value="Punctured">Punctured</option>
+                    <option value="PERFORO">PERFORO</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Protection Level</label>
+                  <input
+                    type="text"
+                    value={shotFormData.protection_level || ''}
+                    onChange={(e) => setShotFormData({ ...shotFormData, protection_level: e.target.value || undefined })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Caliber</label>
+                  <input
+                    type="text"
+                    value={shotFormData.caliber || ''}
+                    onChange={(e) => setShotFormData({ ...shotFormData, caliber: e.target.value || undefined })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Temperature (°C)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={shotFormData.temperature_c ?? ''}
+                    onChange={(e) => setShotFormData({ ...shotFormData, temperature_c: e.target.value ? parseFloat(e.target.value) : undefined })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Humidity (%)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={shotFormData.humidity_percent ?? ''}
+                    onChange={(e) => setShotFormData({ ...shotFormData, humidity_percent: e.target.value ? parseFloat(e.target.value) : undefined })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  />
+                </div>
+              </div>
+              <div className="flex space-x-2">
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingShot(null);
+                    setShotFormData({});
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          }
+          confirmLabel=""
+          variant="default"
+          onConfirm={() => {}}
+          onCancel={() => {
+            setEditingShot(null);
+            setShotFormData({});
+          }}
         />
       )}
     </div>

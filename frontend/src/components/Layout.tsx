@@ -15,6 +15,7 @@ export function Layout({ children }: LayoutProps) {
     { path: '/', label: 'Dashboard' },
     { path: '/test-sessions', label: 'Test Sessions' },
     { path: '/materials', label: 'Materials' },
+    { path: '/vests', label: 'Vests' },
     { path: '/ammunition', label: 'Ammunition' },
     { path: '/analytics', label: 'Analytics' },
   ];
