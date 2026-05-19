@@ -498,7 +498,18 @@ export function Analytics() {
 
           {isAdmin && (
             <div className="bg-gray-50 rounded-lg shadow p-4 border border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Debug Info</h3>
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-sm font-semibold text-gray-700">Debug Info</h3>
+                <button
+                  onClick={() => {
+                    const data = JSON.stringify(analyticsData?.points || [], null, 2);
+                    navigator.clipboard.writeText(data);
+                  }}
+                  className="text-xs text-indigo-600 hover:text-indigo-800"
+                >
+                  Copy Raw Data
+                </button>
+              </div>
               <div className="text-xs text-gray-600 space-y-1">
                 <p>Total points in dataset: {analyticsData?.points.length || 0}</p>
                 <p>Filtered points displayed: {filteredPoints.length}</p>
@@ -588,7 +599,18 @@ export function Analytics() {
 
           {isAdmin && (
             <div className="bg-gray-50 rounded-lg shadow p-4 border border-gray-200 mt-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Debug Info</h3>
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-sm font-semibold text-gray-700">Debug Info</h3>
+                <button
+                  onClick={() => {
+                    const data = JSON.stringify(analyticsData?.points || [], null, 2);
+                    navigator.clipboard.writeText(data);
+                  }}
+                  className="text-xs text-indigo-600 hover:text-indigo-800"
+                >
+                  Copy Raw Data
+                </button>
+              </div>
               <div className="text-xs text-gray-600 space-y-1">
                 <p>Total points in dataset: {analyticsData?.points.length || 0}</p>
                 <p>Points with bullet energy: {analyticsData?.points.filter(p => p.bullet_energy !== null).length || 0}</p>
@@ -670,7 +692,18 @@ export function Analytics() {
 
           {isAdmin && (
             <div className="bg-gray-50 rounded-lg shadow p-4 border border-gray-200 mt-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Debug Info</h3>
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-sm font-semibold text-gray-700">Debug Info</h3>
+                <button
+                  onClick={() => {
+                    const data = JSON.stringify(analyticsData?.points || [], null, 2);
+                    navigator.clipboard.writeText(data);
+                  }}
+                  className="text-xs text-indigo-600 hover:text-indigo-800"
+                >
+                  Copy Raw Data
+                </button>
+              </div>
               <div className="text-xs text-gray-600 space-y-1">
                 <p>Total points in dataset: {analyticsData?.points.length || 0}</p>
                 <p>Points with velocity: {analyticsData?.points.filter(p => p.velocity !== null).length || 0}</p>

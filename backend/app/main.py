@@ -43,3 +43,12 @@ def health_check():
 @app.get("/")
 def root():
     return {"message": "Ballistic Test Analytics Platform API", "status": "🚀 Ready for Development", "optimized": True}
+
+
+@app.get("/debug/cors")
+def debug_cors():
+    return {
+        "cors_origins_env": settings.CORS_ORIGINS,
+        "cors_origins_list": settings.cors_origins_list,
+        "app_env": settings.APP_ENV
+    }
