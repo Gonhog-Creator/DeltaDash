@@ -21,6 +21,7 @@ class TestSession(Base):
     size = Column(String)
     ballistic_limit = Column(Boolean, default=False)
     parent_test_group_id = Column(UUID(as_uuid=True), ForeignKey('test_sessions.id'), nullable=True)
+    vest_id = Column(UUID(as_uuid=True), ForeignKey('vests.id'), nullable=True)
     excel_file_path = Column(String)
     notes = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

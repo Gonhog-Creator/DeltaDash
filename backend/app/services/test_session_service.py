@@ -73,6 +73,7 @@ def create_sessions_from_excel_data(
     location_name: Optional[str],
     operator: Optional[str],
     protocol: Optional[str],
+    vest_id: Optional[str],
     test_date: Optional[str],
     temperature: Optional[float],
     humidity: Optional[float],
@@ -109,7 +110,7 @@ def create_sessions_from_excel_data(
         
         # Multi-sheet file - create separate test sessions for each sheet
         return _create_sessions_from_multi_sheet(
-            db, parsed_data, test_name, location_name, operator, protocol, test_date, excel_file_path
+            db, parsed_data, test_name, location_name, operator, protocol, vest_id, test_date, excel_file_path
         )
     else:
         # Single-sheet file - use existing logic
@@ -143,6 +144,7 @@ def create_sessions_from_excel_data(
                 test_date=test_date,
                 ambient_temperature_c=temperature,
                 humidity_percent=humidity,
+                vest_id=vest_id,
                 excel_file_path=excel_file_path,
             )
             db.add(parent_session)
@@ -178,6 +180,7 @@ def create_sessions_from_excel_data(
                     size=test_size,
                     ballistic_limit=False,
                     parent_test_group_id=parent_session.id,
+                    vest_id=vest_id,
                     excel_file_path=excel_file_path,
                 )
                 db.add(db_test_session)
@@ -209,6 +212,7 @@ def create_sessions_from_excel_data(
                 conditioning=conditioning_size.get('conditioning'),
                 size=conditioning_size.get('size'),
                 ballistic_limit=conditioning_size.get('ballistic_limit', False),
+                vest_id=vest_id,
                 excel_file_path=excel_file_path,
             )
             db.add(db_test_session)
@@ -234,6 +238,7 @@ def _create_sessions_from_multi_sheet(
     location_name: Optional[str],
     operator: Optional[str],
     protocol: Optional[str],
+    vest_id: Optional[str],
     test_date: Optional[str],
     excel_file_path: str,
 ) -> List[TestSessionModel]:

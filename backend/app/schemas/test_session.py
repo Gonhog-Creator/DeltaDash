@@ -18,6 +18,7 @@ class TestSessionBase(BaseModel):
     size: Optional[str] = None
     ballistic_limit: Optional[bool] = None
     parent_test_group_id: Optional[UUID] = None
+    vest_id: Optional[UUID] = None
     excel_file_path: Optional[str] = None
     notes: Optional[str] = None
 
@@ -39,6 +40,7 @@ class TestSessionUpdate(BaseModel):
     size: Optional[str] = None
     ballistic_limit: Optional[bool] = None
     parent_test_group_id: Optional[UUID] = None
+    vest_id: Optional[UUID] = None
     excel_file_path: Optional[str] = None
     notes: Optional[str] = None
 
@@ -47,6 +49,8 @@ class TestSessionInDB(TestSessionBase):
     id: UUID
     created_at: datetime
     updated_at: datetime
+    vest_name: Optional[str] = None
+    vest_code: Optional[str] = None
 
     class Config:
         from_attributes = True

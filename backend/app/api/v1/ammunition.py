@@ -6,6 +6,9 @@ from app.db.models import Ammunition as AmmunitionModel
 from app.api.v1.auth import get_current_active_user, require_admin
 from app.schemas.ammunition import AmmunitionCreate, AmmunitionUpdate, Ammunition, AmmunitionListItem
 from app.db.models.user import User as UserModel
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -35,11 +38,29 @@ def create_ammunition(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(require_admin)
 ):
-    db_ammunition = AmmunitionModel(**ammunition.model_dump())
-    db.add(db_ammunition)
-    db.commit()
-    db.refresh(db_ammunition)
-    return db_ammunition
+    try:
+        logger.info(f"Creating ammunition: {ammunition}")
+        logger.info(f"Current user: {current_user.username if current_user else 'None'}")
+        db_ammunition = AmmunitionModel(**ammunition.model_dump())
+        db.add(db_ammunition)
+        db.commit()
+        db.refresh(db_ammunition)
+        logger.info(f"Successfully created ammunition with id: {db_ammunition.id}")
+        return db_ammunition
+    except Exception as e:
+        logger.error(f"Error creating ammunition: {str(e)}", exc_info=True)
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create ammunition: {str(e)}")
+
+
+@router.get("/test-db")
+def test_db(db: Session = Depends(get_db)):
+    try:
+        result = db.execute("SELECT 1")
+        return {"status": "ok", "result": result.scalar()}
+    except Exception as e:
+        logger.error(f"Database test failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Database test failed: {str(e)}")
 
 
 @router.get("/{ammunition_id}", response_model=Ammunition)

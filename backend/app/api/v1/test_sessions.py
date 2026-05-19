@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 
 from app.db.session import get_db
-from app.db.models import TestSession as TestSessionModel, ShotData as ShotDataModel, Shot as ShotModel
+from app.db.models import TestSession as TestSessionModel, ShotData as ShotDataModel, Shot as ShotModel, Vest as VestModel
 from app.api.v1.auth import get_current_active_user
 from app.schemas.test_session import TestSessionCreate, TestSessionUpdate, TestSession
 from app.schemas.shot_data import ShotDataCreate
@@ -20,15 +20,42 @@ from app.core.config import settings
 router = APIRouter(redirect_slashes=False)
 
 
-@router.get("/", response_model=List[TestSession])
+@router.get("/")
 def list_test_sessions(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
 ):
-    test_sessions = db.query(TestSessionModel).offset(skip).limit(limit).all()
-    return test_sessions
+    test_sessions = db.query(TestSessionModel, VestModel).outerjoin(VestModel, TestSessionModel.vest_id == VestModel.id).offset(skip).limit(limit).all()
+    
+    result = []
+    for session, vest in test_sessions:
+        session_dict = {
+            "id": session.id,
+            "name": session.name,
+            "test_date": session.test_date,
+            "lab_name": session.lab_name,
+            "operator": session.operator,
+            "protocol": session.protocol,
+            "clay_temperature_c": session.clay_temperature_c,
+            "ambient_temperature_c": session.ambient_temperature_c,
+            "humidity_percent": session.humidity_percent,
+            "conditioning": session.conditioning,
+            "size": session.size,
+            "ballistic_limit": session.ballistic_limit,
+            "parent_test_group_id": session.parent_test_group_id,
+            "vest_id": session.vest_id,
+            "vest_name": vest.vest_code if vest else None,
+            "vest_code": vest.vest_code if vest else None,
+            "excel_file_path": session.excel_file_path,
+            "notes": session.notes,
+            "created_at": session.created_at,
+            "updated_at": session.updated_at,
+        }
+        result.append(session_dict)
+    
+    return result
 
 
 @router.post("/", response_model=TestSession, status_code=status.HTTP_201_CREATED)
@@ -50,6 +77,7 @@ def create_test_session_from_excel(
     test_name: str = Form(...),
     location_id: Optional[str] = Form(None),
     protocol: Optional[str] = Form(None),
+    vest_id: Optional[str] = Form(None),
     test_date: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
@@ -78,6 +106,7 @@ def create_test_session_from_excel(
         location_name=location_name,
         operator=None,
         protocol=protocol,
+        vest_id=vest_id,
         test_date=test_date,
         temperature=None,  # Service will extract from parsed data
         humidity=None,    # Service will extract from parsed data

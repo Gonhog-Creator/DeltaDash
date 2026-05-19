@@ -14,15 +14,9 @@ export function Dashboard() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await apiClient.get<{ test_session_count: number; total_shots: number }>('/api/v1/test-sessions/stats');
-        console.log('Stats response status:', response.status);
-        if (response.ok) {
-          const data = await response.json();
-          console.log('Stats data:', data);
-          setStats({ test_session_count: data.test_session_count, total_shots: data.total_shots });
-        } else {
-          console.error('Stats response not ok:', response.statusText);
-        }
+        const data = await apiClient.get<{ test_session_count: number; total_shots: number }>('/api/v1/test-sessions/stats');
+        console.log('Stats data:', data);
+        setStats({ test_session_count: data.test_session_count, total_shots: data.total_shots });
       } catch (error) {
         console.error('Failed to fetch stats:', error);
       }
