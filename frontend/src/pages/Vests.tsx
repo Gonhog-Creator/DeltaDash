@@ -197,7 +197,7 @@ export function Vests() {
           <form onSubmit={editingVest ? handleUpdate : handleCreate} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Vest Code *</label>
+                <label className="block text-sm font-medium text-gray-700">Vest Name *</label>
                 <input
                   type="text"
                   required
@@ -207,27 +207,25 @@ export function Vests() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Vest Type</label>
+                <label className="block text-sm font-medium text-gray-700">Vest Type *</label>
                 <select
                   value={formData.vest_type || ''}
                   onChange={(e) => setFormData({ ...formData, vest_type: e.target.value })}
+                  required
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 >
                   <option value="">Select type...</option>
-                  <option value="soft">Soft Armor</option>
-                  <option value="hard">Hard Armor</option>
-                  <option value="hybrid">Hybrid</option>
-                  <option value="concealable">Concealable</option>
-                  <option value="tactical">Tactical</option>
-                  <option value="vehicle">Vehicle</option>
-                  <option value="other">Other</option>
+                  <option value="soft">Soft</option>
+                  <option value="hard">Hard</option>
+                  <option value="IWC">IWC</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Threat Level</label>
+                <label className="block text-sm font-medium text-gray-700">Threat Level *</label>
                 <select
                   value={formData.threat_level || ''}
                   onChange={(e) => setFormData({ ...formData, threat_level: e.target.value })}
+                  required
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 >
                   <option value="">Select level...</option>
@@ -252,20 +250,12 @@ export function Vests() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Protection Class</label>
-                <input
-                  type="text"
-                  value={formData.protection_class || ''}
-                  onChange={(e) => setFormData({ ...formData, protection_class: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Total Layers</label>
+                <label className="block text-sm font-medium text-gray-700">Total Layers *</label>
                 <input
                   type="number"
                   value={formData.total_layers ?? ''}
                   onChange={(e) => setFormData({ ...formData, total_layers: e.target.value ? parseInt(e.target.value) : null })}
+                  required
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
@@ -326,7 +316,7 @@ export function Vests() {
                       <input
                         type="checkbox"
                         id={`size-${size}`}
-                        checked={!!formData.sizes?.[size]}
+                        checked={formData.sizes?.[size] !== undefined}
                         onChange={(e) => {
                           const newSizes = { ...formData.sizes };
                           if (e.target.checked) {
@@ -334,11 +324,11 @@ export function Vests() {
                           } else {
                             delete newSizes[size];
                           }
-                          setFormData({ ...formData, sizes: newSizes });
+                          setFormData(prev => ({ ...prev, sizes: newSizes }));
                         }}
-                        className="mr-2 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
                       />
-                      <label htmlFor={`size-${size}`} className="text-sm font-medium text-gray-700">
+                      <label htmlFor={`size-${size}`} className="text-sm font-medium text-gray-700 cursor-pointer">
                         {size}
                       </label>
                     </div>
@@ -455,6 +445,7 @@ export function Vests() {
         </div>
       )}
 
+      {!(showCreateForm || editingVest) && (
       <div className="bg-white shadow rounded-lg overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -503,6 +494,7 @@ export function Vests() {
           </tbody>
         </table>
       </div>
+      )}
       {deleteTarget && (
         <ConfirmModal
           title="Delete Vest"

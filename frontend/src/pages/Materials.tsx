@@ -235,6 +235,7 @@ export function Materials() {
         </div>
       )}
 
+      {!(showCreateForm || editingMaterial) && (
       <div className="bg-white shadow rounded-lg overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -309,6 +310,7 @@ export function Materials() {
           </tbody>
         </table>
       </div>
+      )}
       {deleteTarget && (
         <ConfirmModal
           title="Delete Material"
