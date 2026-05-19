@@ -26,13 +26,13 @@ def list_materials(
     current_user: UserModel = Depends(get_current_active_user)
 ):
     query = db.query(MaterialModel)
-    
+
     if material_class:
         query = query.filter(MaterialModel.material_class == material_class)
     if manufacturer:
         query = query.filter(MaterialModel.manufacturer.ilike(f"%{manufacturer}%"))
-    
-    materials = query.offset(skip).limit(limit).all()
+
+    materials = query.order_by(MaterialModel.name).offset(skip).limit(limit).all()
     return materials
 
 

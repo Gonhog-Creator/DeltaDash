@@ -299,7 +299,7 @@ def get_version(
     current_user: User = Depends(get_current_user)
 ):
     """Get the current version from environment variable or git commits."""
-    # Use environment variable if available (production)
+    # Use environment variable if explicitly set (production override)
     if settings.VERSION:
         return {"version": settings.VERSION}
     

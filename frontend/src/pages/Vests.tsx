@@ -125,6 +125,7 @@ export function Vests() {
       stitch_pattern: vest.stitch_pattern || '',
       backing_material: vest.backing_material || '',
       notes: vest.notes || '',
+      created_by_username: vest.created_by_username || '',
       layers: [],
     });
     setLayers(
@@ -152,6 +153,7 @@ export function Vests() {
       stitch_pattern: '',
       backing_material: '',
       notes: '',
+      created_by_username: '',
       layers: [],
     });
     setLayers([]);
@@ -291,6 +293,17 @@ export function Vests() {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
+              {editingVest && role === 'admin' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Created By</label>
+                  <input
+                    type="text"
+                    value={formData.created_by_username || ''}
+                    onChange={(e) => setFormData({ ...formData, created_by_username: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                  />
+                </div>
+              )}
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700">Construction Notes</label>
                 <textarea

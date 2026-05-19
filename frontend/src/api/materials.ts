@@ -68,6 +68,7 @@ export interface MaterialUpdate {
   modulus_gpa?: number | null;
   elongation_percent?: number | null;
   material_function?: string | null;
+  created_by_username?: string | null;
   notes?: string | null;
   source_confidence?: string | null;
 }

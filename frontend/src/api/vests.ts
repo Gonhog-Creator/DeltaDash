@@ -74,6 +74,7 @@ export interface VestListItem {
   total_layers: number | null;
   total_thickness_mm: number | null;
   sizes: Record<string, number> | null;
+  created_by_username: string | null;
 }
 
 export const vestsApi = {

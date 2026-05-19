@@ -43,7 +43,7 @@ export function Materials() {
       if (sdsFile) files.sds = sdsFile;
       await createMutation.mutateAsync({ material: formData, files });
       setShowCreateForm(false);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '' });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', created_by_username: '' });
       setMssFile(null);
       setSdsFile(null);
     } catch (err) {
@@ -261,10 +261,21 @@ export function Materials() {
                   />
                 </div>
               </div>
+              {editingMaterial && role === 'admin' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Created By</label>
+                  <input
+                    type="text"
+                    value={formData.created_by_username || ''}
+                    onChange={(e) => setFormData({ ...formData, created_by_username: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700">MSS (Material Specification Sheet)</label>
                 {editingMaterial && editingMaterial.mss_file_path && (
-                  <div className="mt-1 mb-2">
+                  <div className="mt-1 mb-2 flex items-center space-x-2">
                     <a
                       href={`https://deltadash-backend-production.up.railway.app/api/v1/materials/${editingMaterial.id}/download/mss`}
                       target="_blank"
@@ -273,6 +284,14 @@ export function Materials() {
                     >
                       Current file: {editingMaterial.mss_original_filename || editingMaterial.mss_file_path}
                     </a>
+                    <button
+                      type="button"
+                      onClick={() => setFileToRemove({ material: editingMaterial, fileType: 'mss' })}
+                      className="text-red-600 hover:text-red-900 text-xs"
+                      title="Remove file"
+                    >
+                      ✕ Remove
+                    </button>
                   </div>
                 )}
                 <input
@@ -284,7 +303,7 @@ export function Materials() {
               <div>
                 <label className="block text-sm font-medium text-gray-700">SDS (Safety Data Sheet)</label>
                 {editingMaterial && editingMaterial.sds_file_path && (
-                  <div className="mt-1 mb-2">
+                  <div className="mt-1 mb-2 flex items-center space-x-2">
                     <a
                       href={`https://deltadash-backend-production.up.railway.app/api/v1/materials/${editingMaterial.id}/download/sds`}
                       target="_blank"
@@ -293,6 +312,14 @@ export function Materials() {
                     >
                       Current file: {editingMaterial.sds_original_filename || editingMaterial.sds_file_path}
                     </a>
+                    <button
+                      type="button"
+                      onClick={() => setFileToRemove({ material: editingMaterial, fileType: 'sds' })}
+                      className="text-red-600 hover:text-red-900 text-xs"
+                      title="Remove file"
+                    >
+                      ✕ Remove
+                    </button>
                   </div>
                 )}
                 <input
