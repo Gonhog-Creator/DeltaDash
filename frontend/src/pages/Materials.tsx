@@ -144,6 +144,7 @@ export function Materials() {
                   <option value="basalt">Basalt</option>
                   <option value="carbon_fiber">Carbon Fiber</option>
                   <option value="glass_fiber">Glass Fiber</option>
+                  <option value="fabric">Fabric</option>
                   <option value="ceramic">Ceramic</option>
                   <option value="metal">Metal</option>
                   <option value="foam">Foam</option>
@@ -254,8 +255,8 @@ export function Materials() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Class</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Manufacturer</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Areal Density</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thickness</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Areal Density (g/m²)</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thickness (mm)</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Files</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -265,10 +266,12 @@ export function Materials() {
             {materials?.map((material) => (
               <tr key={material.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{material.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.material_class || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {material.material_class ? material.material_class.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : '-'}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.manufacturer || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.areal_density_g_m2 || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.thickness_mm || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.areal_density_g_m2 ? Math.round(Number(material.areal_density_g_m2)) : '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.thickness_mm ? Number(material.thickness_mm).toFixed(2) : '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.created_by_username || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   <div className="space-x-2">

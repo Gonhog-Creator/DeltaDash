@@ -68,6 +68,7 @@ def create_material(
         with open(file_path, 'wb') as f:
             f.write(mss_file.file.read())
         material_data['mss_file_path'] = unique_filename
+        material_data['mss_original_filename'] = mss_file.filename
 
     if sds_file:
         file_ext = Path(sds_file.filename).suffix
@@ -76,6 +77,7 @@ def create_material(
         with open(file_path, 'wb') as f:
             f.write(sds_file.file.read())
         material_data['sds_file_path'] = unique_filename
+        material_data['sds_original_filename'] = sds_file.filename
 
     db_material = MaterialModel(**material_data)
     db.add(db_material)
@@ -151,6 +153,7 @@ def upload_material_file(
         with open(file_path, 'wb') as f:
             f.write(mss_file.file.read())
         material.mss_file_path = unique_filename
+        material.mss_original_filename = mss_file.filename
 
     if sds_file:
         file_ext = Path(sds_file.filename).suffix
@@ -159,6 +162,7 @@ def upload_material_file(
         with open(file_path, 'wb') as f:
             f.write(sds_file.file.read())
         material.sds_file_path = unique_filename
+        material.sds_original_filename = sds_file.filename
 
     db.commit()
     db.refresh(material)
@@ -178,8 +182,10 @@ def download_material_file(
     
     if file_type == 'mss':
         file_path = material.mss_file_path
+        original_filename = material.mss_original_filename
     elif file_type == 'sds':
         file_path = material.sds_file_path
+        original_filename = material.sds_original_filename
     else:
         raise HTTPException(status_code=400, detail="Invalid file type")
     
@@ -190,4 +196,7 @@ def download_material_file(
     if not os.path.exists(full_path):
         raise HTTPException(status_code=404, detail="File not found on disk")
     
-    return FileResponse(full_path, filename=file_path)
+    # Use original filename if available, otherwise use the UUID filename
+    download_filename = original_filename if original_filename else file_path
+    
+    return FileResponse(full_path, filename=download_filename)

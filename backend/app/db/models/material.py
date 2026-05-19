@@ -29,6 +29,8 @@ class Material(Base):
     created_by_username = Column(String, index=True)
     mss_file_path = Column(String)
     sds_file_path = Column(String)
+    mss_original_filename = Column(String)
+    sds_original_filename = Column(String)
     notes = Column(String)
     source_confidence = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
