@@ -3,14 +3,23 @@
  * - Capitalize first letter
  * - Replace underscores with spaces
  * - Capitalize each word
+ * - Keep specific acronyms in all caps (UHMWPE)
  */
 export function normalizeString(str: string): string {
   if (!str) return str;
-  
+
+  const allCapsAcronyms = ['UHMWPE'];
+
   return str
     .replace(/_/g, ' ')  // Replace underscores with spaces
     .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .map(word => {
+      const upperWord = word.toUpperCase();
+      if (allCapsAcronyms.includes(upperWord)) {
+        return upperWord;
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
     .join(' ');
 }
 

@@ -298,7 +298,12 @@ def restore_backup(
 def get_version(
     current_user: User = Depends(get_current_user)
 ):
-    """Get the current version from git commits."""
+    """Get the current version from environment variable or git commits."""
+    # Use environment variable if available (production)
+    if settings.VERSION:
+        return {"version": settings.VERSION}
+    
+    # Fallback to git in development
     try:
         # Get the latest commit message
         result = subprocess.run(
@@ -307,9 +312,9 @@ def get_version(
             text=True,
             cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         )
-        
+
         commit_message = result.stdout.strip()
-        
+
         # Try to extract version from commit message (semantic versioning pattern)
         version_match = re.match(r'^(\d+\.\d+(?:\.\d+)?)', commit_message)
         if version_match:
@@ -323,7 +328,7 @@ def get_version(
                 cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
             )
             return {"version": hash_result.stdout.strip()}
-            
+
     except Exception as e:
-        # If git is not available or fails, return a default version
-        return {"version": "unknown"}
+        # If git is not available or fails, return default version
+        return {"version": "1.0.0"}

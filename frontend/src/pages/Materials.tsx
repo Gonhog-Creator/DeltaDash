@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMaterials, useCreateMaterial, useUpdateMaterial, useDeleteMaterial, useUploadMaterialFiles } from '../hooks/useMaterials';
+import { useMaterials, useCreateMaterial, useUpdateMaterial, useDeleteMaterial, useUploadMaterialFiles, useRemoveMaterialFile } from '../hooks/useMaterials';
 import { Material, MaterialCreate, MaterialUpdate } from '../api/materials';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { normalizeString } from '../utils/string';
@@ -11,11 +11,13 @@ export function Materials() {
   const updateMutation = useUpdateMaterial();
   const uploadFilesMutation = useUploadMaterialFiles();
   const deleteMutation = useDeleteMaterial();
+  const removeFileMutation = useRemoveMaterialFile();
   const { role } = useAuth();
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Material | null>(null);
+  const [fileToRemove, setFileToRemove] = useState<{ material: Material; fileType: 'mss' | 'sds' } | null>(null);
   const [mssFile, setMssFile] = useState<File | null>(null);
   const [sdsFile, setSdsFile] = useState<File | null>(null);
   const [showFileReplaceModal, setShowFileReplaceModal] = useState(false);
