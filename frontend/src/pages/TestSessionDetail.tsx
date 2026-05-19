@@ -401,9 +401,13 @@ export function TestSessionDetail() {
       )}
 
       {editingShot && (
-        <ConfirmModal
-          title="Edit Shot Data"
-          message={
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => {
+            setEditingShot(null);
+            setShotFormData({});
+          }} />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Shot Data</h3>
             <form onSubmit={handleShotUpdate} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -511,13 +515,7 @@ export function TestSessionDetail() {
                   />
                 </div>
               </div>
-              <div className="flex space-x-2">
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-                >
-                  Save
-                </button>
+              <div className="flex justify-end space-x-3 mt-6">
                 <button
                   type="button"
                   onClick={() => {
@@ -528,17 +526,16 @@ export function TestSessionDetail() {
                 >
                   Cancel
                 </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                >
+                  Save
+                </button>
               </div>
             </form>
-          }
-          confirmLabel=""
-          variant="default"
-          onConfirm={() => {}}
-          onCancel={() => {
-            setEditingShot(null);
-            setShotFormData({});
-          }}
-        />
+          </div>
+        </div>
       )}
     </div>
   );

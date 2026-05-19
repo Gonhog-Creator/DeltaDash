@@ -25,9 +25,18 @@ export function ConfirmModal({
         onCancel();
       }
     };
+    const handleEnter = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        onConfirm();
+      }
+    };
     window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [onCancel]);
+    window.addEventListener('keydown', handleEnter);
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('keydown', handleEnter);
+    };
+  }, [onCancel, onConfirm]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">

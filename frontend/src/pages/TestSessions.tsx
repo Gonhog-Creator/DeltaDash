@@ -54,6 +54,8 @@ export function TestSessions() {
   const [newLocationAddress, setNewLocationAddress] = useState('');
   const [newProtocolName, setNewProtocolName] = useState('');
   const [newProtocolDescription, setNewProtocolDescription] = useState('');
+  const [showAmmoModal, setShowAmmoModal] = useState(false);
+  const [missingCalibers, setMissingCalibers] = useState<string[]>([]);
 
   // Group test sessions by parent_test_group_id
   const groupedTests = testSessions?.reduce((acc, session) => {
@@ -95,8 +97,14 @@ export function TestSessions() {
       await uploadExcelMutation.mutateAsync({ id: uploadTarget.id, file: excelFile });
       setUploadTarget(null);
       setExcelFile(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to upload Excel:', err);
+      // Check if error is due to missing ammunition
+      if (err?.message?.includes('missing_ammunition') || err?.detail?.error === 'missing_ammunition') {
+        const missingCalibers = err.detail?.missing_calibers || [];
+        setMissingCalibers(missingCalibers);
+        setShowAmmoModal(true);
+      }
     }
   };
 
@@ -117,8 +125,14 @@ export function TestSessions() {
       setSelectedLocationId('');
       setProtocol('');
       setTestDate(new Date().toISOString().split('T')[0]);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to create test session from Excel:', err);
+      // Check if error is due to missing ammunition
+      if (err?.message?.includes('missing_ammunition') || err?.detail?.error === 'missing_ammunition') {
+        const missingCalibers = err.detail?.missing_calibers || [];
+        setMissingCalibers(missingCalibers);
+        setShowAmmoModal(true);
+      }
     }
   };
 
@@ -667,6 +681,39 @@ export function TestSessions() {
           onConfirm={handleBulkReupload}
           onCancel={() => {
             setShowAdminModal(false);
+          }}
+        />
+      )}
+
+      {showAmmoModal && (
+        <ConfirmModal
+          title="Missing Ammunition"
+          message={
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                The following calibers are not in the ammunition database:
+              </p>
+              <ul className="list-disc list-inside text-sm text-gray-700 bg-gray-50 p-3 rounded-md">
+                {missingCalibers.map((caliber, index) => (
+                  <li key={index} className="font-medium">{caliber}</li>
+                ))}
+              </ul>
+              <p className="text-sm text-gray-600">
+                The system will try to match similar calibers (e.g., "9mm" matches "9 mm"), but exact matches are preferred for accuracy.
+              </p>
+              <p className="text-sm text-gray-600">
+                Please create the missing ammunition before uploading the Excel file.
+              </p>
+            </div>
+          }
+          confirmLabel="Go to Ammunition"
+          variant="default"
+          onConfirm={() => {
+            setShowAmmoModal(false);
+            window.location.href = '/ammunition';
+          }}
+          onCancel={() => {
+            setShowAmmoModal(false);
           }}
         />
       )}

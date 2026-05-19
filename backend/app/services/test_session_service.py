@@ -1,7 +1,69 @@
-from typing import List, Dict, Optional, Union, Tuple
+from typing import List, Dict, Optional, Union, Tuple, Set
 from sqlalchemy.orm import Session
-from app.db.models import TestSession as TestSessionModel, ShotData as ShotDataModel
+from fastapi import HTTPException, status
+from app.db.models import TestSession as TestSessionModel, ShotData as ShotDataModel, Ammunition as AmmunitionModel
 from app.services.excel_parser import ExcelParser, ExcelParseError
+
+
+def normalize_caliber(caliber: str) -> str:
+    """Normalize caliber string for intelligent matching."""
+    if not caliber:
+        return ''
+    
+    normalized = str(caliber).strip().lower()
+    
+    # Remove spaces around numbers
+    normalized = normalized.replace(' ', '')
+    
+    # Normalize decimal points
+    normalized = normalized.replace(',', '.')
+    
+    # Remove leading/trailing dots
+    normalized = normalized.strip('.')
+    
+    return normalized
+
+
+def validate_calibers_exist(db: Session, calibers: Set[str]) -> Set[str]:
+    """Check if all calibers exist in the ammunition database. Returns missing calibers."""
+    if not calibers:
+        return set()
+    
+    # Get all existing calibers from database with their IDs
+    existing_ammo = db.query(AmmunitionModel.caliber).filter(AmmunitionModel.caliber.isnot(None)).all()
+    existing_calibers_normalized = {
+        normalize_caliber(caliber[0]): caliber[0] for caliber in existing_ammo
+    }
+    
+    # Normalize input calibers and check which are missing
+    missing_calibers = set()
+    for caliber in calibers:
+        if not caliber:
+            continue
+        
+        normalized_input = normalize_caliber(caliber)
+        
+        # Try exact match first (normalized)
+        if normalized_input in existing_calibers_normalized:
+            continue
+        
+        # Try fuzzy matching for common variations
+        found_match = False
+        for existing_norm in existing_calibers_normalized:
+            # Check if one is a substring of the other (for cases like "9mm" vs "9 mm")
+            if normalized_input in existing_norm or existing_norm in normalized_input:
+                found_match = True
+                break
+            
+            # Check for common variations (e.g., .357 vs .357 mag)
+            if normalized_input.replace('.', '').replace('mag', '') == existing_norm.replace('.', '').replace('mag', ''):
+                found_match = True
+                break
+        
+        if not found_match:
+            missing_calibers.add(caliber)
+    
+    return missing_calibers
 
 
 def create_sessions_from_excel_data(
@@ -26,6 +88,25 @@ def create_sessions_from_excel_data(
     
     # Check if parser returned multi-sheet data (dict) or single-sheet data (tuple)
     if isinstance(parsed_data, dict):
+        # Multi-sheet file - validate calibers first
+        all_calibers = set()
+        for sheet_name, series_list in parsed_data.items():
+            for shot_data, _, _, _, _ in series_list:
+                for shot in shot_data:
+                    if shot.get('caliber'):
+                        all_calibers.add(str(shot['caliber']).strip())
+        
+        missing_calibers = validate_calibers_exist(db, all_calibers)
+        if missing_calibers:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "missing_ammunition",
+                    "message": f"The following calibers are not in the ammunition database: {', '.join(missing_calibers)}",
+                    "missing_calibers": list(missing_calibers)
+                }
+            )
+        
         # Multi-sheet file - create separate test sessions for each sheet
         return _create_sessions_from_multi_sheet(
             db, parsed_data, test_name, location_name, operator, protocol, test_date, excel_file_path
@@ -35,6 +116,23 @@ def create_sessions_from_excel_data(
         conditioning_size = parser.parse_conditioning_and_size(parser.sheet['A1'].value if parser.sheet['A1'].value else '')
         multiple_tests = parser.detect_multiple_tests()
         shot_data, _, _ = parsed_data
+        
+        # Validate calibers exist in database
+        all_calibers = set()
+        for shot in shot_data:
+            if shot.get('caliber'):
+                all_calibers.add(str(shot['caliber']).strip())
+        
+        missing_calibers = validate_calibers_exist(db, all_calibers)
+        if missing_calibers:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "missing_ammunition",
+                    "message": f"The following calibers are not in the ammunition database: {', '.join(missing_calibers)}",
+                    "missing_calibers": list(missing_calibers)
+                }
+            )
         
         if multiple_tests:
             parent_session = TestSessionModel(

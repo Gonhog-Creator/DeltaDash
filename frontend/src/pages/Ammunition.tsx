@@ -14,6 +14,7 @@ export function AmmunitionPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingItem, setEditingItem] = useState<Ammunition | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Ammunition | null>(null);
+  const [velocityUnit, setVelocityUnit] = useState<'fps' | 'm/s'>('fps');
   const [formData, setFormData] = useState<AmmunitionCreate>({
     name: '',
     caliber: '',
@@ -24,8 +25,16 @@ export function AmmunitionPage() {
     projectile_type: '',
     projectile_mass_grains: 0,
     nominal_velocity_fps: 0,
+    nominal_velocity_m_s: null,
     manufacturer: '',
   });
+
+  const convertVelocity = (value: number, fromUnit: 'fps' | 'm/s', toUnit: 'fps' | 'm/s'): number => {
+    if (fromUnit === toUnit) return value;
+    if (fromUnit === 'fps' && toUnit === 'm/s') return value * 0.3048;
+    if (fromUnit === 'm/s' && toUnit === 'fps') return value / 0.3048;
+    return value;
+  };
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error loading ammunition</div>;
@@ -35,7 +44,8 @@ export function AmmunitionPage() {
     try {
       await createMutation.mutateAsync(formData);
       setShowCreateForm(false);
-      setFormData({ name: '', caliber: '', caliber_unit: 'mm', caliber_diameter_mm: null, caliber_length_mm: null, caliber_inch: null, projectile_type: '', projectile_mass_grains: 0, nominal_velocity_fps: 0, manufacturer: '' });
+      setFormData({ name: '', caliber: '', caliber_unit: 'mm', caliber_diameter_mm: null, caliber_length_mm: null, caliber_inch: null, projectile_type: '', projectile_mass_grains: 0, nominal_velocity_fps: 0, nominal_velocity_m_s: null, manufacturer: '' });
+      setVelocityUnit('fps');
     } catch (err) {
       console.error('Failed to create ammunition:', err);
     }
@@ -50,7 +60,8 @@ export function AmmunitionPage() {
       ) as AmmunitionUpdate;
       await updateMutation.mutateAsync({ id: editingItem.id, ammunition: updatePayload });
       setEditingItem(null);
-      setFormData({ name: '', caliber: '', caliber_unit: 'mm', caliber_diameter_mm: null, caliber_length_mm: null, caliber_inch: null, projectile_type: '', projectile_mass_grains: 0, nominal_velocity_fps: 0, manufacturer: '' });
+      setFormData({ name: '', caliber: '', caliber_unit: 'mm', caliber_diameter_mm: null, caliber_length_mm: null, caliber_inch: null, projectile_type: '', projectile_mass_grains: 0, nominal_velocity_fps: 0, nominal_velocity_m_s: null, manufacturer: '' });
+      setVelocityUnit('fps');
     } catch (err) {
       console.error('Failed to update ammunition:', err);
     }
@@ -79,13 +90,16 @@ export function AmmunitionPage() {
       projectile_type: item.projectile_type || '',
       projectile_mass_grains: item.projectile_mass_grains || 0,
       nominal_velocity_fps: item.nominal_velocity_fps || 0,
+      nominal_velocity_m_s: item.nominal_velocity_m_s || null,
       manufacturer: item.manufacturer || '',
     });
+    setVelocityUnit(item.nominal_velocity_m_s && item.nominal_velocity_m_s > 0 ? 'm/s' : 'fps');
   };
 
   const cancelEdit = () => {
     setEditingItem(null);
-    setFormData({ name: '', caliber: '', caliber_unit: 'mm', caliber_diameter_mm: null, caliber_length_mm: null, caliber_inch: null, projectile_type: '', projectile_mass_grains: 0, nominal_velocity_fps: 0, manufacturer: '' });
+    setFormData({ name: '', caliber: '', caliber_unit: 'mm', caliber_diameter_mm: null, caliber_length_mm: null, caliber_inch: null, projectile_type: '', projectile_mass_grains: 0, nominal_velocity_fps: 0, nominal_velocity_m_s: null, manufacturer: '' });
+    setVelocityUnit('fps');
   };
 
   return (
@@ -101,6 +115,72 @@ export function AmmunitionPage() {
           </button>
         )}
       </div>
+
+      {!(showCreateForm || editingItem) && (
+        <div className="bg-white shadow rounded-lg overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Caliber</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Manufacturer</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mass (gr)</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Velocity</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {ammunitionList?.map((item) => (
+                <tr key={item.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {item.caliber_unit === 'mm'
+                      ? `${item.caliber_diameter_mm && item.caliber_length_mm
+                          ? `${parseFloat(item.caliber_diameter_mm).toFixed(2).replace(/\.00$/, '')}x${parseFloat(item.caliber_length_mm).toFixed(2).replace(/\.00$/, '')}mm`
+                          : '-'
+                        }`
+                      : item.caliber_inch ? `${parseFloat(item.caliber_inch).toFixed(4).replace(/\.?0+$/, '')} in` : '-'
+                    }
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.projectile_type || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.manufacturer || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.projectile_mass_grains || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {item.nominal_velocity_m_s ? `${Math.round(item.nominal_velocity_m_s)} m/s` : item.nominal_velocity_fps ? `${Math.round(item.nominal_velocity_fps * 0.3048)} m/s` : '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    {isAdmin && (
+                      <>
+                        <button
+                          onClick={() => startEdit(item)}
+                          className="text-indigo-600 hover:text-indigo-900 mr-3"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(item)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {ammunitionList?.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
+                    No ammunition found.
+                    {isAdmin && ' Click "Add Ammunition" to create one.'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {(showCreateForm || editingItem) && isAdmin && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
@@ -222,13 +302,67 @@ export function AmmunitionPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Nominal Velocity (fps) *</label>
+                <label className="block text-sm font-medium text-gray-700">Nominal Velocity Unit</label>
+                <div className="mt-1 flex space-x-4">
+                  <label className="inline-flex items-center">
+                    <input
+                      type="radio"
+                      name="velocity_unit"
+                      value="fps"
+                      checked={velocityUnit === 'fps'}
+                      onChange={(e) => {
+                        const newUnit = e.target.value as 'fps' | 'm/s';
+                        const currentValue = velocityUnit === 'fps' ? formData.nominal_velocity_fps : formData.nominal_velocity_m_s;
+                        const convertedValue = currentValue ? convertVelocity(currentValue, velocityUnit, newUnit) : 0;
+                        setVelocityUnit(newUnit);
+                        if (newUnit === 'fps') {
+                          setFormData({ ...formData, nominal_velocity_fps: convertedValue, nominal_velocity_m_s: null });
+                        } else {
+                          setFormData({ ...formData, nominal_velocity_fps: 0, nominal_velocity_m_s: convertedValue });
+                        }
+                      }}
+                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">fps</span>
+                  </label>
+                  <label className="inline-flex items-center">
+                    <input
+                      type="radio"
+                      name="velocity_unit"
+                      value="m/s"
+                      checked={velocityUnit === 'm/s'}
+                      onChange={(e) => {
+                        const newUnit = e.target.value as 'fps' | 'm/s';
+                        const currentValue = velocityUnit === 'fps' ? formData.nominal_velocity_fps : formData.nominal_velocity_m_s;
+                        const convertedValue = currentValue ? convertVelocity(currentValue, velocityUnit, newUnit) : 0;
+                        setVelocityUnit(newUnit);
+                        if (newUnit === 'fps') {
+                          setFormData({ ...formData, nominal_velocity_fps: convertedValue, nominal_velocity_m_s: null });
+                        } else {
+                          setFormData({ ...formData, nominal_velocity_fps: 0, nominal_velocity_m_s: convertedValue });
+                        }
+                      }}
+                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">m/s</span>
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Nominal Velocity ({velocityUnit}) *</label>
                 <input
                   type="number"
-                  step="1"
+                  step="0.1"
                   required
-                  value={formData.nominal_velocity_fps || ''}
-                  onChange={(e) => setFormData({ ...formData, nominal_velocity_fps: e.target.value ? parseFloat(e.target.value) : 0 })}
+                  value={velocityUnit === 'fps' ? (formData.nominal_velocity_fps || '') : (formData.nominal_velocity_m_s || '')}
+                  onChange={(e) => {
+                    const value = e.target.value ? parseFloat(e.target.value) : 0;
+                    if (velocityUnit === 'fps') {
+                      setFormData({ ...formData, nominal_velocity_fps: value, nominal_velocity_m_s: convertVelocity(value, 'fps', 'm/s') });
+                    } else {
+                      setFormData({ ...formData, nominal_velocity_fps: convertVelocity(value, 'm/s', 'fps'), nominal_velocity_m_s: value });
+                    }
+                  }}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
@@ -253,67 +387,6 @@ export function AmmunitionPage() {
         </div>
       )}
 
-      <div className="bg-white shadow rounded-lg overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Caliber</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Manufacturer</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mass (gr)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Velocity (fps)</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {ammunitionList?.map((item) => (
-              <tr key={item.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {item.caliber_unit === 'mm' 
-                    ? `${item.caliber_diameter_mm && item.caliber_length_mm 
-                        ? `${parseFloat(item.caliber_diameter_mm).toFixed(2).replace(/\.00$/, '')}x${parseFloat(item.caliber_length_mm).toFixed(2).replace(/\.00$/, '')}mm`
-                        : '-'
-                      }`
-                    : item.caliber_inch ? `${parseFloat(item.caliber_inch).toFixed(4).replace(/\.?0+$/, '')} in` : '-'
-                  }
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.projectile_type || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.manufacturer || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.projectile_mass_grains || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.nominal_velocity_fps || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  {isAdmin && (
-                    <>
-                      <button
-                        onClick={() => startEdit(item)}
-                        className="text-indigo-600 hover:text-indigo-900 mr-3"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => setDeleteTarget(item)}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        Delete
-                      </button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {ammunitionList?.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
-                  No ammunition found.
-                  {isAdmin && ' Click "Add Ammunition" to create one.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
       {deleteTarget && (
         <ConfirmModal
           title="Delete Ammunition"

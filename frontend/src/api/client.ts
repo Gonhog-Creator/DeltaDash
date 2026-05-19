@@ -1,4 +1,6 @@
-const API_BASE_URL = 'https://deltadash-backend-production.up.railway.app';
+const API_BASE_URL = import.meta.env.DEV
+  ? 'http://localhost:8000'
+  : 'https://deltadash-backend-production.up.railway.app';
 
 class ApiClient {
   private baseUrl: string;
@@ -88,11 +90,6 @@ class ApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    // Development bypass: return mock data for all API calls in dev mode
-    if (import.meta.env.DEV) {
-      return this.getMockData<T>(endpoint, options);
-    }
-
     const url = `${this.baseUrl}${endpoint}`;
     const token = localStorage.getItem('token');
     const isFormData = options.body instanceof FormData;
@@ -126,7 +123,10 @@ class ApiClient {
         throw new Error('Unauthorized');
       }
       const error = await response.json().catch(() => ({ detail: 'An error occurred' }));
-      throw new Error(error.detail || 'An error occurred');
+      // Create an error object that preserves the detail
+      const errorObj = new Error(typeof error.detail === 'string' ? error.detail : 'An error occurred') as any;
+      errorObj.detail = error.detail;
+      throw errorObj;
     }
 
     if (response.status === 204 || response.headers.get('content-length') === '0') {

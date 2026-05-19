@@ -151,18 +151,23 @@ def delete_test_session(
     test_session = db.query(TestSessionModel).filter(TestSessionModel.id == test_session_id).first()
     if not test_session:
         raise HTTPException(status_code=404, detail="Test session not found")
-    
-    # If this is a parent session, delete all child sessions first
-    if test_session.parent_test_group_id is None:
-        child_sessions = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == test_session_id).all()
-        for child in child_sessions:
-            # Delete shot data for child
-            db.query(ShotDataModel).filter(ShotDataModel.test_session_id == child.id).delete()
-            db.delete(child)
-    
+
+    # Query child sessions first
+    child_sessions = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == test_session_id).all()
+
+    # Null out parent_test_group_id to break the foreign key constraint
+    db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == test_session_id).update({"parent_test_group_id": None})
+    db.flush()
+
+    # Delete child sessions
+    for child in child_sessions:
+        # Delete shot data for child
+        db.query(ShotDataModel).filter(ShotDataModel.test_session_id == child.id).delete()
+        db.delete(child)
+
     # Delete associated shot data
     db.query(ShotDataModel).filter(ShotDataModel.test_session_id == test_session_id).delete()
-    
+
     db.delete(test_session)
     db.commit()
 
