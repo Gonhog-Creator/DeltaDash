@@ -51,7 +51,7 @@ export function Analytics() {
     queryFn: () => apiClient.get<AnalyticsData>('/api/v1/analytics/velocity-vs-bfd'),
   });
 
-  const [activeTab, setActiveTab] = useState<'builder' | 'velocity-bfd' | 'energy-bfd'>('builder');
+  const [activeTab, setActiveTab] = useState<'builder' | 'velocity-bfd' | 'energy-velocity'>('builder');
   const [xAxis, setXAxis] = useState<AxisOption>('bfd_mm');
   const [yAxis, setYAxis] = useState<AxisOption>('velocity');
   const [colorGrouping, setColorGrouping] = useState<ColorGroupingOption>('side');
@@ -225,14 +225,14 @@ export function Analytics() {
             Velocity vs BFD
           </button>
           <button
-            onClick={() => setActiveTab('energy-bfd')}
+            onClick={() => setActiveTab('energy-velocity')}
             className={`${
-              activeTab === 'energy-bfd'
+              activeTab === 'energy-velocity'
                 ? 'border-indigo-500 text-indigo-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
           >
-            Bullet Energy vs BFD
+            Bullet Energy vs Velocity
           </button>
         </nav>
       </div>
@@ -526,37 +526,104 @@ export function Analytics() {
             </div>
           )}
         </div>
-      ) : activeTab === 'energy-bfd' ? (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Bullet Energy vs Back Face Deformation
-          </h2>
-          <p className="text-sm text-gray-600 mb-4">
-            Y-axis: Bullet Energy (J)<br />
-            X-axis: Back Face Deformation (mm)
-          </p>
-          
+      ) : activeTab === 'energy-velocity' ? (
+        <div className="space-y-6">
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Filters</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ammunition Type (Caliber)</label>
+                <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
+                  {uniqueCalibers.map(caliber => (
+                    <label key={caliber} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedCalibers.includes(caliber)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedCalibers([...selectedCalibers, caliber]);
+                          } else {
+                            setSelectedCalibers(selectedCalibers.filter(c => c !== caliber));
+                          }
+                        }}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm text-gray-700">{caliber}</span>
+                    </label>
+                  ))}
+                </div>
+                {selectedCalibers.length > 0 && (
+                  <button
+                    onClick={() => setSelectedCalibers([])}
+                    className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
+                  >
+                    Clear caliber filter
+                  </button>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Protection Level</label>
+                <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
+                  {uniqueProtectionLevels.map(level => (
+                    <label key={level} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedProtectionLevels.includes(level)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedProtectionLevels([...selectedProtectionLevels, level]);
+                          } else {
+                            setSelectedProtectionLevels(selectedProtectionLevels.filter(l => l !== level));
+                          }
+                        }}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm text-gray-700">{level}</span>
+                    </label>
+                  ))}
+                </div>
+                {selectedProtectionLevels.length > 0 && (
+                  <button
+                    onClick={() => setSelectedProtectionLevels([])}
+                    className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
+                  >
+                    Clear protection level filter
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              Bullet Energy vs Velocity
+            </h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Y-axis: Bullet Energy (J)<br />
+              X-axis: Velocity (m/s)
+            </p>
+            
           {analyticsData && analyticsData.points.length > 0 ? (
             <div className="h-[600px]">
               <Plot
                 data={[
                   {
-                    x: analyticsData.points.map(p => p.bfd_mm),
-                    y: analyticsData.points.map(p => p.bullet_energy),
+                    x: filteredPoints.map(p => p.velocity),
+                    y: filteredPoints.map(p => p.bullet_energy),
                     mode: 'markers',
                     type: 'scatter',
                     marker: {
                       size: 8,
-                      color: analyticsData.points.map(p => p.bullet_energy),
+                      color: filteredPoints.map(p => p.caliber),
                       colorscale: 'Viridis',
                       showscale: true,
                       colorbar: {
-                        title: 'Bullet Energy (J)',
+                        title: 'Caliber',
                         x: 1.02,
                       },
                     },
-                    text: analyticsData.points.map(p => 
-                      `Test Session: ${p.test_session_name || p.test_session_id || 'N/A'}<br>Shot: ${p.shot_number || 'N/A'}<br>Vest: ${p.vest_number || 'N/A'}<br>Side: ${p.side ? p.side.charAt(0).toUpperCase() + p.side.slice(1) : 'N/A'}${p.angle_degrees ? ` (${p.angle_degrees}°)` : ''}<br>Caliber: ${p.caliber || 'N/A'}<br>Protection Level: ${p.protection_level || 'N/A'}<br>Bullet Energy: ${p.bullet_energy?.toFixed(2) || 'N/A'} J<br>BFD: ${p.bfd_mm?.toFixed(2) || 'N/A'} mm`
+                    text: filteredPoints.map(p => 
+                      `Test Session: ${p.test_session_name || p.test_session_id || 'N/A'}<br>Shot: ${p.shot_number || 'N/A'}<br>Vest: ${p.vest_number || 'N/A'}<br>Side: ${p.side ? p.side.charAt(0).toUpperCase() + p.side.slice(1) : 'N/A'}${p.angle_degrees ? ` (${p.angle_degrees}°)` : ''}<br>Caliber: ${p.caliber || 'N/A'}<br>Protection Level: ${p.protection_level || 'N/A'}<br>Velocity: ${p.velocity?.toFixed(2) || 'N/A'} m/s<br>Bullet Energy: ${p.bullet_energy?.toFixed(2) || 'N/A'} J`
                     ),
                     hoverinfo: 'text+x+y',
                     name: 'Shots',
@@ -566,7 +633,7 @@ export function Analytics() {
                   autosize: true,
                   margin: { t: 40, r: 40, b: 60, l: 80 },
                   xaxis: {
-                    title: 'Back Face Deformation (mm)',
+                    title: 'Velocity (m/s)',
                     gridcolor: '#e5e7eb',
                     zerolinecolor: '#9ca3af',
                   },
@@ -613,34 +680,103 @@ export function Analytics() {
               </div>
               <div className="text-xs text-gray-600 space-y-1">
                 <p>Total points in dataset: {analyticsData?.points.length || 0}</p>
+                <p>Filtered points displayed: {filteredPoints.length}</p>
                 <p>Points with bullet energy: {analyticsData?.points.filter(p => p.bullet_energy !== null).length || 0}</p>
-                <p>Points with BFD: {analyticsData?.points.filter(p => p.bfd_mm !== null).length || 0}</p>
+                <p>Points with velocity: {analyticsData?.points.filter(p => p.velocity !== null).length || 0}</p>
               </div>
             </div>
           )}
         </div>
+        </div>
       ) : (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Velocity vs Back Face Deformation
-          </h2>
-          <p className="text-sm text-gray-600 mb-4">
-            Y-axis: Velocity (m/s)<br />
-            X-axis: Back Face Deformation (mm)
-          </p>
-          
+        <div className="space-y-6">
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Filters</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ammunition Type (Caliber)</label>
+                <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
+                  {uniqueCalibers.map(caliber => (
+                    <label key={caliber} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedCalibers.includes(caliber)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedCalibers([...selectedCalibers, caliber]);
+                          } else {
+                            setSelectedCalibers(selectedCalibers.filter(c => c !== caliber));
+                          }
+                        }}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm text-gray-700">{caliber}</span>
+                    </label>
+                  ))}
+                </div>
+                {selectedCalibers.length > 0 && (
+                  <button
+                    onClick={() => setSelectedCalibers([])}
+                    className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
+                  >
+                    Clear caliber filter
+                  </button>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Protection Level</label>
+                <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
+                  {uniqueProtectionLevels.map(level => (
+                    <label key={level} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedProtectionLevels.includes(level)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedProtectionLevels([...selectedProtectionLevels, level]);
+                          } else {
+                            setSelectedProtectionLevels(selectedProtectionLevels.filter(l => l !== level));
+                          }
+                        }}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm text-gray-700">{level}</span>
+                    </label>
+                  ))}
+                </div>
+                {selectedProtectionLevels.length > 0 && (
+                  <button
+                    onClick={() => setSelectedProtectionLevels([])}
+                    className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
+                  >
+                    Clear protection level filter
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              Velocity vs Back Face Deformation
+            </h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Y-axis: Velocity (m/s)<br />
+              X-axis: Back Face Deformation (mm)
+            </p>
+            
           {analyticsData && analyticsData.points.length > 0 ? (
             <div className="h-[600px]">
               <Plot
                 data={[
                   {
-                    x: analyticsData.points.map(p => p.bfd_mm),
-                    y: analyticsData.points.map(p => p.velocity),
+                    x: filteredPoints.map(p => p.bfd_mm),
+                    y: filteredPoints.map(p => p.velocity),
                     mode: 'markers',
                     type: 'scatter',
                     marker: {
                       size: 8,
-                      color: analyticsData.points.map(p => p.velocity),
+                      color: filteredPoints.map(p => p.velocity),
                       colorscale: 'Viridis',
                       showscale: true,
                       colorbar: {
@@ -648,7 +784,7 @@ export function Analytics() {
                         x: 1.02,
                       },
                     },
-                    text: analyticsData.points.map(p => 
+                    text: filteredPoints.map(p => 
                       `Test Session: ${p.test_session_name || p.test_session_id || 'N/A'}<br>Shot: ${p.shot_number || 'N/A'}<br>Vest: ${p.vest_number || 'N/A'}<br>Side: ${p.side ? p.side.charAt(0).toUpperCase() + p.side.slice(1) : 'N/A'}${p.angle_degrees ? ` (${p.angle_degrees}°)` : ''}<br>Caliber: ${p.caliber || 'N/A'}<br>Protection Level: ${p.protection_level || 'N/A'}<br>Velocity: ${p.velocity?.toFixed(2) || 'N/A'} m/s<br>BFD: ${p.bfd_mm?.toFixed(2) || 'N/A'} mm`
                     ),
                     hoverinfo: 'text+x+y',
@@ -706,11 +842,13 @@ export function Analytics() {
               </div>
               <div className="text-xs text-gray-600 space-y-1">
                 <p>Total points in dataset: {analyticsData?.points.length || 0}</p>
+                <p>Filtered points displayed: {filteredPoints.length}</p>
                 <p>Points with velocity: {analyticsData?.points.filter(p => p.velocity !== null).length || 0}</p>
                 <p>Points with BFD: {analyticsData?.points.filter(p => p.bfd_mm !== null).length || 0}</p>
               </div>
             </div>
           )}
+        </div>
         </div>
       )}
     </div>

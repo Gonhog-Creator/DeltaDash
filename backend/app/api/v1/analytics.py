@@ -38,9 +38,6 @@ def get_velocity_vs_bfd(
     
     # Get all ammunition data for intelligent matching
     ammunition_data = db.query(AmmunitionModel).all()
-    print(f"DEBUG: Total ammunition entries in database: {len(ammunition_data)}")
-    for ammo in ammunition_data:
-        print(f"DEBUG: Ammunition entry - ID: {ammo.id}, Name: {ammo.name}, Caliber: {ammo.caliber}, Diameter mm: {ammo.caliber_diameter_mm}, Diameter inch: {ammo.caliber_inch}, Mass grains: {ammo.projectile_mass_grains}")
     
     # Create a mapping of normalized calibers to ammunition records
     caliber_to_ammo = {}
@@ -48,7 +45,6 @@ def get_velocity_vs_bfd(
         if ammo.caliber:
             normalized = normalize_caliber(ammo.caliber)
             caliber_to_ammo[normalized] = ammo
-    print(f"DEBUG: Caliber mapping created from text field: {list(caliber_to_ammo.keys())}")
     
     # Helper function to extract numeric value from caliber string
     def extract_caliber_number(caliber_str):
@@ -68,44 +64,33 @@ def get_velocity_vs_bfd(
         if shot.caliber:
             normalized_shot_caliber = normalize_caliber(shot.caliber)
             shot_caliber_number = extract_caliber_number(shot.caliber)
-            print(f"DEBUG: Shot caliber: {shot.caliber} -> Normalized: {normalized_shot_caliber}, Extracted number: {shot_caliber_number}")
-            print(f"DEBUG: Available normalized calibers: {list(caliber_to_ammo.keys())}")
             
             # Try exact match first on text caliber field
             if normalized_shot_caliber in caliber_to_ammo:
                 ammunition = caliber_to_ammo[normalized_shot_caliber]
-                print(f"DEBUG: Exact text match found for {normalized_shot_caliber}")
             else:
                 # Try fuzzy matching on text caliber field
                 for ammo_normalized, ammo in caliber_to_ammo.items():
                     # Check if one is a substring of the other
                     if normalized_shot_caliber in ammo_normalized or ammo_normalized in normalized_shot_caliber:
                         ammunition = ammo
-                        print(f"DEBUG: Fuzzy text match found: {normalized_shot_caliber} matched to {ammo_normalized}")
                         break
                     # Check for common variations (e.g., .357 vs .357 mag)
                     if normalized_shot_caliber.replace('.', '').replace('mag', '') == ammo_normalized.replace('.', '').replace('mag', ''):
                         ammunition = ammo
-                        print(f"DEBUG: Variation text match found: {normalized_shot_caliber} matched to {ammo_normalized}")
                         break
             
             # If text matching failed, try numeric matching using diameter fields
             if not ammunition and shot_caliber_number:
-                print(f"DEBUG: Text matching failed, trying numeric matching with {shot_caliber_number}")
                 for ammo in ammunition_data:
                     # Try matching against caliber_diameter_mm (for metric calibers like 9mm)
                     if ammo.caliber_diameter_mm and abs(float(ammo.caliber_diameter_mm) - shot_caliber_number) < 0.1:
                         ammunition = ammo
-                        print(f"DEBUG: Numeric match found via caliber_diameter_mm: {shot_caliber_number} matched to {ammo.caliber_diameter_mm}")
                         break
                     # Try matching against caliber_inch (for imperial calibers like .357)
                     if ammo.caliber_inch and abs(float(ammo.caliber_inch) - shot_caliber_number) < 0.01:
                         ammunition = ammo
-                        print(f"DEBUG: Numeric match found via caliber_inch: {shot_caliber_number} matched to {ammo.caliber_inch}")
                         break
-            
-            if not ammunition:
-                print(f"DEBUG: No match found for {shot.caliber}")
         
         # Convert bullet mass to kg using centralized equations
         bullet_mass_kg = None

@@ -13,9 +13,9 @@ class AmmunitionBase(BaseModel):
     caliber_length_mm: Optional[Decimal] = Field(None, ge=0)
     caliber_inch: Optional[Decimal] = Field(None, ge=0)
     projectile_type: Optional[str] = None
-    projectile_mass_grains: Decimal = Field(..., gt=0)  # required
+    projectile_mass_grains: Decimal = Field(..., ge=0)  # required
     projectile_mass_grams: Optional[Decimal] = Field(None, ge=0)
-    nominal_velocity_fps: Decimal = Field(..., gt=0)  # required
+    nominal_velocity_fps: Decimal = Field(..., ge=0)  # required
     nominal_velocity_m_s: Optional[Decimal] = Field(None, ge=0)
     manufacturer: Optional[str] = None
     lot_number: Optional[str] = None
