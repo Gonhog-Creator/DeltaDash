@@ -191,7 +191,7 @@ def download_material_file(
     material = db.query(MaterialModel).filter(MaterialModel.id == material_id).first()
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
-    
+
     if file_type == 'mss':
         file_path = material.mss_file_path
         original_filename = material.mss_original_filename
@@ -200,15 +200,54 @@ def download_material_file(
         original_filename = material.sds_original_filename
     else:
         raise HTTPException(status_code=400, detail="Invalid file type")
-    
+
     if not file_path:
         raise HTTPException(status_code=404, detail="File not found")
-    
+
     full_path = os.path.join(settings.material_docs_dir, file_path)
     if not os.path.exists(full_path):
         raise HTTPException(status_code=404, detail="File not found on disk")
-    
+
     # Use original filename if available, otherwise use the UUID filename
     download_filename = original_filename if original_filename else file_path
-    
+
     return FileResponse(full_path, filename=download_filename)
+
+
+@router.delete("/{material_id}/file/{file_type}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_material_file(
+    material_id: str,
+    file_type: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access)
+):
+    material = db.query(MaterialModel).filter(MaterialModel.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material not found")
+
+    if file_type == 'mss':
+        file_path = material.mss_file_path
+        if not file_path:
+            raise HTTPException(status_code=404, detail="MSS file not found")
+        # Delete file from disk
+        full_path = os.path.join(settings.material_docs_dir, file_path)
+        if os.path.exists(full_path):
+            os.remove(full_path)
+        # Clear database fields
+        material.mss_file_path = None
+        material.mss_original_filename = None
+    elif file_type == 'sds':
+        file_path = material.sds_file_path
+        if not file_path:
+            raise HTTPException(status_code=404, detail="SDS file not found")
+        # Delete file from disk
+        full_path = os.path.join(settings.material_docs_dir, file_path)
+        if os.path.exists(full_path):
+            os.remove(full_path)
+        # Clear database fields
+        material.sds_file_path = None
+        material.sds_original_filename = None
+    else:
+        raise HTTPException(status_code=400, detail="Invalid file type")
+
+    db.commit()

@@ -423,6 +423,16 @@ export function Materials() {
           onCancel={handleFileReplaceCancel}
         />
       )}
+      {fileToRemove && (
+        <ConfirmModal
+          title="Remove File"
+          message={`Are you sure you want to remove the ${fileToRemove.fileType === 'mss' ? 'MSS' : 'SDS'} file from "${fileToRemove.material.name}"? This action cannot be undone.`}
+          confirmLabel="Remove"
+          variant="danger"
+          onConfirm={handleRemoveFileConfirm}
+          onCancel={() => setFileToRemove(null)}
+        />
+      )}
     </div>
   );
 }

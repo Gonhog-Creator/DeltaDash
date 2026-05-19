@@ -64,3 +64,16 @@ export function useDeleteMaterial() {
     },
   });
 }
+
+export function useRemoveMaterialFile() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, fileType }: { id: string; fileType: 'mss' | 'sds' }) =>
+      materialsApi.removeFile(id, fileType),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['materials'] });
+      queryClient.invalidateQueries({ queryKey: ['material', id] });
+    },
+  });
+}

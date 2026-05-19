@@ -113,4 +113,6 @@ export const materialsApi = {
   },
 
   delete: (id: string) => apiClient.delete<void>(`/api/v1/materials/${id}`),
+
+  removeFile: (id: string, fileType: 'mss' | 'sds') => apiClient.delete<void>(`/api/v1/materials/${id}/file/${fileType}`),
 };
