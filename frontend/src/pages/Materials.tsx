@@ -21,6 +21,7 @@ export function Materials() {
     manufacturer: '',
     areal_density_g_m2: null,
     thickness_mm: null,
+    thickness_tolerance_mm: null,
     material_function: '',
   });
 
@@ -35,7 +36,7 @@ export function Materials() {
       if (sdsFile) files.sds = sdsFile;
       await createMutation.mutateAsync({ material: formData, files });
       setShowCreateForm(false);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, material_function: '' });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '' });
       setMssFile(null);
       setSdsFile(null);
     } catch (err) {
@@ -61,7 +62,7 @@ export function Materials() {
       }
 
       setEditingMaterial(null);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, material_function: '' });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '' });
       setMssFile(null);
       setSdsFile(null);
     } catch (err) {
@@ -88,13 +89,14 @@ export function Materials() {
       manufacturer: material.manufacturer || '',
       areal_density_g_m2: material.areal_density_g_m2,
       thickness_mm: material.thickness_mm,
+      thickness_tolerance_mm: material.thickness_tolerance_mm,
       material_function: material.material_function || '',
     });
   };
 
   const cancelEdit = () => {
     setEditingMaterial(null);
-    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, material_function: '' });
+    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '' });
     setMssFile(null);
     setSdsFile(null);
   };
@@ -189,14 +191,23 @@ export function Materials() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Thickness (mm) *</label>
-                <input
-                  type="number"
-                  step="0.001"
-                  required
-                  value={formData.thickness_mm ?? ''}
-                  onChange={(e) => setFormData({ ...formData, thickness_mm: e.target.value ? parseFloat(e.target.value) : null })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="0.001"
+                    required
+                    value={formData.thickness_mm ?? ''}
+                    onChange={(e) => setFormData({ ...formData, thickness_mm: e.target.value ? parseFloat(e.target.value) : null })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                  />
+                  <input
+                    type="text"
+                    value={formData.thickness_tolerance_mm || ''}
+                    onChange={(e) => setFormData({ ...formData, thickness_tolerance_mm: e.target.value })}
+                    placeholder="±"
+                    className="mt-1 w-20 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">MSS (Material Specification Sheet)</label>

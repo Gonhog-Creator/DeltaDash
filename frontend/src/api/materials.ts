@@ -13,6 +13,7 @@ export interface Material {
   color: string | null;
   areal_density_g_m2: number | null;
   thickness_mm: number | null;
+  thickness_tolerance_mm: string | null;
   density_g_cm3: number | null;
   tensile_strength_mpa: number | null;
   modulus_gpa: number | null;
@@ -39,6 +40,7 @@ export interface MaterialCreate {
   color?: string | null;
   areal_density_g_m2?: number | null;
   thickness_mm?: number | null;
+  thickness_tolerance_mm?: string | null;
   density_g_cm3?: number | null;
   tensile_strength_mpa?: number | null;
   modulus_gpa?: number | null;
@@ -60,6 +62,7 @@ export interface MaterialUpdate {
   color?: string | null;
   areal_density_g_m2?: number | null;
   thickness_mm?: number | null;
+  thickness_tolerance_mm?: string | null;
   density_g_cm3?: number | null;
   tensile_strength_mpa?: number | null;
   modulus_gpa?: number | null;

@@ -1,6 +1,6 @@
 import { useState, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useTestSessions, useDeleteTestSession, useUploadExcel, useCreateFromExcel } from '../hooks/useTestSessions';
+import { useTestSessions, useDeleteTestSession, useUploadExcel, useCreateFromExcel, useUpdateTestSession } from '../hooks/useTestSessions';
 import { useLocations, useDeleteLocation, useUpdateLocation } from '../hooks/useLocations';
 import { useProtocols, useDeleteProtocol, useUpdateProtocol } from '../hooks/useProtocols';
 import { useVests } from '../hooks/useVests';
@@ -23,6 +23,7 @@ export function TestSessions() {
   const deleteProtocolMutation = useDeleteProtocol();
   const updateProtocolMutation = useUpdateProtocol();
   const deleteMutation = useDeleteTestSession();
+  const updateMutation = useUpdateTestSession();
   const uploadExcelMutation = useUploadExcel();
   const createFromExcelMutation = useCreateFromExcel();
 
@@ -39,6 +40,7 @@ export function TestSessions() {
 
   const [deleteTarget, setDeleteTarget] = useState<TestSession | null>(null);
   const [uploadTarget, setUploadTarget] = useState<TestSession | null>(null);
+  const [editTarget, setEditTarget] = useState<TestSession | null>(null);
   const [showCreateFromExcel, setShowCreateFromExcel] = useState(false);
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [testName, setTestName] = useState('');
@@ -286,6 +288,15 @@ export function TestSessions() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          setEditTarget(parent);
+                        }}
+                        className="text-indigo-600 hover:text-indigo-900 mr-3"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setDeleteTarget(parent);
                         }}
                         className="text-red-600 hover:text-red-900"
@@ -298,9 +309,6 @@ export function TestSessions() {
                     <tr key={child.id} className="bg-gray-50 hover:bg-gray-100">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 pl-12">
                         {child.name.replace(parent.name + ' - ', '')}
-                        {child.size && `, ${child.size}`}
-                        {child.conditioning && `, ${formatConditioning(child.conditioning)}`}
-                        {child.ballistic_limit && ' (Ballistic Limit)'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{child.test_date || '-'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{child.lab_name || '-'}</td>
@@ -329,6 +337,12 @@ export function TestSessions() {
                           className="text-indigo-600 hover:text-indigo-900 mr-3"
                         >
                           View
+                        </button>
+                        <button
+                          onClick={() => setEditTarget(child)}
+                          className="text-indigo-600 hover:text-indigo-900 mr-3"
+                        >
+                          Edit
                         </button>
                         <button
                           onClick={() => setDeleteTarget(child)}
@@ -740,6 +754,150 @@ export function TestSessions() {
           onCancel={() => {
             setShowAmmoModal(false);
           }}
+        />
+      )}
+
+      {editTarget && (
+        <ConfirmModal
+          title="Edit Test Session"
+          message={
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Session Name</label>
+                <input
+                  type="text"
+                  value={editTarget.name}
+                  onChange={(e) => setEditTarget({ ...editTarget, name: e.target.value })}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                />
+              </div>
+              {!editTarget.parent_test_group_id && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Test Date</label>
+                    <input
+                      type="date"
+                      value={editTarget.test_date || ''}
+                      onChange={(e) => setEditTarget({ ...editTarget, test_date: e.target.value || null })}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Lab Name</label>
+                    <select
+                      value={editTarget.lab_name || ''}
+                      onChange={(e) => setEditTarget({ ...editTarget, lab_name: e.target.value || null })}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                    >
+                      <option value="">Select lab...</option>
+                      {locations?.map((location) => (
+                        <option key={location.id} value={location.name}>
+                          {location.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Operator</label>
+                    <input
+                      type="text"
+                      value={editTarget.operator || ''}
+                      onChange={(e) => setEditTarget({ ...editTarget, operator: e.target.value || null })}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Protocol</label>
+                    <select
+                      value={editTarget.protocol || ''}
+                      onChange={(e) => setEditTarget({ ...editTarget, protocol: e.target.value || null })}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                    >
+                      <option value="">Select protocol...</option>
+                      {protocols?.map((protocol) => (
+                        <option key={protocol.id} value={protocol.name}>
+                          {protocol.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+              {editTarget.parent_test_group_id && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Conditioning</label>
+                  <select
+                    value={editTarget.conditioning || ''}
+                    onChange={(e) => setEditTarget({ ...editTarget, conditioning: e.target.value || null })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  >
+                    <option value="">Select conditioning...</option>
+                    <option value="ambient">Ambient</option>
+                    <option value="wet">Wet</option>
+                    <option value="tumbled">Tumbled</option>
+                    <option value="ballistic_limit">Ballistic Limit</option>
+                  </select>
+                </div>
+              )}
+              {editTarget.parent_test_group_id && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ambient Temperature (°C)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={editTarget.ambient_temperature_c ?? ''}
+                      onChange={(e) => setEditTarget({ ...editTarget, ambient_temperature_c: e.target.value ? parseFloat(e.target.value) : null })}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Humidity (%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={editTarget.humidity_percent ?? ''}
+                      onChange={(e) => setEditTarget({ ...editTarget, humidity_percent: e.target.value ? parseFloat(e.target.value) : null })}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                    />
+                  </div>
+                </>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea
+                  rows={3}
+                  value={editTarget.notes || ''}
+                  onChange={(e) => setEditTarget({ ...editTarget, notes: e.target.value || null })}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                />
+              </div>
+            </div>
+          }
+          confirmLabel="Save"
+          variant="default"
+          onConfirm={async () => {
+            try {
+              await updateMutation.mutateAsync({
+                id: editTarget.id,
+                testSession: {
+                  name: editTarget.name,
+                  test_date: editTarget.test_date,
+                  lab_name: editTarget.lab_name,
+                  operator: editTarget.operator,
+                  protocol: editTarget.protocol,
+                  conditioning: editTarget.conditioning,
+                  ambient_temperature_c: editTarget.ambient_temperature_c,
+                  humidity_percent: editTarget.humidity_percent,
+                  notes: editTarget.notes,
+                }
+              });
+              setEditTarget(null);
+            } catch (err) {
+              console.error('Failed to update test session:', err);
+            }
+          }}
+          onCancel={() => setEditTarget(null)}
         />
       )}
 

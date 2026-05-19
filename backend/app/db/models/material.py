@@ -20,6 +20,7 @@ class Material(Base):
     color = Column(String)
     areal_density_g_m2 = Column(Numeric(10, 2))
     thickness_mm = Column(Numeric(10, 3))
+    thickness_tolerance_mm = Column(String)
     density_g_cm3 = Column(Numeric(10, 3))
     tensile_strength_mpa = Column(Numeric(10, 2))
     modulus_gpa = Column(Numeric(10, 2))

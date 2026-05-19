@@ -4,12 +4,18 @@ import { useShots } from '../hooks/useShots';
 import { usePanels } from '../hooks/usePanels';
 import { useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
+import { useAuth } from '../hooks/useAuth';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export function Dashboard() {
   const { data: materials } = useMaterials();
   const { data: shots } = useShots();
   const { data: panels } = usePanels();
+  const { isAdmin } = useAuth();
   const [stats, setStats] = useState({ test_session_count: 0, total_shots: 0 });
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [showSyncSuccessModal, setShowSyncSuccessModal] = useState(false);
+  const [syncResults, setSyncResults] = useState<any>(null);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -24,6 +30,23 @@ export function Dashboard() {
     fetchStats();
   }, []);
 
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      const result = await apiClient.post('/api/v1/admin/sync-database');
+      setSyncResults(result);
+      setShowSyncSuccessModal(true);
+      // Refresh stats after sync
+      const data = await apiClient.get<{ test_session_count: number; total_shots: number }>('/api/v1/test-sessions/stats');
+      setStats({ test_session_count: data.test_session_count, total_shots: data.total_shots });
+    } catch (error) {
+      console.error('Failed to sync database:', error);
+      alert('Failed to sync database. Check console for details.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const dashboardStats = [
     { label: 'Total Materials', value: materials?.length || 0, color: 'bg-blue-500' },
     { label: 'Total Shots', value: stats.total_shots || 0, color: 'bg-purple-500' },
@@ -33,7 +56,18 @@ export function Dashboard() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">DeltaDash</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">DeltaDash</h1>
+        {isAdmin && (
+          <button
+            onClick={handleSync}
+            disabled={isSyncing}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSyncing ? 'Syncing...' : 'Sync Database (Pull)'}
+          </button>
+        )}
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {dashboardStats.map((stat) => (
@@ -85,6 +119,29 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      {showSyncSuccessModal && syncResults && (
+        <ConfirmModal
+          title="Database Sync Complete"
+          message={
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600">Database sync completed successfully. Records synced:</p>
+              <div className="bg-gray-50 p-3 rounded-md">
+                {Object.entries(syncResults.synced_records).map(([key, value]) => (
+                  <div key={key} className="flex justify-between text-sm">
+                    <span className="text-gray-700 capitalize">{key}:</span>
+                    <span className="font-medium text-gray-900">{value as number}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          }
+          confirmLabel="Close"
+          variant="default"
+          onConfirm={() => setShowSyncSuccessModal(false)}
+          onCancel={() => setShowSyncSuccessModal(false)}
+        />
+      )}
     </div>
   );
 }

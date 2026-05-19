@@ -17,6 +17,7 @@ class MaterialBase(BaseModel):
     color: Optional[str] = None
     areal_density_g_m2: Optional[Decimal] = Field(None, ge=0)
     thickness_mm: Optional[Decimal] = Field(None, ge=0)
+    thickness_tolerance_mm: Optional[str] = None
     density_g_cm3: Optional[Decimal] = Field(None, ge=0)
     tensile_strength_mpa: Optional[Decimal] = Field(None, ge=0)
     modulus_gpa: Optional[Decimal] = Field(None, ge=0)
@@ -45,6 +46,7 @@ class MaterialUpdate(BaseModel):
     color: Optional[str] = None
     areal_density_g_m2: Optional[Decimal] = Field(None, ge=0)
     thickness_mm: Optional[Decimal] = Field(None, ge=0)
+    thickness_tolerance_mm: Optional[str] = None
     density_g_cm3: Optional[Decimal] = Field(None, ge=0)
     tensile_strength_mpa: Optional[Decimal] = Field(None, ge=0)
     modulus_gpa: Optional[Decimal] = Field(None, ge=0)

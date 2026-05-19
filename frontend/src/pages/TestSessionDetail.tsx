@@ -315,6 +315,8 @@ export function TestSessionDetail() {
           const hasQualitativeTrauma = shots.some(shot => shot.trauma_qualitative);
           const hasAngle = shots.some(shot => shot.angle_degrees);
           
+          const maxTrauma = Math.max(...shots.map(shot => parseFloat(shot.trauma_mm || shot.bfd_mm || '0')).filter(v => !isNaN(v)));
+          
           return (
             <div className="bg-white shadow rounded-lg p-6 mb-4">
               <h3 className="text-md font-semibold text-gray-900 mb-4">{title}</h3>
@@ -347,7 +349,9 @@ export function TestSessionDetail() {
                           {shot.trauma_qualitative ? (
                             shot.trauma_qualitative === 'PERFORO' ? 'Punctured' : shot.trauma_qualitative
                           ) : (
-                            shot.trauma_mm || shot.bfd_mm || '-'
+                            <span className={parseFloat(shot.trauma_mm || shot.bfd_mm || '0') === maxTrauma ? 'font-bold' : ''}>
+                              {shot.trauma_mm || shot.bfd_mm || '-'}
+                            </span>
                           )}
                         </td>
                         <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
@@ -361,7 +365,7 @@ export function TestSessionDetail() {
                       </tr>
                     ))}
                     <tr className="bg-gray-100 font-semibold">
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">Average</td>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">Average of first three</td>
                       {hasAngle && (
                         <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900"></td>
                       )}
