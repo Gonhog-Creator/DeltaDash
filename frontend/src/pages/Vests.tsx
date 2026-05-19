@@ -351,7 +351,7 @@ export function Vests() {
                     </div>
                     {formData.sizes?.[size] !== undefined && (
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Surface Area (m²)</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Surface Area (cm²)</label>
                         <input
                           type="number"
                           step="0.001"
