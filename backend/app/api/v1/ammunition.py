@@ -7,6 +7,7 @@ from app.api.v1.auth import get_current_active_user, require_admin
 from app.schemas.ammunition import AmmunitionCreate, AmmunitionUpdate, Ammunition, AmmunitionListItem
 from app.db.models.user import User as UserModel
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,12 @@ def create_ammunition(
     try:
         logger.info(f"Creating ammunition: {ammunition}")
         logger.info(f"Current user: {current_user.username if current_user else 'None'}")
-        db_ammunition = AmmunitionModel(**ammunition.model_dump())
+        now = datetime.utcnow()
+        db_ammunition = AmmunitionModel(
+            **ammunition.model_dump(),
+            created_at=now,
+            updated_at=now
+        )
         db.add(db_ammunition)
         db.commit()
         db.refresh(db_ammunition)

@@ -14,6 +14,9 @@ export interface TestSession {
   size: string | null;
   ballistic_limit: boolean | null;
   parent_test_group_id: string | null;
+  vest_id: string | null;
+  vest_name: string | null;
+  vest_code: string | null;
   excel_file_path: string | null;
   notes: string | null;
   created_at: string;
@@ -59,7 +62,7 @@ export const testSessionsApi = {
 
   create: (testSession: TestSessionCreate) => apiClient.post<TestSession>('/api/v1/test-sessions', testSession),
 
-  createFromExcel: (file: File, testName: string, locationId?: string, protocol?: string, testDate?: string) => {
+  createFromExcel: (file: File, testName: string, locationId?: string, protocol?: string, vestId?: string, testDate?: string) => {
     const formData = new FormData();
     formData.append('excel_file', file);
     formData.append('test_name', testName);
@@ -68,6 +71,9 @@ export const testSessionsApi = {
     }
     if (protocol) {
       formData.append('protocol', protocol);
+    }
+    if (vestId) {
+      formData.append('vest_id', vestId);
     }
     if (testDate) {
       formData.append('test_date', testDate);

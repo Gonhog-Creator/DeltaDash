@@ -484,6 +484,7 @@ export function TestSessions() {
             setTestName('');
             setSelectedLocationId('');
             setProtocol('');
+            setSelectedVestId('');
             setTestDate(new Date().toISOString().split('T')[0]);
           }}
         />

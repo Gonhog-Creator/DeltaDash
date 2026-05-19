@@ -256,6 +256,7 @@ def _create_sessions_from_multi_sheet(
         test_date=test_date,
         ambient_temperature_c=temperature,
         humidity_percent=humidity,
+        vest_id=vest_id,
         excel_file_path=excel_file_path,
     )
     db.add(parent_session)
@@ -320,6 +321,7 @@ def _create_sessions_from_multi_sheet(
                 conditioning=conditioning,
                 ballistic_limit=ballistic_limit,
                 parent_test_group_id=parent_session.id,
+                vest_id=vest_id,
                 excel_file_path=excel_file_path,
             )
             db.add(db_test_session)
