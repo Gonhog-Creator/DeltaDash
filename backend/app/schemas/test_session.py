@@ -9,7 +9,6 @@ class TestSessionBase(BaseModel):
     name: str
     test_date: Optional[date] = None
     lab_name: Optional[str] = None
-    operator: Optional[str] = None
     protocol: Optional[str] = None
     clay_temperature_c: Optional[Decimal] = None
     ambient_temperature_c: Optional[Decimal] = None
@@ -31,7 +30,6 @@ class TestSessionUpdate(BaseModel):
     name: Optional[str] = None
     test_date: Optional[date] = None
     lab_name: Optional[str] = None
-    operator: Optional[str] = None
     protocol: Optional[str] = None
     clay_temperature_c: Optional[Decimal] = None
     ambient_temperature_c: Optional[Decimal] = None

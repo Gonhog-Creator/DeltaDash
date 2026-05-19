@@ -12,7 +12,6 @@ class TestSession(Base):
     name = Column(String, nullable=False)
     test_date = Column(Date)
     lab_name = Column(String)
-    operator = Column(String)
     protocol = Column(String)
     clay_temperature_c = Column(Numeric(5, 2))
     ambient_temperature_c = Column(Numeric(5, 2))

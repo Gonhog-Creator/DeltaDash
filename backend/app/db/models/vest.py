@@ -1,5 +1,6 @@
 from sqlalchemy import Column, String, Numeric, Integer, DateTime, ForeignKey, func, JSON
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 import uuid
 
 from app.db.base import Base
@@ -22,3 +23,6 @@ class Vest(Base):
     notes = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationship to layers
+    layers = relationship("VestLayer", backref="vest", cascade="all, delete-orphan", order_by="VestLayer.layer_index")

@@ -226,7 +226,6 @@ export function TestSessions() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lab</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Operator</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Protocol</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vest</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Characteristic</th>
@@ -267,7 +266,6 @@ export function TestSessions() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{parent.test_date || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{parent.lab_name || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{parent.operator || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{parent.protocol || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{parent.vest_code || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatConditioning(parent.conditioning)}</td>
@@ -326,7 +324,6 @@ export function TestSessions() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{child.test_date || '-'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{child.lab_name || '-'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{child.operator || '-'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{child.protocol || '-'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{child.vest_code || '-'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatConditioning(child.conditioning)}</td>

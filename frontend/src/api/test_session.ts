@@ -5,7 +5,6 @@ export interface TestSession {
   name: string;
   test_date: string | null;
   lab_name: string | null;
-  operator: string | null;
   protocol: string | null;
   clay_temperature_c: number | null;
   ambient_temperature_c: number | null;
@@ -27,7 +26,6 @@ export interface TestSessionCreate {
   name: string;
   test_date?: string | null;
   lab_name?: string | null;
-  operator?: string | null;
   protocol?: string | null;
   clay_temperature_c?: number | null;
   ambient_temperature_c?: number | null;
@@ -40,7 +38,6 @@ export interface TestSessionUpdate {
   name?: string | null;
   test_date?: string | null;
   lab_name?: string | null;
-  operator?: string | null;
   protocol?: string | null;
   clay_temperature_c?: number | null;
   ambient_temperature_c?: number | null;

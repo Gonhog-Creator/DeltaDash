@@ -1,6 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.db.session import get_db
 from app.db.models import Vest as VestModel, VestLayer
 from app.api.v1.auth import get_current_active_user, require_write_access
@@ -55,6 +55,8 @@ def create_vest(
     
     db.commit()
     db.refresh(db_vest)
+    # Reload with layers
+    db_vest = db.query(VestModel).options(joinedload(VestModel.layers)).filter(VestModel.id == db_vest.id).first()
     return db_vest
 
 
@@ -64,7 +66,7 @@ def get_vest(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
 ):
-    vest = db.query(VestModel).filter(VestModel.id == vest_id).first()
+    vest = db.query(VestModel).options(joinedload(VestModel.layers)).filter(VestModel.id == vest_id).first()
     if not vest:
         raise HTTPException(status_code=404, detail="Vest not found")
     return vest
@@ -87,6 +89,8 @@ def update_vest(
     
     db.commit()
     db.refresh(vest)
+    # Reload with layers
+    vest = db.query(VestModel).options(joinedload(VestModel.layers)).filter(VestModel.id == vest_id).first()
     return vest
 
 

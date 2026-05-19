@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useVests, useCreateVest, useUpdateVest, useDeleteVest, useUpdateVestLayers } from '../hooks/useVests';
 import { Vest, VestCreate, VestUpdate, VestLayerCreate } from '../api/vests';
+import { vestsApi } from '../api/vests';
 import { useMaterials } from '../hooks/useMaterials';
 import { Material } from '../api/materials';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -18,6 +19,7 @@ export function Vests() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingVest, setEditingVest] = useState<Vest | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Vest | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [formData, setFormData] = useState<VestCreate>({
     vest_code: '',
     vest_type: '',
@@ -43,6 +45,13 @@ export function Vests() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Validate that total layers matches sum of layer counts
+      const totalLayerCount = layers.reduce((sum, layer) => sum + (layer.layer_count || 0), 0);
+      if (formData.total_layers && totalLayerCount !== formData.total_layers) {
+        setValidationError(`Total layers (${formData.total_layers}) must equal sum of individual layer counts (${totalLayerCount})`);
+        return;
+      }
+      
       await createMutation.mutateAsync({ ...formData, layers });
       setShowCreateForm(false);
       setFormData({
@@ -69,15 +78,20 @@ export function Vests() {
     e.preventDefault();
     if (!editingVest) return;
     try {
+      // Validate that total layers matches sum of layer counts
+      const totalLayerCount = layers.reduce((sum, layer) => sum + (layer.layer_count || 0), 0);
+      if (formData.total_layers && totalLayerCount !== formData.total_layers) {
+        setValidationError(`Total layers (${formData.total_layers}) must equal sum of individual layer counts (${totalLayerCount})`);
+        return;
+      }
+
       const updatePayload = Object.fromEntries(
         Object.entries(formData).filter(([, v]) => v !== '' && v !== undefined && v !== null)
       ) as VestUpdate;
       await updateMutation.mutateAsync({ id: editingVest.id, vest: updatePayload });
 
-      // Update layers if they changed
-      if (layers.length > 0) {
-        await updateLayersMutation.mutateAsync({ id: editingVest.id, layers });
-      }
+      // Always update layers to ensure current state is saved
+      await updateLayersMutation.mutateAsync({ id: editingVest.id, layers });
 
       setEditingVest(null);
       setFormData({
@@ -111,25 +125,27 @@ export function Vests() {
     }
   };
 
-  const startEdit = (vest: Vest) => {
-    setEditingVest(vest);
+  const startEdit = async (vest: Vest) => {
+    // Fetch full vest details with layers
+    const fullVest = await vestsApi.get(vest.id);
+    setEditingVest(fullVest);
     setFormData({
-      vest_code: vest.vest_code,
-      vest_type: vest.vest_type || '',
-      threat_level: vest.threat_level || '',
-      protection_class: vest.protection_class || '',
-      total_layers: vest.total_layers,
-      total_thickness_mm: vest.total_thickness_mm,
-      sizes: vest.sizes || {},
-      construction_notes: vest.construction_notes || '',
-      stitch_pattern: vest.stitch_pattern || '',
-      backing_material: vest.backing_material || '',
-      notes: vest.notes || '',
-      created_by_username: vest.created_by_username || '',
+      vest_code: fullVest.vest_code,
+      vest_type: fullVest.vest_type || '',
+      threat_level: fullVest.threat_level || '',
+      protection_class: fullVest.protection_class || '',
+      total_layers: fullVest.total_layers,
+      total_thickness_mm: fullVest.total_thickness_mm,
+      sizes: fullVest.sizes || {},
+      construction_notes: fullVest.construction_notes || '',
+      stitch_pattern: fullVest.stitch_pattern || '',
+      backing_material: fullVest.backing_material || '',
+      notes: fullVest.notes || '',
+      created_by_username: fullVest.created_by_username || '',
       layers: [],
     });
     setLayers(
-      vest.layers.map((layer) => ({
+      fullVest.layers.map((layer) => ({
         layer_index: layer.layer_index,
         material_id: layer.material_id,
         orientation_degrees: layer.orientation_degrees,
@@ -424,7 +440,7 @@ export function Vests() {
                       <input
                         type="number"
                         value={layer.layer_count}
-                        onChange={(e) => updateLayer(index, 'layer_count', parseInt(e.target.value) || 1)}
+                        onChange={(e) => updateLayer(index, 'layer_count', e.target.value === '' ? '' : parseInt(e.target.value))}
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                       />
                     </div>
@@ -525,6 +541,16 @@ export function Vests() {
           variant="danger"
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {validationError && (
+        <ConfirmModal
+          title="Validation Error"
+          message={validationError}
+          confirmLabel="OK"
+          variant="info"
+          onConfirm={() => setValidationError(null)}
+          onCancel={() => setValidationError(null)}
         />
       )}
     </div>
