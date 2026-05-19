@@ -16,6 +16,14 @@ export function Dashboard() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [showSyncSuccessModal, setShowSyncSuccessModal] = useState(false);
   const [syncResults, setSyncResults] = useState<any>(null);
+  const [showBackupModal, setShowBackupModal] = useState(false);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [backupConfirmText, setBackupConfirmText] = useState('');
+  const [restoreConfirmText, setRestoreConfirmText] = useState('');
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [version, setVersion] = useState<string>('unknown');
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -27,7 +35,18 @@ export function Dashboard() {
         console.error('Failed to fetch stats:', error);
       }
     };
+
+    const fetchVersion = async () => {
+      try {
+        const data = await apiClient.get<{ version: string }>('/api/v1/admin/version');
+        setVersion(data.version);
+      } catch (error) {
+        console.error('Failed to fetch version:', error);
+      }
+    };
+
     fetchStats();
+    fetchVersion();
   }, []);
 
   const handleSync = async () => {
@@ -47,6 +66,76 @@ export function Dashboard() {
     }
   };
 
+  const handleBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      const response = await fetch('/api/v1/admin/backup', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Backup failed');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `deltadash_backup_${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      setShowBackupModal(false);
+      setBackupConfirmText('');
+    } catch (error) {
+      console.error('Failed to create backup:', error);
+      alert('Failed to create backup. Check console for details.');
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!restoreFile) {
+      alert('Please select a backup file');
+      return;
+    }
+    
+    setIsRestoring(true);
+    try {
+      const formData = new FormData();
+      formData.append('backup_file', restoreFile);
+      
+      const response = await fetch('/api/v1/admin/restore', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error('Restore failed');
+      }
+      
+      alert('Backup restored successfully. The page will now reload.');
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to restore backup:', error);
+      alert('Failed to restore backup. Check console for details.');
+    } finally {
+      setIsRestoring(false);
+      setShowRestoreModal(false);
+      setRestoreConfirmText('');
+      setRestoreFile(null);
+    }
+  };
+
   const dashboardStats = [
     { label: 'Total Materials', value: materials?.length || 0, color: 'bg-blue-500' },
     { label: 'Total Shots', value: stats.total_shots || 0, color: 'bg-purple-500' },
@@ -59,13 +148,27 @@ export function Dashboard() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">DeltaDash</h1>
         {isAdmin && (
-          <button
-            onClick={handleSync}
-            disabled={isSyncing}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSyncing ? 'Syncing...' : 'Sync Database (Pull)'}
-          </button>
+          <div className="flex space-x-3">
+            <button
+              onClick={handleSync}
+              disabled={isSyncing}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSyncing ? 'Syncing...' : 'Sync Database (Pull)'}
+            </button>
+            <button
+              onClick={() => setShowBackupModal(true)}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+            >
+              Download Backup
+            </button>
+            <button
+              onClick={() => setShowRestoreModal(true)}
+              className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700"
+            >
+              Restore Backup
+            </button>
+          </div>
         )}
       </div>
       
@@ -140,6 +243,62 @@ export function Dashboard() {
           variant="default"
           onConfirm={() => setShowSyncSuccessModal(false)}
           onCancel={() => setShowSyncSuccessModal(false)}
+        />
+      )}
+      {showBackupModal && (
+        <ConfirmModal
+          title="Download Backup"
+          message={
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">This will create a backup of the database and all storage files. Type "confirm" to proceed.</p>
+              <input
+                type="text"
+                value={backupConfirmText}
+                onChange={(e) => setBackupConfirmText(e.target.value)}
+                placeholder="Type 'confirm'"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+          }
+          confirmLabel="Download"
+          variant="danger"
+          onConfirm={handleBackup}
+          onCancel={() => {
+            setShowBackupModal(false);
+            setBackupConfirmText('');
+          }}
+          disabled={backupConfirmText !== 'confirm' || isBackingUp}
+        />
+      )}
+      {showRestoreModal && (
+        <ConfirmModal
+          title="Restore Backup"
+          message={
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">This will replace the current database and storage files with the backup. Type "confirm" to proceed.</p>
+              <input
+                type="file"
+                onChange={(e) => setRestoreFile(e.target.files?.[0] || null)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+              <input
+                type="text"
+                value={restoreConfirmText}
+                onChange={(e) => setRestoreConfirmText(e.target.value)}
+                placeholder="Type 'confirm'"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+          }
+          confirmLabel="Restore"
+          variant="danger"
+          onConfirm={handleRestore}
+          onCancel={() => {
+            setShowRestoreModal(false);
+            setRestoreConfirmText('');
+            setRestoreFile(null);
+          }}
+          disabled={restoreConfirmText !== 'confirm' || !restoreFile || isRestoring}
         />
       )}
     </div>

@@ -62,8 +62,8 @@ def create_material(
     os.makedirs(settings.material_docs_dir, exist_ok=True)
 
     if mss_file:
-        file_ext = Path(mss_file.filename).suffix
-        unique_filename = f"{uuid.uuid4()}{file_ext}"
+        # Use original filename for storage
+        unique_filename = mss_file.filename
         file_path = os.path.join(settings.material_docs_dir, unique_filename)
         with open(file_path, 'wb') as f:
             f.write(mss_file.file.read())
@@ -71,8 +71,8 @@ def create_material(
         material_data['mss_original_filename'] = mss_file.filename
 
     if sds_file:
-        file_ext = Path(sds_file.filename).suffix
-        unique_filename = f"{uuid.uuid4()}{file_ext}"
+        # Use original filename for storage
+        unique_filename = sds_file.filename
         file_path = os.path.join(settings.material_docs_dir, unique_filename)
         with open(file_path, 'wb') as f:
             f.write(sds_file.file.read())
@@ -147,8 +147,14 @@ def upload_material_file(
     os.makedirs(settings.material_docs_dir, exist_ok=True)
 
     if mss_file:
-        file_ext = Path(mss_file.filename).suffix
-        unique_filename = f"{uuid.uuid4()}{file_ext}"
+        # Delete old file if it exists
+        if material.mss_file_path:
+            old_file_path = os.path.join(settings.material_docs_dir, material.mss_file_path)
+            if os.path.exists(old_file_path):
+                os.remove(old_file_path)
+        
+        # Use original filename for storage
+        unique_filename = mss_file.filename
         file_path = os.path.join(settings.material_docs_dir, unique_filename)
         with open(file_path, 'wb') as f:
             f.write(mss_file.file.read())
@@ -156,8 +162,14 @@ def upload_material_file(
         material.mss_original_filename = mss_file.filename
 
     if sds_file:
-        file_ext = Path(sds_file.filename).suffix
-        unique_filename = f"{uuid.uuid4()}{file_ext}"
+        # Delete old file if it exists
+        if material.sds_file_path:
+            old_file_path = os.path.join(settings.material_docs_dir, material.sds_file_path)
+            if os.path.exists(old_file_path):
+                os.remove(old_file_path)
+        
+        # Use original filename for storage
+        unique_filename = sds_file.filename
         file_path = os.path.join(settings.material_docs_dir, unique_filename)
         with open(file_path, 'wb') as f:
             f.write(sds_file.file.read())

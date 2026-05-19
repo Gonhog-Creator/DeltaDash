@@ -24,24 +24,8 @@ def main():
     print("User Creation SQL Generator")
     print("=" * 80)
     print()
-    print("NOTE: This script uses pre-hashed passwords for default users.")
+    print("NOTE: This script generates SQL INSERT statements for custom users.")
     print("For custom passwords, use an online bcrypt hasher or run this in the Docker container.")
-    print()
-    
-    # Pre-hashed passwords (bcrypt)
-    # admin123: $2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5NU7qvqV8hZ1e
-    # test123: $2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW
-    
-    print("-- Default Admin User")
-    print("-- Username: admin")
-    print("-- Password: admin123")
-    print(generate_user_sql("admin", "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5NU7qvqV8hZ1e", "Administrator", role="admin", is_admin=True))
-    print()
-    
-    print("-- Default Test User")
-    print("-- Username: test")
-    print("-- Password: test123")
-    print(generate_user_sql("test", "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW", "Test User", role="viewer", is_admin=False))
     print()
     
     print("=" * 80)

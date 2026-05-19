@@ -4,7 +4,7 @@ import { Material, MaterialCreate, MaterialUpdate } from '../api/materials';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export function Materials() {
-  const { data: materials, isLoading, error } = useMaterials();
+  const { data: materials, isLoading, error, refetch } = useMaterials();
   const createMutation = useCreateMaterial();
   const updateMutation = useUpdateMaterial();
   const uploadFilesMutation = useUploadMaterialFiles();
@@ -15,6 +15,8 @@ export function Materials() {
   const [deleteTarget, setDeleteTarget] = useState<Material | null>(null);
   const [mssFile, setMssFile] = useState<File | null>(null);
   const [sdsFile, setSdsFile] = useState<File | null>(null);
+  const [showFileReplaceModal, setShowFileReplaceModal] = useState(false);
+  const [fileToReplace, setFileToReplace] = useState<{ type: 'mss' | 'sds', file: File } | null>(null);
   const [formData, setFormData] = useState<MaterialCreate>({
     name: '',
     material_class: '',
@@ -58,7 +60,13 @@ export function Materials() {
         const files: { mss?: File; sds?: File } = {};
         if (mssFile) files.mss = mssFile;
         if (sdsFile) files.sds = sdsFile;
-        await uploadFilesMutation.mutateAsync({ id: editingMaterial.id, files });
+        try {
+          await uploadFilesMutation.mutateAsync({ id: editingMaterial.id, files });
+          refetch(); // Refresh the materials list to show updated filenames
+        } catch (uploadError) {
+          console.error('Failed to upload files:', uploadError);
+          alert('Material updated but file upload failed. Please try uploading files again.');
+        }
       }
 
       setEditingMaterial(null);
@@ -67,7 +75,43 @@ export function Materials() {
       setSdsFile(null);
     } catch (err) {
       console.error('Failed to update material:', err);
+      alert('Failed to update material. Please try again.');
     }
+  };
+
+  const handleFileChange = (type: 'mss' | 'sds', file: File | null) => {
+    if (!file || !editingMaterial) return;
+    
+    // Check if a file already exists
+    const existingFile = type === 'mss' ? editingMaterial.mss_file_path : editingMaterial.sds_file_path;
+    if (existingFile) {
+      setFileToReplace({ type, file });
+      setShowFileReplaceModal(true);
+    } else {
+      if (type === 'mss') {
+        setMssFile(file);
+      } else {
+        setSdsFile(file);
+      }
+    }
+  };
+
+  const handleFileReplaceConfirm = () => {
+    if (!fileToReplace) return;
+    
+    if (fileToReplace.type === 'mss') {
+      setMssFile(fileToReplace.file);
+    } else {
+      setSdsFile(fileToReplace.file);
+    }
+    
+    setShowFileReplaceModal(false);
+    setFileToReplace(null);
+  };
+
+  const handleFileReplaceCancel = () => {
+    setShowFileReplaceModal(false);
+    setFileToReplace(null);
   };
 
   const handleDeleteConfirm = async () => {
@@ -212,17 +256,41 @@ export function Materials() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">MSS (Material Specification Sheet)</label>
+                {editingMaterial && editingMaterial.mss_file_path && (
+                  <div className="mt-1 mb-2">
+                    <a
+                      href={`https://deltadash-backend-production.up.railway.app/api/v1/materials/${editingMaterial.id}/download/mss`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-indigo-600 hover:text-indigo-900 text-sm"
+                    >
+                      Current file: {editingMaterial.mss_original_filename || editingMaterial.mss_file_path}
+                    </a>
+                  </div>
+                )}
                 <input
                   type="file"
-                  onChange={(e) => setMssFile(e.target.files?.[0] || null)}
+                  onChange={(e) => handleFileChange('mss', e.target.files?.[0] || null)}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">SDS (Safety Data Sheet)</label>
+                {editingMaterial && editingMaterial.sds_file_path && (
+                  <div className="mt-1 mb-2">
+                    <a
+                      href={`https://deltadash-backend-production.up.railway.app/api/v1/materials/${editingMaterial.id}/download/sds`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-indigo-600 hover:text-indigo-900 text-sm"
+                    >
+                      Current file: {editingMaterial.sds_original_filename || editingMaterial.sds_file_path}
+                    </a>
+                  </div>
+                )}
                 <input
                   type="file"
-                  onChange={(e) => setSdsFile(e.target.files?.[0] || null)}
+                  onChange={(e) => handleFileChange('sds', e.target.files?.[0] || null)}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
@@ -333,6 +401,16 @@ export function Materials() {
           variant="danger"
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {showFileReplaceModal && fileToReplace && (
+        <ConfirmModal
+          title="Replace File"
+          message={`This will permanently remove the existing ${fileToReplace.type === 'mss' ? 'MSS' : 'SDS'} file and replace it with "${fileToReplace.file.name}". This action cannot be undone.`}
+          confirmLabel="Replace"
+          variant="danger"
+          onConfirm={handleFileReplaceConfirm}
+          onCancel={handleFileReplaceCancel}
         />
       )}
     </div>

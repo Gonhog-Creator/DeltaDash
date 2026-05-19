@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-
-const APP_VERSION = '0.1.0';
+import { useEffect, useState } from 'react';
+import { apiClient } from '../api/client';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -10,6 +10,7 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const { user, logout, isLoggingOut, isAdmin } = useAuth();
   const location = useLocation();
+  const [version, setVersion] = useState<string>('0.1.0');
 
   const navItems = [
     { path: '/', label: 'Dashboard' },
@@ -21,6 +22,19 @@ export function Layout({ children }: LayoutProps) {
   ];
 
   const isActive = (path: string) => location.pathname === path;
+
+  useEffect(() => {
+    const fetchVersion = async () => {
+      try {
+        const data = await apiClient.get<{ version: string }>('/api/v1/admin/version');
+        setVersion(data.version);
+      } catch (error) {
+        console.error('Failed to fetch version:', error);
+      }
+    };
+
+    fetchVersion();
+  }, []);
 
   return (
     <div className="min-h-screen flex bg-gray-50">
@@ -49,7 +63,7 @@ export function Layout({ children }: LayoutProps) {
           ))}
         </nav>
         <div className="px-4 py-3 border-t border-gray-200">
-          <p className="text-xs text-gray-400">v{APP_VERSION}</p>
+          <p className="text-xs text-gray-400">v{version}</p>
         </div>
       </aside>
 
