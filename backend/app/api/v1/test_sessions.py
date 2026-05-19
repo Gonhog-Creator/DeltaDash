@@ -36,7 +36,6 @@ def list_test_sessions(
             "name": session.name,
             "test_date": session.test_date,
             "lab_name": session.lab_name,
-            "operator": session.operator,
             "protocol": session.protocol,
             "clay_temperature_c": session.clay_temperature_c,
             "ambient_temperature_c": session.ambient_temperature_c,
@@ -104,7 +103,6 @@ def create_test_session_from_excel(
         excel_file_path=file_path,  # Pass full path since file was just saved
         test_name=test_name,
         location_name=location_name,
-        operator=None,
         protocol=protocol,
         vest_id=vest_id,
         test_date=test_date,
@@ -302,7 +300,6 @@ def bulk_reupload_all_test_sessions(
             excel_file_path=original_file_path,
             test_name=parent_session.name,
             location_name=location_name,
-            operator=parent_session.operator,
             protocol=parent_session.protocol,
             test_date=parent_session.test_date,
             temperature=None,  # Service will extract from parsed data

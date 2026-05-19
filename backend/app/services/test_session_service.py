@@ -71,7 +71,6 @@ def create_sessions_from_excel_data(
     excel_file_path: str,
     test_name: str,
     location_name: Optional[str],
-    operator: Optional[str],
     protocol: Optional[str],
     vest_id: Optional[str],
     test_date: Optional[str],
@@ -110,7 +109,7 @@ def create_sessions_from_excel_data(
         
         # Multi-sheet file - create separate test sessions for each sheet
         return _create_sessions_from_multi_sheet(
-            db, parsed_data, test_name, location_name, operator, protocol, vest_id, test_date, excel_file_path
+            db, parsed_data, test_name, location_name, protocol, vest_id, test_date, excel_file_path
         )
     else:
         # Single-sheet file - use existing logic
@@ -139,7 +138,6 @@ def create_sessions_from_excel_data(
             parent_session = TestSessionModel(
                 name=test_name,
                 lab_name=location_name,
-                operator=operator,
                 protocol=protocol,
                 test_date=test_date,
                 ambient_temperature_c=temperature,
@@ -171,7 +169,6 @@ def create_sessions_from_excel_data(
                 db_test_session = TestSessionModel(
                     name=f"{test_name} - Vest {test_info['vest_number']}",
                     lab_name=location_name,
-                    operator=operator,
                     protocol=protocol,
                     test_date=test_date,
                     ambient_temperature_c=temperature,
@@ -204,7 +201,6 @@ def create_sessions_from_excel_data(
             db_test_session = TestSessionModel(
                 name=test_name,
                 lab_name=location_name,
-                operator=operator,
                 protocol=protocol,
                 test_date=test_date,
                 ambient_temperature_c=temperature,
@@ -236,7 +232,6 @@ def _create_sessions_from_multi_sheet(
     sheets_data: Dict[str, List[Tuple[List[Dict], Optional[float], Optional[float], str, Optional[str]]]],
     test_name: str,
     location_name: Optional[str],
-    operator: Optional[str],
     protocol: Optional[str],
     vest_id: Optional[str],
     test_date: Optional[str],
@@ -251,7 +246,6 @@ def _create_sessions_from_multi_sheet(
     parent_session = TestSessionModel(
         name=test_name,
         lab_name=location_name,
-        operator=operator,
         protocol=protocol,
         test_date=test_date,
         ambient_temperature_c=temperature,
@@ -312,7 +306,6 @@ def _create_sessions_from_multi_sheet(
             db_test_session = TestSessionModel(
                 name=child_name,
                 lab_name=location_name,
-                operator=operator,
                 protocol=protocol,
                 test_date=test_date,
                 ambient_temperature_c=sheet_temp,
