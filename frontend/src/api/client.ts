@@ -116,10 +116,6 @@ class ApiClient {
         if (!window.location.pathname.includes('/login') && !endpoint.includes('/auth/me')) {
           window.location.href = '/login';
         }
-        // Suppress console error for auth/me endpoint to clean up console
-        if (!endpoint.includes('/auth/me')) {
-          console.error('Unauthorized request to', endpoint);
-        }
         throw new Error('Unauthorized');
       }
       const error = await response.json().catch(() => ({ detail: 'An error occurred' }));

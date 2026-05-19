@@ -7,7 +7,7 @@ from pathlib import Path
 
 from app.db.session import get_db
 from app.db.models import TestSession as TestSessionModel, ShotData as ShotDataModel, Shot as ShotModel, Vest as VestModel
-from app.api.v1.auth import get_current_active_user
+from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.test_session import TestSessionCreate, TestSessionUpdate, TestSession
 from app.schemas.shot_data import ShotDataCreate
 from app.db.models.user import User as UserModel
@@ -62,7 +62,7 @@ def list_test_sessions(
 def create_test_session(
     test_session: TestSessionCreate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     db_test_session = TestSessionModel(**test_session.model_dump())
     db.add(db_test_session)
@@ -80,7 +80,7 @@ def create_test_session_from_excel(
     vest_id: Optional[str] = Form(None),
     test_date: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     # Save Excel file
     os.makedirs(settings.material_docs_dir, exist_ok=True)
@@ -156,7 +156,7 @@ def update_test_session(
     test_session_id: str,
     test_session_update: TestSessionUpdate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     test_session = db.query(TestSessionModel).filter(TestSessionModel.id == test_session_id).first()
     if not test_session:
@@ -175,7 +175,7 @@ def update_test_session(
 def delete_test_session(
     test_session_id: str,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     test_session = db.query(TestSessionModel).filter(TestSessionModel.id == test_session_id).first()
     if not test_session:

@@ -29,7 +29,7 @@ export function Layout({ children }: LayoutProps) {
         const data = await apiClient.get<{ version: string }>('/api/v1/admin/version');
         setVersion(data.version);
       } catch (error) {
-        console.error('Failed to fetch version:', error);
+        // Silent fail - version not critical
       }
     };
 

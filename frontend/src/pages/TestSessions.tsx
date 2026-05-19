@@ -17,7 +17,7 @@ export function TestSessions() {
   const { data: locations } = useLocations();
   const { data: protocols } = useProtocols();
   const { data: vests } = useVests();
-  const { isAdmin } = useAuth();
+  const { isAdmin, role } = useAuth();
   const deleteLocationMutation = useDeleteLocation();
   const updateLocationMutation = useUpdateLocation();
   const deleteProtocolMutation = useDeleteProtocol();
@@ -208,12 +208,14 @@ export function TestSessions() {
               </button>
             </>
           )}
-          <button
-            onClick={() => setShowCreateFromExcel(true)}
-            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-          >
-            Upload Excel
-          </button>
+          {role !== 'viewer' && (
+            <button
+              onClick={() => setShowCreateFromExcel(true)}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+            >
+              Upload Excel
+            </button>
+          )}
         </div>
       </div>
 
@@ -270,39 +272,51 @@ export function TestSessions() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{parent.vest_code || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatConditioning(parent.conditioning)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {parent.excel_file_path ? (
-                        <span className="text-green-600">Uploaded</span>
-                      ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setUploadTarget(parent);
-                          }}
-                          className="text-indigo-600 hover:text-indigo-900"
-                        >
-                          Upload
-                        </button>
+                      {role !== 'viewer' && (
+                        parent.excel_file_path ? (
+                          <span className="text-green-600">Uploaded</span>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setUploadTarget(parent);
+                            }}
+                            className="text-indigo-600 hover:text-indigo-900"
+                          >
+                            Upload
+                          </button>
+                        )
+                      )}
+                      {role === 'viewer' && (
+                        parent.excel_file_path ? (
+                          <span className="text-green-600">Uploaded</span>
+                        ) : '-'
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditTarget(parent);
-                        }}
-                        className="text-indigo-600 hover:text-indigo-900 mr-3"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteTarget(parent);
-                        }}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        Delete
-                      </button>
+                      {role !== 'viewer' && (
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditTarget(parent);
+                            }}
+                            className="text-indigo-600 hover:text-indigo-900 mr-3"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteTarget(parent);
+                            }}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                      {role === 'viewer' && '-'}
                     </td>
                   </tr>
                   {isExpanded && hasChildren && sortedChildren.map((child) => (
@@ -317,18 +331,25 @@ export function TestSessions() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{child.vest_code || '-'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatConditioning(child.conditioning)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {child.excel_file_path ? (
-                          <span className="text-green-600">Uploaded</span>
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setUploadTarget(child);
-                            }}
-                            className="text-indigo-600 hover:text-indigo-900"
-                          >
-                            Upload
-                          </button>
+                        {role !== 'viewer' && (
+                          child.excel_file_path ? (
+                            <span className="text-green-600">Uploaded</span>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setUploadTarget(child);
+                              }}
+                              className="text-indigo-600 hover:text-indigo-900"
+                            >
+                              Upload
+                            </button>
+                          )
+                        )}
+                        {role === 'viewer' && (
+                          child.excel_file_path ? (
+                            <span className="text-green-600">Uploaded</span>
+                          ) : '-'
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -338,18 +359,22 @@ export function TestSessions() {
                         >
                           View
                         </button>
-                        <button
-                          onClick={() => setEditTarget(child)}
-                          className="text-indigo-600 hover:text-indigo-900 mr-3"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => setDeleteTarget(child)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          Delete
-                        </button>
+                        {role !== 'viewer' && (
+                          <>
+                            <button
+                              onClick={() => setEditTarget(child)}
+                              className="text-indigo-600 hover:text-indigo-900 mr-3"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => setDeleteTarget(child)}
+                              className="text-red-600 hover:text-red-900"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}

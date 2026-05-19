@@ -28,11 +28,17 @@ export const authApi = {
     formData.append('username', credentials.username);
     formData.append('password', credentials.password);
 
-    return apiClient.post<Token>('/api/v1/auth/login', formData);
+    const token = await apiClient.post<Token>('/api/v1/auth/login', formData);
+    // Store token in localStorage for fallback
+    localStorage.setItem('token', token.access_token);
+    return token;
   },
 
   logout: async (): Promise<{ message: string }> => {
-    return apiClient.post<{ message: string }>('/api/v1/auth/logout');
+    const result = await apiClient.post<{ message: string }>('/api/v1/auth/logout');
+    // Remove token from localStorage
+    localStorage.removeItem('token');
+    return result;
   },
 
   getCurrentUser: async (): Promise<User> => {

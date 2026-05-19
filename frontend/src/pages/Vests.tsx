@@ -4,6 +4,7 @@ import { Vest, VestCreate, VestUpdate, VestLayerCreate } from '../api/vests';
 import { useMaterials } from '../hooks/useMaterials';
 import { Material } from '../api/materials';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { useAuth } from '../hooks/useAuth';
 
 export function Vests() {
   const { data: vests, isLoading, error } = useVests();
@@ -12,6 +13,7 @@ export function Vests() {
   const updateMutation = useUpdateVest();
   const deleteMutation = useDeleteVest();
   const updateLayersMutation = useUpdateVestLayers();
+  const { role } = useAuth();
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingVest, setEditingVest] = useState<Vest | null>(null);
@@ -181,12 +183,14 @@ export function Vests() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Vests Library</h1>
-        <button
-          onClick={() => setShowCreateForm(!showCreateForm)}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-        >
-          {showCreateForm ? 'Cancel' : 'Add Vest'}
-        </button>
+        {role !== 'viewer' && (
+          <button
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+          >
+            {showCreateForm ? 'Cancel' : 'Add Vest'}
+          </button>
+        )}
       </div>
 
       {(showCreateForm || editingVest) && (
@@ -469,18 +473,23 @@ export function Vests() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.total_layers || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.total_thickness_mm || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <button
-                    onClick={() => startEdit(vest)}
-                    className="text-indigo-600 hover:text-indigo-900 mr-3"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => setDeleteTarget(vest)}
-                    className="text-red-600 hover:text-red-900"
-                  >
-                    Delete
-                  </button>
+                  {role !== 'viewer' && (
+                    <>
+                      <button
+                        onClick={() => startEdit(vest)}
+                        className="text-indigo-600 hover:text-indigo-900 mr-3"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget(vest)}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                  {role === 'viewer' && '-'}
                 </td>
               </tr>
             ))}

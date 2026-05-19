@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db.models import Location as LocationModel
-from app.api.v1.auth import get_current_active_user
+from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.location import LocationCreate, LocationUpdate, Location
 from app.db.models.user import User as UserModel
 
@@ -25,7 +25,7 @@ def list_locations(
 def create_location(
     location: LocationCreate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     db_location = LocationModel(**location.model_dump())
     db.add(db_location)
@@ -51,7 +51,7 @@ def update_location(
     location_id: str,
     location_update: LocationUpdate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     location = db.query(LocationModel).filter(LocationModel.id == location_id).first()
     if not location:
@@ -70,7 +70,7 @@ def update_location(
 def delete_location(
     location_id: str,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     location = db.query(LocationModel).filter(LocationModel.id == location_id).first()
     if not location:

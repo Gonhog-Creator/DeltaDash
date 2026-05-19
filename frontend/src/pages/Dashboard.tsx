@@ -6,12 +6,13 @@ import { useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { normalizeString } from '../utils/string';
 
 export function Dashboard() {
   const { data: materials } = useMaterials();
   const { data: shots } = useShots();
   const { data: panels } = usePanels();
-  const { isAdmin } = useAuth();
+  const { isAdmin, role } = useAuth();
   const [stats, setStats] = useState({ test_session_count: 0, total_shots: 0 });
   const [isSyncing, setIsSyncing] = useState(false);
   const [showSyncSuccessModal, setShowSyncSuccessModal] = useState(false);
@@ -29,10 +30,9 @@ export function Dashboard() {
     const fetchStats = async () => {
       try {
         const data = await apiClient.get<{ test_session_count: number; total_shots: number }>('/api/v1/test-sessions/stats');
-        console.log('Stats data:', data);
         setStats({ test_session_count: data.test_session_count, total_shots: data.total_shots });
       } catch (error) {
-        console.error('Failed to fetch stats:', error);
+        // Silent fail - stats not critical
       }
     };
 
@@ -41,7 +41,7 @@ export function Dashboard() {
         const data = await apiClient.get<{ version: string }>('/api/v1/admin/version');
         setVersion(data.version);
       } catch (error) {
-        console.error('Failed to fetch version:', error);
+        // Silent fail - version not critical
       }
     };
 
@@ -147,7 +147,7 @@ export function Dashboard() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">DeltaDash</h1>
-        {isAdmin && (
+        {isAdmin && role !== 'viewer' && (
           <div className="flex space-x-3">
             <button
               onClick={handleSync}
@@ -198,7 +198,7 @@ export function Dashboard() {
               {materials.slice(0, 5).map((material) => (
                 <li key={material.id} className="py-3 flex justify-between">
                   <span className="text-sm text-gray-900">{material.name}</span>
-                  <span className="text-sm text-gray-500">{material.material_class || 'Unknown'}</span>
+                  <span className="text-sm text-gray-500">{normalizeString(material.material_class) || 'Unknown'}</span>
                 </li>
               ))}
             </ul>
@@ -232,7 +232,7 @@ export function Dashboard() {
               <div className="bg-gray-50 p-3 rounded-md">
                 {Object.entries(syncResults.synced_records).map(([key, value]) => (
                   <div key={key} className="flex justify-between text-sm">
-                    <span className="text-gray-700 capitalize">{key}:</span>
+                    <span className="text-gray-700">{normalizeString(key)}:</span>
                     <span className="font-medium text-gray-900">{value as number}</span>
                   </div>
                 ))}

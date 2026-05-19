@@ -13,6 +13,10 @@ export function Login() {
     e.preventDefault();
     setError('');
 
+    if (isLoggingIn) {
+      return; // Prevent multiple submissions
+    }
+
     try {
       await login({ username, password });
       navigate('/');

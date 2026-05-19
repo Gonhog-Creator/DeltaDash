@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.models import ShotData as ShotDataModel, Shot as ShotModel
-from app.api.v1.auth import get_current_active_user
+from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.shot_data import ShotData, ShotDataUpdate
 from app.schemas.shot import Shot
 from app.db.models.user import User as UserModel
@@ -55,7 +55,7 @@ def update_shot_data(
     shot_id: str,
     shot_data_update: ShotDataUpdate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     try:
         shot_uuid = uuid.UUID(shot_id)

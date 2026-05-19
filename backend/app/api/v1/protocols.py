@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db.models import Protocol as ProtocolModel
-from app.api.v1.auth import get_current_active_user
+from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.protocol import ProtocolCreate, ProtocolUpdate, Protocol
 from app.db.models.user import User as UserModel
 
@@ -25,7 +25,7 @@ def list_protocols(
 def create_protocol(
     protocol: ProtocolCreate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     db_protocol = ProtocolModel(**protocol.model_dump())
     db.add(db_protocol)
@@ -51,7 +51,7 @@ def update_protocol(
     protocol_id: str,
     protocol_update: ProtocolUpdate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     protocol = db.query(ProtocolModel).filter(ProtocolModel.id == protocol_id).first()
     if not protocol:
@@ -70,7 +70,7 @@ def update_protocol(
 def delete_protocol(
     protocol_id: str,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     protocol = db.query(ProtocolModel).filter(ProtocolModel.id == protocol_id).first()
     if not protocol:

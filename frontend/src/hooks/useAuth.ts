@@ -15,9 +15,12 @@ export function useAuth() {
   });
 
   const loginMutation = useMutation({
+    mutationKey: ['login'],
     mutationFn: authApi.login,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+    onSuccess: async (data) => {
+      // Token is already stored in localStorage by authApi.login
+      // Invalidate and refetch the current user query immediately
+      await queryClient.invalidateQueries({ queryKey: ['currentUser'] });
     },
   });
 
@@ -40,8 +43,14 @@ export function useAuth() {
     isLoading,
     isAuthenticated: !!user,
     isAdmin: user?.is_admin || false,
+    role: user?.role || 'viewer',
     error,
-    login: loginMutation.mutate,
+    login: (credentials: { username: string; password: string }) => {
+      if (loginMutation.isPending) {
+        return Promise.reject(new Error('Login already in progress'));
+      }
+      return loginMutation.mutateAsync(credentials);
+    },
     logout: logoutMutation.mutate,
     changePassword: changePasswordMutation.mutate,
     isLoggingIn: loginMutation.isPending,

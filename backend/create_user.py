@@ -1,39 +1,99 @@
 """
-Script to generate user records for direct database insertion.
-Run this script to get SQL INSERT statements for creating users.
+Script to generate user records and insert them directly into the database.
+Run this script to create users in the database.
 """
 
 import uuid
+import psycopg2
+import os
+import bcrypt
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
-def generate_user_sql(username: str, hashed_password: str, full_name: str = None, role: str = "viewer", is_admin: bool = False):
-    """Generate SQL INSERT statement for a user with a pre-hashed password."""
+def hash_password(password: str) -> str:
+    """Hash a password using bcrypt."""
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
+
+
+def create_user_in_db(username: str, password: str, full_name: str = None, role: str = "viewer", is_admin: bool = False, db_url: str = None):
+    """Create a user directly in the database."""
     user_id = str(uuid.uuid4())
     
     if full_name is None:
         full_name = username
     
-    sql = f"""INSERT INTO users (id, username, full_name, hashed_password, role, is_active, is_admin, created_at, updated_at)
-VALUES ('{user_id}', '{username}', '{full_name}', '{hashed_password}', '{role}', true, {str(is_admin).lower()}, NOW(), NOW());"""
+    # Hash the password
+    hashed_password = hash_password(password)
     
-    return sql
+    # Connect to database
+    if db_url is None:
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            print("DATABASE_URL not found in .env file or environment variables")
+            print("Please ensure DATABASE_URL is set in your .env file")
+            return False
+    
+    try:
+        conn = psycopg2.connect(db_url)
+        cursor = conn.cursor()
+        
+        sql = """INSERT INTO users (id, username, full_name, hashed_password, role, is_active, is_admin, created_at, updated_at)
+VALUES (%s, %s, %s, %s, %s, true, %s, NOW(), NOW())"""
+        
+        cursor.execute(sql, (user_id, username, full_name, hashed_password, role, is_admin))
+        conn.commit()
+        
+        print(f"User '{username}' created successfully!")
+        print(f"ID: {user_id}")
+        print(f"Role: {role}")
+        print(f"Admin: {is_admin}")
+        
+        cursor.close()
+        conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"Error creating user: {e}")
+        return False
 
 
 def main():
     print("=" * 80)
-    print("User Creation SQL Generator")
+    print("User Creation Script")
     print("=" * 80)
-    print()
-    print("NOTE: This script generates SQL INSERT statements for custom users.")
-    print("For custom passwords, use an online bcrypt hasher or run this in the Docker container.")
     print()
     
-    print("=" * 80)
-    print("Create custom users")
-    print("=" * 80)
+    # Get database URL from command line or environment
+    import sys
+    db_url = None
+    if len(sys.argv) > 1:
+        db_url = sys.argv[1]
+        print(f"Using database URL from command line")
+    elif os.getenv("REMOTE_DATABASE_URL"):
+        db_url = os.getenv("REMOTE_DATABASE_URL")
+        print(f"Using REMOTE_DATABASE_URL from .env file (Railway database)")
+    elif os.getenv("DATABASE_URL"):
+        db_url = os.getenv("DATABASE_URL")
+        print(f"Using DATABASE_URL from .env file (local database)")
+    else:
+        print("DATABASE_URL not found in .env file or environment variables")
+        print("Please set DATABASE_URL in your .env file")
+        print()
+        db_url = input("Enter database URL: ").strip()
+    
+    print(f"Connecting to database...")
     print()
     
     while True:
+        print("=" * 80)
+        print("Create a new user")
+        print("=" * 80)
+        
         username = input("Username (or press Enter to exit): ").strip()
         if not username:
             break
@@ -58,18 +118,16 @@ def main():
             is_admin = True
         
         print()
-        print("=" * 80)
-        print(f"User: {username}")
-        print(f"Password: {password}")
+        print(f"Creating user: {username}")
         print(f"Role: {role}")
         print(f"Admin: {is_admin}")
         print()
-        print("Step 1: Hash your password using: https://bcrypt-generator.com/")
-        print("Step 2: Replace <HASHED_PASSWORD> below with your bcrypt hash")
-        print()
-        print(generate_user_sql(username, "<HASHED_PASSWORD>", full_name, role, is_admin))
-        print("=" * 80)
-        print()
+        
+        if create_user_in_db(username, password, full_name, role, is_admin, db_url):
+            print()
+        else:
+            print("Failed to create user. Please try again.")
+            print()
 
 
 if __name__ == "__main__":

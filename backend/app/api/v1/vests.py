@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.models import Vest as VestModel, VestLayer
-from app.api.v1.auth import get_current_active_user
+from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.vest import VestCreate, VestUpdate, Vest, VestListItem, VestLayerCreate
 from app.db.models.user import User as UserModel
 
@@ -37,7 +37,7 @@ def list_vests(
 def create_vest(
     vest: VestCreate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     # Create vest without layers first
     vest_data = vest.model_dump(exclude={"layers"})
@@ -75,7 +75,7 @@ def update_vest(
     vest_id: str,
     vest_update: VestUpdate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     vest = db.query(VestModel).filter(VestModel.id == vest_id).first()
     if not vest:
@@ -94,7 +94,7 @@ def update_vest(
 def delete_vest(
     vest_id: str,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     vest = db.query(VestModel).filter(VestModel.id == vest_id).first()
     if not vest:
@@ -123,7 +123,7 @@ def update_vest_layers(
     vest_id: str,
     layers: list[VestLayerCreate],
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     vest = db.query(VestModel).filter(VestModel.id == vest_id).first()
     if not vest:

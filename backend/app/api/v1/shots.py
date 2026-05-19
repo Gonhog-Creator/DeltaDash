@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.models import Shot as ShotModel
-from app.api.v1.auth import get_current_active_user
+from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.shot import ShotCreate, ShotUpdate, Shot
 from app.db.models.user import User as UserModel
 
@@ -45,7 +45,7 @@ def list_shots(
 def create_shot(
     shot: ShotCreate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     db_shot = ShotModel(**shot.model_dump())
     db.add(db_shot)
@@ -71,7 +71,7 @@ def update_shot(
     shot_id: str,
     shot_update: ShotUpdate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     shot = db.query(ShotModel).filter(ShotModel.id == shot_id).first()
     if not shot:
@@ -90,7 +90,7 @@ def update_shot(
 def delete_shot(
     shot_id: str,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     shot = db.query(ShotModel).filter(ShotModel.id == shot_id).first()
     if not shot:

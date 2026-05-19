@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.models import ArmorPanel as ArmorPanelModel, ArmorPanelLayer
-from app.api.v1.auth import get_current_active_user
+from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.armor_panel import ArmorPanelCreate, ArmorPanelUpdate, ArmorPanel, ArmorPanelListItem, ArmorPanelLayerCreate
 from app.db.models.user import User as UserModel
 
@@ -33,7 +33,7 @@ def list_panels(
 def create_panel(
     panel: ArmorPanelCreate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     # Create panel without layers first
     panel_data = panel.model_dump(exclude={"layers"})
@@ -71,7 +71,7 @@ def update_panel(
     panel_id: str,
     panel_update: ArmorPanelUpdate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     panel = db.query(ArmorPanelModel).filter(ArmorPanelModel.id == panel_id).first()
     if not panel:
@@ -90,7 +90,7 @@ def update_panel(
 def delete_panel(
     panel_id: str,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     panel = db.query(ArmorPanelModel).filter(ArmorPanelModel.id == panel_id).first()
     if not panel:
@@ -119,7 +119,7 @@ def update_panel_layers(
     panel_id: str,
     layers: list[ArmorPanelLayerCreate],
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     panel = db.query(ArmorPanelModel).filter(ArmorPanelModel.id == panel_id).first()
     if not panel:

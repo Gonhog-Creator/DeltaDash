@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.models import Ammunition as AmmunitionModel
-from app.api.v1.auth import get_current_active_user, require_admin
+from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.ammunition import AmmunitionCreate, AmmunitionUpdate, Ammunition, AmmunitionListItem
 from app.db.models.user import User as UserModel
 import logging
@@ -37,7 +37,7 @@ def list_ammunition(
 def create_ammunition(
     ammunition: AmmunitionCreate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(require_admin)
+    current_user: UserModel = Depends(require_write_access)
 ):
     try:
         logger.info(f"Creating ammunition: {ammunition}")
@@ -86,7 +86,7 @@ def update_ammunition(
     ammunition_id: str,
     ammunition_update: AmmunitionUpdate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(require_admin)
+    current_user: UserModel = Depends(require_write_access)
 ):
     ammunition = db.query(AmmunitionModel).filter(AmmunitionModel.id == ammunition_id).first()
     if not ammunition:
@@ -105,7 +105,7 @@ def update_ammunition(
 def delete_ammunition(
     ammunition_id: str,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(require_admin)
+    current_user: UserModel = Depends(require_write_access)
 ):
     ammunition = db.query(AmmunitionModel).filter(AmmunitionModel.id == ammunition_id).first()
     if not ammunition:

@@ -9,7 +9,7 @@ from pathlib import Path
 from app.db.session import get_db
 from app.db.models import Material as MaterialModel
 from app.db.models.user import User as UserModel
-from app.api.v1.auth import get_current_active_user
+from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.material import MaterialCreate, MaterialUpdate, Material as MaterialSchema, MaterialListItem
 from app.core.config import settings
 
@@ -47,7 +47,7 @@ def create_material(
     mss_file: Optional[UploadFile] = File(None),
     sds_file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     material_data = {
         'name': name,
@@ -103,7 +103,7 @@ def update_material(
     material_id: str,
     material_update: MaterialUpdate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     material = db.query(MaterialModel).filter(MaterialModel.id == material_id).first()
     if not material:
@@ -122,7 +122,7 @@ def update_material(
 def delete_material(
     material_id: str,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     material = db.query(MaterialModel).filter(MaterialModel.id == material_id).first()
     if not material:
@@ -138,7 +138,7 @@ def upload_material_file(
     mss_file: Optional[UploadFile] = File(None),
     sds_file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_write_access)
 ):
     material = db.query(MaterialModel).filter(MaterialModel.id == material_id).first()
     if not material:

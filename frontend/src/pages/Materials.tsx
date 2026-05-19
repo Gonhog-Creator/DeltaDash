@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useMaterials, useCreateMaterial, useUpdateMaterial, useDeleteMaterial, useUploadMaterialFiles } from '../hooks/useMaterials';
 import { Material, MaterialCreate, MaterialUpdate } from '../api/materials';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { normalizeString } from '../utils/string';
+import { useAuth } from '../hooks/useAuth';
 
 export function Materials() {
   const { data: materials, isLoading, error, refetch } = useMaterials();
@@ -9,6 +11,7 @@ export function Materials() {
   const updateMutation = useUpdateMaterial();
   const uploadFilesMutation = useUploadMaterialFiles();
   const deleteMutation = useDeleteMaterial();
+  const { role } = useAuth();
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
@@ -149,12 +152,14 @@ export function Materials() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Materials Library</h1>
-        <button
-          onClick={() => setShowCreateForm(!showCreateForm)}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-        >
-          {showCreateForm ? 'Cancel' : 'Add Material'}
-        </button>
+        {role !== 'viewer' && (
+          <button
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+          >
+            {showCreateForm ? 'Cancel' : 'Add Material'}
+          </button>
+        )}
       </div>
 
       {(showCreateForm || editingMaterial) && (
@@ -335,7 +340,7 @@ export function Materials() {
               <tr key={material.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{material.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {material.material_class ? material.material_class.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : '-'}
+                  {normalizeString(material.material_class) || '-'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.manufacturer || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.areal_density_g_m2 ? Math.round(Number(material.areal_density_g_m2)) : '-'}</td>
@@ -367,18 +372,23 @@ export function Materials() {
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <button
-                    onClick={() => startEdit(material)}
-                    className="text-indigo-600 hover:text-indigo-900 mr-3"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => setDeleteTarget(material)}
-                    className="text-red-600 hover:text-red-900"
-                  >
-                    Delete
-                  </button>
+                  {role !== 'viewer' && (
+                    <>
+                      <button
+                        onClick={() => startEdit(material)}
+                        className="text-indigo-600 hover:text-indigo-900 mr-3"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget(material)}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                  {role === 'viewer' && '-'}
                 </td>
               </tr>
             ))}

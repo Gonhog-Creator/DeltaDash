@@ -26,16 +26,17 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # Try to get token from cookie first, then from Authorization header
+    # Try to get token from Authorization header first (immediate, no timing issues)
+    # then fall back to cookie (for session persistence)
     token = None
-    if access_token:
+    if authorization:
+        token = authorization
+    elif access_token:
         # Remove "Bearer " prefix if present
         if access_token.startswith("Bearer "):
             token = access_token[7:]
         else:
             token = access_token
-    elif authorization:
-        token = authorization
 
     if token is None:
         raise credentials_exception
@@ -73,22 +74,44 @@ def require_admin(current_user: UserModel = Depends(get_current_active_user)) ->
     return current_user
 
 
+def require_editor_or_admin(current_user: UserModel = Depends(get_current_active_user)) -> UserModel:
+    """Require user to be editor or admin (can edit/create but not delete)"""
+    if current_user.role == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Editor or admin access required"
+        )
+    return current_user
+
+
+def require_write_access(current_user: UserModel = Depends(get_current_active_user)) -> UserModel:
+    """Require user to have write access (editor or admin)"""
+    if current_user.role == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Write access required. Viewers have read-only access."
+        )
+    return current_user
+
+
 @router.post("/login", response_model=Token)
 def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    # Dev mode bypass: accept any password for admin user in development
-    if settings.APP_ENV == "development" and form_data.username == "admin":
+    # Dev mode bypass: accept any password for admin and viewer users in development
+    if settings.APP_ENV == "development" and form_data.username in ["admin", "viewer"]:
         user = db.query(UserModel).filter(UserModel.username == form_data.username).first()
         if user:
             access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
             access_token = create_access_token(
                 data={"sub": user.username}, expires_delta=access_token_expires
             )
+            # Use same cookie settings as normal login
             response.set_cookie(
                 key="access_token",
                 value=f"Bearer {access_token}",
-                httponly=True,
+                httponly=True,  # True for security (JS can use localStorage)
                 secure=False,  # False for HTTP in development
-                samesite="lax",  # Lax for same-site requests in development
+                samesite="lax",  # Lax for same-site requests
+                path="/",  # Set path to root
                 max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
             )
             return {"access_token": access_token, "token_type": "bearer"}
@@ -106,14 +129,27 @@ def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends(), 
         data={"sub": user.username}, expires_delta=access_token_expires
     )
     
-    response.set_cookie(
-        key="access_token",
-        value=f"Bearer {access_token}",
-        httponly=True,
-        secure=True,
-        samesite="none",
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-    )
+    # Use development-appropriate cookie settings in development mode
+    if settings.APP_ENV == "development":
+        response.set_cookie(
+            key="access_token",
+            value=f"Bearer {access_token}",
+            httponly=True,  # True for security (JS can use localStorage)
+            secure=False,  # False for HTTP in development
+            samesite="lax",  # Lax for same-site requests
+            path="/",  # Set path to root
+            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        )
+    else:
+        response.set_cookie(
+            key="access_token",
+            value=f"Bearer {access_token}",
+            httponly=True,  # True for security (prevents XSS)
+            secure=True,  # True for HTTPS in production
+            samesite="lax",  # Lax for same-site requests (more secure than none)
+            path="/",  # Set path to root
+            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        )
     
     return {"access_token": access_token, "token_type": "bearer"}
 
