@@ -2,6 +2,8 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
+import { LocationManagementModal } from './LocationManagementModal';
+import { useLocations, useCreateLocation, useUpdateLocation, useDeleteLocation } from '../hooks/useLocations';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -11,6 +13,16 @@ export function Layout({ children }: LayoutProps) {
   const { user, logout, isLoggingOut, isAdmin } = useAuth();
   const location = useLocation();
   const [version, setVersion] = useState<string>('0.1.0');
+  
+  // Location management state
+  const { data: locations } = useLocations();
+  const createLocationMutation = useCreateLocation();
+  const updateLocationMutation = useUpdateLocation();
+  const deleteLocationMutation = useDeleteLocation();
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [newLocationName, setNewLocationName] = useState('');
+  const [newLocationAddress, setNewLocationAddress] = useState('');
+  const [editingLocation, setEditingLocation] = useState<any>(null);
 
   const navItems = [
     { path: '/', label: 'Dashboard' },
@@ -22,6 +34,48 @@ export function Layout({ children }: LayoutProps) {
   ];
 
   const isActive = (path: string) => location.pathname === path;
+
+  const handleAddLocation = async () => {
+    if (editingLocation) {
+      await handleUpdateLocation();
+    } else {
+      try {
+        await createLocationMutation.mutateAsync({ name: newLocationName, address: newLocationAddress });
+        setNewLocationName('');
+        setNewLocationAddress('');
+        setShowLocationModal(false);
+      } catch (error) {
+        console.error('Failed to create location:', error);
+      }
+    }
+  };
+
+  const handleEditLocation = (loc: any) => {
+    setEditingLocation(loc);
+    setNewLocationName(loc.name);
+    setNewLocationAddress(loc.address || '');
+    setShowLocationModal(true);
+  };
+
+  const handleUpdateLocation = async () => {
+    try {
+      await updateLocationMutation.mutateAsync({ id: editingLocation.id, location: { name: newLocationName, address: newLocationAddress } });
+      setEditingLocation(null);
+      setNewLocationName('');
+      setNewLocationAddress('');
+      setShowLocationModal(false);
+    } catch (error) {
+      console.error('Failed to update location:', error);
+    }
+  };
+
+  const handleDeleteLocation = async (id: string) => {
+    try {
+      await deleteLocationMutation.mutateAsync(id);
+    } catch (error) {
+      console.error('Failed to delete location:', error);
+    }
+  };
 
   useEffect(() => {
     const fetchVersion = async () => {
@@ -45,6 +99,14 @@ export function Layout({ children }: LayoutProps) {
             <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded-full">
               Admin
             </span>
+          )}
+          {isAdmin && (
+            <button
+              onClick={() => setShowLocationModal(true)}
+              className="ml-auto px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-xs"
+            >
+              Manage Labs
+            </button>
           )}
         </div>
         <nav className="flex-1 py-4 overflow-y-auto">
@@ -82,6 +144,26 @@ export function Layout({ children }: LayoutProps) {
           {children}
         </main>
       </div>
+      
+      {showLocationModal && (
+        <LocationManagementModal
+          isOpen={showLocationModal}
+          locations={locations || []}
+          newLocationName={newLocationName}
+          newLocationAddress={newLocationAddress}
+          onNameChange={setNewLocationName}
+          onAddressChange={setNewLocationAddress}
+          onEdit={handleEditLocation}
+          onDelete={handleDeleteLocation}
+          onAdd={handleAddLocation}
+          onCancel={() => {
+            setShowLocationModal(false);
+            setEditingLocation(null);
+            setNewLocationName('');
+            setNewLocationAddress('');
+          }}
+        />
+      )}
     </div>
   );
 }

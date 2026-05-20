@@ -1,8 +1,8 @@
 import { useState, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTestSessions, useDeleteTestSession, useUploadExcel, useCreateFromExcel, useUpdateTestSession } from '../hooks/useTestSessions';
-import { useLocations, useDeleteLocation, useUpdateLocation } from '../hooks/useLocations';
-import { useProtocols, useDeleteProtocol, useUpdateProtocol } from '../hooks/useProtocols';
+import { useLocations, useCreateLocation, useDeleteLocation, useUpdateLocation } from '../hooks/useLocations';
+import { useProtocols, useCreateProtocol, useDeleteProtocol, useUpdateProtocol } from '../hooks/useProtocols';
 import { useVests } from '../hooks/useVests';
 import { useAuth } from '../hooks/useAuth';
 import { TestSession } from '../api/test_session';
@@ -18,8 +18,10 @@ export function TestSessions() {
   const { data: protocols } = useProtocols();
   const { data: vests } = useVests();
   const { isAdmin, role } = useAuth();
+  const createLocationMutation = useCreateLocation();
   const deleteLocationMutation = useDeleteLocation();
   const updateLocationMutation = useUpdateLocation();
+  const createProtocolMutation = useCreateProtocol();
   const deleteProtocolMutation = useDeleteProtocol();
   const updateProtocolMutation = useUpdateProtocol();
   const deleteMutation = useDeleteTestSession();
