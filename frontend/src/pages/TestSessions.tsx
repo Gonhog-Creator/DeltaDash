@@ -61,6 +61,10 @@ export function TestSessions() {
   const [newProtocolDescription, setNewProtocolDescription] = useState('');
   const [showAmmoModal, setShowAmmoModal] = useState(false);
   const [missingCalibers, setMissingCalibers] = useState<string[]>([]);
+  const [showDateFormatModal, setShowDateFormatModal] = useState(false);
+  const [dateInfo, setDateInfo] = useState<any>(null);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [bulkFiles, setBulkFiles] = useState<File[]>([]);
 
   // Group test sessions by parent_test_group_id
   const groupedTests = testSessions?.reduce((acc, session) => {
@@ -113,7 +117,45 @@ export function TestSessions() {
     }
   };
 
-  const handleCreateFromExcel = async (e: React.FormEvent) => {
+  const handleFileSelection = async (file: File) => {
+    setExcelFile(file);
+    if (!file) return;
+
+    // Auto-fill test name from filename if not set
+    if (!testName) {
+      const fileName = file.name.replace(/\.[^/.]+$/, '');
+      setTestName(fileName);
+    }
+
+    // Extract date from file using the API
+    try {
+      const formData = new FormData();
+      formData.append('excel_file', file);
+      formData.append('test_name', testName || file.name.replace(/\.[^/.]+$/, ''));
+
+      const response = await fetch('/api/v1/test-sessions/extract-date', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        const dateInfo = await response.json();
+        if (dateInfo.date) {
+          if (dateInfo.ambiguous) {
+            setDateInfo(dateInfo);
+            setShowDateFormatModal(true);
+          } else {
+            // Date input expects YYYY-MM-DD format (ISO format)
+            setTestDate(dateInfo.date);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to extract date from file:', err);
+    }
+  };
+
+  const handleCreateFromExcel = async (e: React.FormEvent, dateFormat?: string) => {
     e.preventDefault();
     if (!excelFile || !testName) return;
     try {
@@ -124,6 +166,7 @@ export function TestSessions() {
         protocol: protocol || undefined,
         vestId: selectedVestId || undefined,
         testDate: testDate || undefined,
+        dateFormat: dateFormat || undefined,
       });
       setShowCreateFromExcel(false);
       setExcelFile(null);
@@ -132,6 +175,8 @@ export function TestSessions() {
       setProtocol('');
       setSelectedVestId('');
       setTestDate(new Date().toISOString().split('T')[0]);
+      setShowDateFormatModal(false);
+      setDateInfo(null);
     } catch (err: any) {
       console.error('Failed to create test session from Excel:', err);
       // Check if error is due to missing ammunition
@@ -145,18 +190,33 @@ export function TestSessions() {
 
   const handleBulkReupload = async () => {
     try {
-      const response = await apiClient.post('/api/v1/test-sessions/admin/bulk-reupload-all', {});
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to bulk re-upload');
-      }
+      await apiClient.post('/api/v1/test-sessions/admin/bulk-reupload-all', {});
 
       setShowAdminModal(false);
       window.location.reload();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to bulk re-upload:', err);
-      alert('Failed to bulk re-upload. Check console for details.');
+      alert(err?.detail || 'Failed to bulk re-upload. Check console for details.');
+    }
+  };
+
+  const handleBulkUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (bulkFiles.length === 0) return;
+
+    try {
+      const formData = new FormData();
+      bulkFiles.forEach(file => {
+        formData.append('excel_files', file);
+      });
+
+      await apiClient.post('/api/v1/test-sessions/bulk-upload', formData);
+      setShowBulkUpload(false);
+      setBulkFiles([]);
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Failed to bulk upload:', err);
+      alert(err?.detail || 'Failed to bulk upload. Check console for details.');
     }
   };
 
@@ -214,6 +274,14 @@ export function TestSessions() {
               className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
             >
               Upload Excel
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              onClick={() => setShowBulkUpload(true)}
+              className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700"
+            >
+              Bulk Upload
             </button>
           )}
         </div>
@@ -435,10 +503,8 @@ export function TestSessions() {
                   accept=".xlsx,.xls"
                   onChange={(e) => {
                     const file = e.target.files?.[0] || null;
-                    setExcelFile(file);
-                    if (file && !testName) {
-                      const fileName = file.name.replace(/\.[^/.]+$/, '');
-                      setTestName(fileName);
+                    if (file) {
+                      handleFileSelection(file);
                     }
                   }}
                   className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
@@ -752,16 +818,13 @@ export function TestSessions() {
           message={
             <div className="space-y-4">
               <p className="text-sm text-gray-600">
-                The following calibers are not in the ammunition database:
+                The following calibers are not in the ammunition database and cannot be matched:
               </p>
               <ul className="list-disc list-inside text-sm text-gray-700 bg-gray-50 p-3 rounded-md">
                 {missingCalibers.map((caliber, index) => (
                   <li key={index} className="font-medium">{caliber}</li>
                 ))}
               </ul>
-              <p className="text-sm text-gray-600">
-                The system will try to match similar calibers (e.g., "9mm" matches "9 mm"), but exact matches are preferred for accuracy.
-              </p>
               <p className="text-sm text-gray-600">
                 Please create the missing ammunition before uploading the Excel file.
               </p>
@@ -775,6 +838,42 @@ export function TestSessions() {
           }}
           onCancel={() => {
             setShowAmmoModal(false);
+          }}
+        />
+      )}
+
+      {showDateFormatModal && dateInfo && (
+        <ConfirmModal
+          title="Ambiguous Date Format"
+          message={
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                The date extracted from the Excel file is ambiguous. Please choose the correct format:
+              </p>
+              <div className="bg-gray-50 p-3 rounded-md space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">Spanish (DD/MM/YY):</span>
+                  <span className="text-sm text-gray-600">{dateInfo.spanish_date}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">English (MM/DD/YY):</span>
+                  <span className="text-sm text-gray-600">{dateInfo.english_date}</span>
+                </div>
+              </div>
+            </div>
+          }
+          confirmLabel="Spanish Format"
+          cancelLabel="English Format"
+          variant="default"
+          onConfirm={(e) => {
+            setTestDate(dateInfo.spanish_date);
+            setShowDateFormatModal(false);
+            setDateInfo(null);
+          }}
+          onCancel={() => {
+            setTestDate(dateInfo.english_date);
+            setShowDateFormatModal(false);
+            setDateInfo(null);
           }}
         />
       )}
@@ -920,6 +1019,47 @@ export function TestSessions() {
             }
           }}
           onCancel={() => setEditTarget(null)}
+        />
+      )}
+
+      {showBulkUpload && (
+        <ConfirmModal
+          title="Bulk Upload Excel Files"
+          message={
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Select Excel Files</label>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  multiple
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    setBulkFiles(files);
+                  }}
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                />
+              </div>
+              {bulkFiles.length > 0 && (
+                <div className="bg-gray-50 p-3 rounded-md">
+                  <p className="text-sm text-gray-700 font-medium mb-2">Selected Files ({bulkFiles.length}):</p>
+                  <ul className="text-sm text-gray-600 space-y-1 max-h-40 overflow-y-auto">
+                    {bulkFiles.map((file, index) => (
+                      <li key={index}>{file.name}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          }
+          confirmLabel="Upload All"
+          cancelLabel="Cancel"
+          variant="default"
+          onConfirm={handleBulkUpload}
+          onCancel={() => {
+            setShowBulkUpload(false);
+            setBulkFiles([]);
+          }}
         />
       )}
 

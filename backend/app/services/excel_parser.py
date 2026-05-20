@@ -3,6 +3,7 @@ from typing import List, Dict, Optional, Tuple, Union
 from decimal import Decimal
 from pathlib import Path
 import re
+from datetime import datetime
 
 
 class ExcelParseError(Exception):
@@ -22,16 +23,16 @@ class ExcelParser:
             For single-sheet files: (data, temperature, humidity)
             For multi-sheet files: {sheet_name: (data, temperature, humidity)}
         """
-        # Try multi-sheet parsing first (for files like STOP FORCE HG II)
+        # Try multi-sheet parsing first (for new standard format with multiple TALLE sheets)
         if len(self.workbook.sheetnames) > 1:
             try:
                 return self._parse_multi_sheet()
             except ExcelParseError:
                 pass
         
-        # Fall back to single sheet parsing
+        # Fall back to single sheet parsing (legacy support)
         parsers = [
-            self._parse_fie_format,  # FIE format (MDS II, III, LIGHT II, STOP FORCE)
+            self._parse_fie_format,  # FIE format (standard format)
             self._parse_mds_format,  # Legacy MDS format
         ]
         
@@ -66,6 +67,131 @@ class ExcelParser:
                 metadata['lab_name'] = cell_a1.strip()
         
         return metadata
+
+    def extract_test_date(self) -> Dict[str, Optional[any]]:
+        """Extract test date from filename or C2 cell, handling Spanish and English formats
+        
+        Returns:
+            Dict with keys:
+            - 'date': parsed date as ISO string (YYYY-MM-DD) or None
+            - 'ambiguous': True if date is ambiguous (e.g., 01/02/25), False otherwise
+            - 'source': 'filename' or 'cell' or None
+        """
+        result = {
+            'date': None,
+            'ambiguous': False,
+            'source': None
+        }
+        
+        # Try to extract from filename first
+        filename = Path(self.file_path).stem
+        filename_date = self._parse_date_from_string(filename)
+        if filename_date:
+            result.update(filename_date)
+            result['source'] = 'filename'
+            return result
+        
+        # Try to extract from C2 cell
+        cell_c2 = self.sheet['C2'].value
+        if cell_c2:
+            # Handle datetime objects directly
+            if isinstance(cell_c2, datetime):
+                date_str = cell_c2.strftime('%Y-%m-%d')
+                result['date'] = date_str
+                result['ambiguous'] = False
+                result['source'] = 'cell'
+                return result
+            else:
+                cell_c2_str = str(cell_c2).strip()
+                cell_date = self._parse_date_from_string(cell_c2_str)
+                if cell_date:
+                    result.update(cell_date)
+                    result['source'] = 'cell'
+                    return result
+        
+        return result
+
+    def _parse_date_from_string(self, text: str) -> Optional[Dict[str, any]]:
+        """Parse date from string, trying both Spanish (DD/MM/YY) and English (MM/DD/YY) formats
+        
+        Returns:
+            Dict with keys:
+            - 'date': parsed date as ISO string (YYYY-MM-DD) or None
+            - 'ambiguous': True if date is ambiguous, False otherwise
+        """
+        if not text:
+            return None
+        
+        # Common date patterns (including underscore separator)
+        patterns = [
+            # DD/MM/YY or DD/MM/YYYY
+            r'(\d{1,2})/(\d{1,2})/(\d{2,4})',
+            # DD-MM-YY or DD-MM-YYYY
+            r'(\d{1,2})-(\d{1,2})-(\d{2,4})',
+            # DD.MM.YY or DD.MM.YYYY
+            r'(\d{1,2})\.(\d{1,2})\.(\d{2,4})',
+            # DD_MM_YY or DD_MM_YYYY
+            r'(\d{1,2})_(\d{1,2})_(\d{2,4})',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                day, month, year = match.groups()
+                
+                # Normalize year (handle 2-digit years)
+                if len(year) == 2:
+                    year_int = int(year)
+                    year = '20' + year if year_int < 50 else '19' + year
+                
+                day = int(day)
+                month = int(month)
+                year = int(year)
+                
+                # Check if date is ambiguous (both day and month <= 12)
+                is_ambiguous = day <= 12 and month <= 12
+                
+                # Try Spanish format first (DD/MM)
+                spanish_date = self._validate_and_format_date(day, month, year)
+                
+                # Try English format (MM/DD)
+                english_date = self._validate_and_format_date(month, day, year)
+                
+                if spanish_date and english_date:
+                    if is_ambiguous:
+                        # Both valid and ambiguous - return both options
+                        return {
+                            'date': spanish_date,  # Default to Spanish
+                            'ambiguous': True,
+                            'spanish_date': spanish_date,
+                            'english_date': english_date
+                        }
+                    else:
+                        # Not ambiguous - use the one that's valid
+                        return {
+                            'date': spanish_date,
+                            'ambiguous': False
+                        }
+                elif spanish_date:
+                    return {
+                        'date': spanish_date,
+                        'ambiguous': False
+                    }
+                elif english_date:
+                    return {
+                        'date': english_date,
+                        'ambiguous': False
+                    }
+        
+        return None
+
+    def _validate_and_format_date(self, day: int, month: int, year: int) -> Optional[str]:
+        """Validate date and return as ISO string if valid"""
+        try:
+            datetime(year=year, month=month, day=day)
+            return f"{year:04d}-{month:02d}-{day:02d}"
+        except ValueError:
+            return None
 
     def parse_conditioning_and_size(self, cell_value: str) -> Dict[str, Optional[str]]:
         """Parse conditioning (seco/humedo), size (talle), and ballistic limit from cell value"""
@@ -413,8 +539,8 @@ class ExcelParser:
                 cell_str = str(cell_value).lower()
                 # Look for temperature
                 if 'temperatura' in cell_str or 'temp' in cell_str:
-                    # Check adjacent cells for value
-                    for offset in [-1, 1, 2]:
+                    # Check adjacent cells for value (including current cell if it contains value)
+                    for offset in [0, -1, 1, 2]:
                         adjacent_col = col + offset
                         if 1 <= adjacent_col <= self.sheet.max_column:
                             adj_value = self.sheet.cell(row=2, column=adjacent_col).value
@@ -429,8 +555,8 @@ class ExcelParser:
                                         pass
                 # Look for humidity
                 if 'humedad' in cell_str or 'humidity' in cell_str:
-                    # Check adjacent cells for value
-                    for offset in [-1, 1, 2]:
+                    # Check adjacent cells for value (including current cell if it contains value)
+                    for offset in [0, -1, 1, 2]:
                         adjacent_col = col + offset
                         if 1 <= adjacent_col <= self.sheet.max_column:
                             adj_value = self.sheet.cell(row=2, column=adjacent_col).value
@@ -456,8 +582,13 @@ class ExcelParser:
                     row_values.append(str(cell_value).lower())
             
             # Check if this row contains common header indicators
+            # Require at least 2 of the main data columns to avoid label rows
             header_indicators = ['disparos', 'shot', 'nivel', 'calibre', 'trauma', 'velocidad', 'vo', 'id']
-            if any(indicator in ' '.join(row_values) for indicator in header_indicators):
+            matched_indicators = sum(1 for indicator in header_indicators if indicator in ' '.join(row_values))
+            
+            # Require at least 2 indicators to be considered a header row
+            # This avoids matching label rows that only have "nivel" or a single indicator
+            if matched_indicators >= 2:
                 return row
         
         # Default to row 5 if no header found
@@ -469,10 +600,10 @@ class ExcelParser:
             'vest_number': 1,  # Column A
             'side': 2,         # Column B
             'shot_number': 3,  # Column C
-            'protection_level': 4,  # Column D
-            'caliber': 5,      # Column E
-            'trauma': 6,       # Column F
-            'velocity': 7,     # Column G
+            'protection_level': None,  # Will be detected from "Nivel" header
+            'caliber': None,      # Will be detected from "Calibre" header
+            'trauma': None,       # Will be detected from "Trauma" header
+            'velocity': None,     # Will be detected from "Velocidad" header
         }
         
         # Try to detect actual column positions from headers
@@ -480,28 +611,37 @@ class ExcelParser:
         found_trauma = False
         found_velocity = False
         
-        for col in range(1, min(11, self.sheet.max_column + 1)):
+        for col in range(1, min(15, self.sheet.max_column + 1)):
             cell_value = self.sheet.cell(row=header_row, column=col).value
             if cell_value:
                 cell_str = str(cell_value).lower()
                 if 'disparo' in cell_str or 'shot' in cell_str:
-                    if mapping['shot_number'] == 3:  # Only override default
+                    if not mapping['shot_number']:
                         mapping['shot_number'] = col
                 elif 'nivel' in cell_str:
-                    if mapping['protection_level'] == 4:  # Only override default
+                    if not mapping['protection_level']:
                         mapping['protection_level'] = col
                 elif 'calibre' in cell_str or 'caliber' in cell_str:
-                    if mapping['caliber'] == 5:  # Only override default
+                    if not mapping['caliber']:
                         mapping['caliber'] = col
-                elif 'trauma' in cell_str and not found_trauma:
+                elif 'trauma' in cell_str and 'promedio' not in cell_str and not found_trauma:
                     # Prefer "Trauma (mm)" over "Trauma Promedio" etc.
                     # Only set if we haven't found a trauma column yet
                     mapping['trauma'] = col
                     found_trauma = True
                 elif ('velocidad' in cell_str or 'vo' in cell_str or 'velocity' in cell_str) and not found_velocity:
-                    if mapping['velocity'] == 7:  # Only override default
-                        mapping['velocity'] = col
-                        found_velocity = True
+                    mapping['velocity'] = col
+                    found_velocity = True
+        
+        # Set fallback values if not detected
+        if not mapping['protection_level']:
+            mapping['protection_level'] = 4
+        if not mapping['caliber']:
+            mapping['caliber'] = 5
+        if not mapping['trauma']:
+            mapping['trauma'] = 6
+        if not mapping['velocity']:
+            mapping['velocity'] = 7
         
         return mapping
 

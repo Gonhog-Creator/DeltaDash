@@ -27,7 +27,7 @@ def list_test_sessions(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
 ):
-    test_sessions = db.query(TestSessionModel, VestModel).outerjoin(VestModel, TestSessionModel.vest_id == VestModel.id).offset(skip).limit(limit).all()
+    test_sessions = db.query(TestSessionModel, VestModel).outerjoin(VestModel, TestSessionModel.vest_id == VestModel.id).order_by(TestSessionModel.name).offset(skip).limit(limit).all()
     
     result = []
     for session, vest in test_sessions:
@@ -70,6 +70,74 @@ def create_test_session(
     return db_test_session
 
 
+@router.post("/extract-date")
+def extract_date_from_excel(
+    excel_file: UploadFile = File(...),
+):
+    """Extract date from Excel file for preview before upload"""
+    # Save Excel file temporarily
+    os.makedirs(settings.material_docs_dir, exist_ok=True)
+    file_ext = Path(excel_file.filename).suffix
+    unique_filename = f"temp_{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(settings.material_docs_dir, unique_filename)
+    with open(file_path, 'wb') as f:
+        f.write(excel_file.file.read())
+    
+    try:
+        parser = ExcelParser(file_path)
+        date_info = parser.extract_test_date()
+        return date_info
+    finally:
+        # Clean up temporary file
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+
+@router.post("/bulk-upload", response_model=List[TestSession], status_code=status.HTTP_201_CREATED)
+def bulk_upload_excel(
+    excel_files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access)
+):
+    """Bulk upload multiple Excel files at once (admin only)"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    created_sessions = []
+    
+    for excel_file in excel_files:
+        try:
+            # Save Excel file with original filename
+            os.makedirs(settings.material_docs_dir, exist_ok=True)
+            file_path = os.path.join(settings.material_docs_dir, excel_file.filename)
+            with open(file_path, 'wb') as f:
+                f.write(excel_file.file.read())
+            
+            # Use filename as test name
+            test_name = Path(excel_file.filename).stem
+            
+            # Create test session from Excel
+            sessions = create_sessions_from_excel_data(
+                db=db,
+                excel_file_path=file_path,
+                test_name=test_name,
+                location_name=None,
+                protocol=None,
+                vest_id=None,
+                test_date=None,
+                temperature=None,
+                humidity=None,
+                is_full_path=True,
+            )
+            created_sessions.extend(sessions)
+        except Exception as e:
+            # Log error but continue with other files
+            print(f"Error uploading {excel_file.filename}: {e}")
+            continue
+    
+    return created_sessions
+
+
 @router.post("/from-excel", response_model=List[TestSession], status_code=status.HTTP_201_CREATED)
 def create_test_session_from_excel(
     excel_file: UploadFile = File(...),
@@ -78,14 +146,13 @@ def create_test_session_from_excel(
     protocol: Optional[str] = Form(None),
     vest_id: Optional[str] = Form(None),
     test_date: Optional[str] = Form(None),
+    date_format: Optional[str] = Form(None),  # 'spanish' or 'english' for ambiguous dates
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(require_write_access)
 ):
-    # Save Excel file
+    # Save Excel file with original filename
     os.makedirs(settings.material_docs_dir, exist_ok=True)
-    file_ext = Path(excel_file.filename).suffix
-    unique_filename = f"{uuid.uuid4()}{file_ext}"
-    file_path = os.path.join(settings.material_docs_dir, unique_filename)
+    file_path = os.path.join(settings.material_docs_dir, excel_file.filename)
     with open(file_path, 'wb') as f:
         f.write(excel_file.file.read())
     
@@ -95,6 +162,24 @@ def create_test_session_from_excel(
         from app.db.models.location import Location as LocationModel
         location = db.query(LocationModel).filter(LocationModel.id == location_id).first()
         location_name = location.name if location else None
+    
+    # Extract date from Excel if not provided
+    if not test_date:
+        parser = ExcelParser(file_path)
+        date_info = parser.extract_test_date()
+        if date_info and date_info['date']:
+            if date_info.get('ambiguous') and not date_format:
+                # Return date ambiguity info to frontend
+                return {
+                    "error": "ambiguous_date",
+                    "message": "Date format is ambiguous. Please choose between Spanish (DD/MM/YY) or English (MM/DD/YY) format.",
+                    "date_info": date_info
+                }
+            elif date_format == 'english' and date_info.get('english_date'):
+                test_date = date_info['english_date']
+            else:
+                # Default to Spanish format
+                test_date = date_info['date']
     
     # Parse the Excel file - service will handle multi-sheet vs single-sheet
     # No need to extract temperature/humidity here - the service handles it
@@ -210,11 +295,9 @@ def upload_excel_to_test_session(
     if not test_session:
         raise HTTPException(status_code=404, detail="Test session not found")
     
-    # Save Excel file
+    # Save Excel file with original filename
     os.makedirs(settings.material_docs_dir, exist_ok=True)
-    file_ext = Path(excel_file.filename).suffix
-    unique_filename = f"{uuid.uuid4()}{file_ext}"
-    file_path = os.path.join(settings.material_docs_dir, unique_filename)
+    file_path = os.path.join(settings.material_docs_dir, excel_file.filename)
     with open(file_path, 'wb') as f:
         f.write(excel_file.file.read())
     
@@ -226,7 +309,7 @@ def upload_excel_to_test_session(
         raise HTTPException(status_code=400, detail=f"Failed to parse Excel: {str(e)}")
     
     # Update test session with Excel file path and environmental data
-    test_session.excel_file_path = unique_filename
+    test_session.excel_file_path = excel_file.filename
     if not test_session.ambient_temperature_c:
         test_session.ambient_temperature_c = temperature
     if not test_session.humidity_percent:
@@ -268,6 +351,25 @@ def bulk_reupload_all_test_sessions(
     
     all_created_sessions = []
     
+    # Collect all session IDs to be deleted
+    all_session_ids = []
+    for parent_session in parent_sessions:
+        all_session_ids.append(parent_session.id)
+        child_sessions = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == parent_session.id).all()
+        all_session_ids.extend([child.id for child in child_sessions])
+    
+    # Set parent_test_group_id to None for all sessions to break foreign key constraints
+    db.query(TestSessionModel).filter(TestSessionModel.id.in_(all_session_ids)).update({"parent_test_group_id": None})
+    db.flush()
+    
+    # Delete shot data for all sessions
+    db.query(ShotDataModel).filter(ShotDataModel.test_session_id.in_(all_session_ids)).delete()
+    
+    # Delete all sessions
+    db.query(TestSessionModel).filter(TestSessionModel.id.in_(all_session_ids)).delete()
+    db.commit()
+    
+    # Now re-upload each Excel file
     for parent_session in parent_sessions:
         excel_file_path = parent_session.excel_file_path
         # Handle both relative paths starting with ./ and just filenames
@@ -276,22 +378,19 @@ def bulk_reupload_all_test_sessions(
         else:
             original_file_path = os.path.join(settings.material_docs_dir, excel_file_path)
         
+        # If file not found, try to find it by filename in material_docs directory
         if not os.path.exists(original_file_path):
-            print(f"Excel file not found for {parent_session.name}: {excel_file_path}")
-            continue
-        
-        # Delete this parent session and all child sessions
-        child_sessions = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == parent_session.id).all()
-        for child in child_sessions:
-            db.query(ShotDataModel).filter(ShotDataModel.test_session_id == child.id).delete()
-            db.delete(child)
-        
-        db.query(ShotDataModel).filter(ShotDataModel.test_session_id == parent_session.id).delete()
-        db.delete(parent_session)
-        db.commit()
+            # Extract just the filename from the path
+            filename = os.path.basename(excel_file_path)
+            # Try to find the file in material_docs directory
+            alt_path = os.path.join(settings.material_docs_dir, filename)
+            if os.path.exists(alt_path):
+                original_file_path = alt_path
+            else:
+                print(f"Excel file not found for {parent_session.name}: {excel_file_path}")
+                continue
         
         # Re-upload the Excel file
-        # Note: Service now handles multi-sheet parsing internally
         # Get location name if lab_name is provided
         location_name = parent_session.lab_name
         
@@ -301,6 +400,7 @@ def bulk_reupload_all_test_sessions(
             test_name=parent_session.name,
             location_name=location_name,
             protocol=parent_session.protocol,
+            vest_id=parent_session.vest_id,
             test_date=parent_session.test_date,
             temperature=None,  # Service will extract from parsed data
             humidity=None,    # Service will extract from parsed data

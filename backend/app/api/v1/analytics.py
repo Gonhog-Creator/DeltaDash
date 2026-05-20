@@ -124,13 +124,4 @@ def get_velocity_vs_bfd(
         points.append(point)
     
     analytics_data = AnalyticsData(points=points)
-    # Log the serialized JSON to check if angle_degrees is included
-    import json
-    json_str = analytics_data.model_dump_json()
-    print(f"DEBUG: Serialized JSON length: {len(json_str)}")
-    if 'angle_degrees' in json_str and '45' in json_str:
-        print(f"DEBUG: Found angle_degrees with 45 in JSON")
-    else:
-        print(f"DEBUG: angle_degrees not found or not 45 in JSON")
-    
     return analytics_data

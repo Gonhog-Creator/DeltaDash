@@ -59,7 +59,7 @@ export const testSessionsApi = {
 
   create: (testSession: TestSessionCreate) => apiClient.post<TestSession>('/api/v1/test-sessions', testSession),
 
-  createFromExcel: (file: File, testName: string, locationId?: string, protocol?: string, vestId?: string, testDate?: string) => {
+  createFromExcel: (file: File, testName: string, locationId?: string, protocol?: string, vestId?: string, testDate?: string, dateFormat?: string) => {
     const formData = new FormData();
     formData.append('excel_file', file);
     formData.append('test_name', testName);
@@ -74,6 +74,9 @@ export const testSessionsApi = {
     }
     if (testDate) {
       formData.append('test_date', testDate);
+    }
+    if (dateFormat) {
+      formData.append('date_format', dateFormat);
     }
     return apiClient.post<TestSession[]>('/api/v1/test-sessions/from-excel', formData);
   },

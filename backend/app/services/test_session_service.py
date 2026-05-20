@@ -12,6 +12,12 @@ def normalize_caliber(caliber: str) -> str:
     
     normalized = str(caliber).strip().lower()
     
+    # Remove common suffixes from ammunition names
+    suffixes_to_remove = ['fmj standard', 'standard', 'fmj', 'winchester', 'remington', 'magnum', 'mag']
+    for suffix in suffixes_to_remove:
+        if normalized.endswith(suffix):
+            normalized = normalized[:-len(suffix)].strip()
+    
     # Remove spaces around numbers
     normalized = normalized.replace(' ', '')
     
@@ -21,7 +27,71 @@ def normalize_caliber(caliber: str) -> str:
     # Remove leading/trailing dots
     normalized = normalized.strip('.')
     
-    return normalized
+    # Common caliber aliases for matching
+    caliber_aliases = {
+        '9mm': '9x19mm',
+        '9x19': '9x19mm',
+        '357': '357mag',
+        '44': '44mag',
+        '308': '308win',
+        '308win': '308winchester',
+        '223': '223rem',
+        '762x51mm': '7.62x51mm',
+        '556x45mm': '5.56x45mm',
+    }
+    
+    return caliber_aliases.get(normalized, normalized)
+
+
+def get_standardized_caliber(db: Session, raw_caliber: str) -> Optional[str]:
+    """Get the standardized caliber name from the database for a raw caliber string."""
+    if not raw_caliber:
+        return None
+    
+    # Filter out column header names
+    excluded_names = {'calibre', 'caliber', 'calibres', 'calibers'}
+    if raw_caliber.lower() in excluded_names:
+        return None
+    
+    # Get all existing calibers from database
+    # Try caliber column first, fall back to name column if caliber is empty
+    caliber_ammo = db.query(AmmunitionModel.caliber).filter(
+        AmmunitionModel.caliber.isnot(None),
+        AmmunitionModel.caliber != ''
+    ).all()
+    
+    if not caliber_ammo:
+        # If caliber column is empty, use name column
+        caliber_ammo = db.query(AmmunitionModel.name).filter(
+            AmmunitionModel.name.isnot(None),
+            AmmunitionModel.name != ''
+        ).all()
+    
+    existing_calibers_normalized = {
+        normalize_caliber(caliber[0]): caliber[0] for caliber in caliber_ammo
+    }
+    
+    normalized_input = normalize_caliber(raw_caliber)
+    
+    # Try exact match first (normalized)
+    if normalized_input in existing_calibers_normalized:
+        return existing_calibers_normalized[normalized_input]
+    
+    # Try fuzzy matching for common variations
+    for existing_norm in existing_calibers_normalized:
+        # Check if one is a substring of the other (for cases like "9mm" vs "9 mm")
+        if normalized_input in existing_norm or existing_norm in normalized_input:
+            return existing_calibers_normalized[existing_norm]
+        
+        # Check for common variations (e.g., .357 vs .357 mag)
+        # Remove dots, spaces, and "mag" for comparison
+        input_stripped = normalized_input.replace('.', '').replace(' ', '').replace('mag', '')
+        existing_stripped = existing_norm.replace('.', '').replace(' ', '').replace('mag', '')
+        if input_stripped == existing_stripped:
+            return existing_calibers_normalized[existing_norm]
+    
+    # No match found, return original
+    return raw_caliber
 
 
 def validate_calibers_exist(db: Session, calibers: Set[str]) -> Set[str]:
@@ -29,18 +99,34 @@ def validate_calibers_exist(db: Session, calibers: Set[str]) -> Set[str]:
     if not calibers:
         return set()
     
+    # Filter out column header names and empty strings
+    excluded_names = {'calibre', 'caliber', 'calibres', 'calibers'}
+    calibers_to_check = {c for c in calibers if c and c.lower() not in excluded_names}
+    
+    if not calibers_to_check:
+        return set()
+    
     # Get all existing calibers from database with their IDs
-    existing_ammo = db.query(AmmunitionModel.caliber).filter(AmmunitionModel.caliber.isnot(None)).all()
+    # Try caliber column first, fall back to name column if caliber is empty
+    caliber_ammo = db.query(AmmunitionModel.caliber).filter(
+        AmmunitionModel.caliber.isnot(None),
+        AmmunitionModel.caliber != ''
+    ).all()
+    
+    if not caliber_ammo:
+        # If caliber column is empty, use name column
+        caliber_ammo = db.query(AmmunitionModel.name).filter(
+            AmmunitionModel.name.isnot(None),
+            AmmunitionModel.name != ''
+        ).all()
+    
     existing_calibers_normalized = {
-        normalize_caliber(caliber[0]): caliber[0] for caliber in existing_ammo
+        normalize_caliber(caliber[0]): caliber[0] for caliber in caliber_ammo
     }
     
     # Normalize input calibers and check which are missing
     missing_calibers = set()
-    for caliber in calibers:
-        if not caliber:
-            continue
-        
+    for caliber in calibers_to_check:
         normalized_input = normalize_caliber(caliber)
         
         # Try exact match first (normalized)
@@ -56,7 +142,10 @@ def validate_calibers_exist(db: Session, calibers: Set[str]) -> Set[str]:
                 break
             
             # Check for common variations (e.g., .357 vs .357 mag)
-            if normalized_input.replace('.', '').replace('mag', '') == existing_norm.replace('.', '').replace('mag', ''):
+            # Remove dots, spaces, and "mag" for comparison
+            input_stripped = normalized_input.replace('.', '').replace(' ', '').replace('mag', '')
+            existing_stripped = existing_norm.replace('.', '').replace(' ', '').replace('mag', '')
+            if input_stripped == existing_stripped:
                 found_match = True
                 break
         
@@ -102,7 +191,7 @@ def create_sessions_from_excel_data(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
                     "error": "missing_ammunition",
-                    "message": f"The following calibers are not in the ammunition database: {', '.join(missing_calibers)}",
+                    "message": f"The following calibers are not in the ammunition database and cannot be matched: {', '.join(missing_calibers)}",
                     "missing_calibers": list(missing_calibers)
                 }
             )
@@ -112,8 +201,26 @@ def create_sessions_from_excel_data(
             db, parsed_data, test_name, location_name, protocol, vest_id, test_date, excel_file_path
         )
     else:
-        # Single-sheet file - use existing logic
+        # Single-sheet file - extract size from sheet name
+        size = None
+        sheet_name = parser.sheet.title
+        sheet_name_upper = sheet_name.upper()
+        # Look for TALLE or SIZE keyword
+        for keyword in ['TALLE', 'SIZE']:
+            if keyword in sheet_name_upper:
+                parts = sheet_name_upper.split()
+                for i, part in enumerate(parts):
+                    if part == keyword and i + 1 < len(parts):
+                        size = parts[i + 1]
+                        break
+                if size:
+                    break
+        
         conditioning_size = parser.parse_conditioning_and_size(parser.sheet['A1'].value if parser.sheet['A1'].value else '')
+        # Override size from sheet name
+        if size:
+            conditioning_size['size'] = size
+        
         multiple_tests = parser.detect_multiple_tests()
         shot_data, _, _ = parsed_data
         
@@ -129,7 +236,7 @@ def create_sessions_from_excel_data(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
                     "error": "missing_ammunition",
-                    "message": f"The following calibers are not in the ammunition database: {', '.join(missing_calibers)}",
+                    "message": f"The following calibers are not in the ammunition database and cannot be matched: {', '.join(missing_calibers)}",
                     "missing_calibers": list(missing_calibers)
                 }
             )
@@ -186,6 +293,9 @@ def create_sessions_from_excel_data(
                 
                 for shot in test_shots:
                     shot_copy = {k: v for k, v in shot.items() if k != 'row'}
+                    # Standardize caliber to match database value
+                    if shot_copy.get('caliber'):
+                        shot_copy['caliber'] = get_standardized_caliber(db, shot_copy['caliber'])
                     shot_data_db = ShotDataModel(
                         test_session_id=db_test_session.id,
                         **shot_copy
@@ -216,9 +326,13 @@ def create_sessions_from_excel_data(
             db.refresh(db_test_session)
             
             for shot in shot_data:
+                # Standardize caliber to match database value
+                shot_copy = shot.copy()
+                if shot_copy.get('caliber'):
+                    shot_copy['caliber'] = get_standardized_caliber(db, shot_copy['caliber'])
                 shot_data_db = ShotDataModel(
                     test_session_id=db_test_session.id,
-                    **shot
+                    **shot_copy
                 )
                 db.add(shot_data_db)
             
@@ -261,12 +375,18 @@ def _create_sessions_from_multi_sheet(
     
     # Create child session for each series in each sheet
     for sheet_name, series_list in sheets_data.items():
-        # Extract size from sheet name (e.g., "TALLE S" -> "S")
+        # Extract size from sheet name (e.g., "TALLE S" -> "S", "SIZE M" -> "M")
         size = None
-        if 'TALLE' in sheet_name.upper():
-            parts = sheet_name.upper().split()
-            if len(parts) > 1:
-                size = parts[1]  # Get the size part
+        sheet_name_upper = sheet_name.upper()
+        for keyword in ['TALLE', 'SIZE']:
+            if keyword in sheet_name_upper:
+                parts = sheet_name_upper.split()
+                for i, part in enumerate(parts):
+                    if part == keyword and i + 1 < len(parts):
+                        size = parts[i + 1]
+                        break
+                if size:
+                    break
         
         for shot_data, sheet_temp, sheet_humidity, series_id, conditioning in series_list:
             # Skip series if all shots have no velocity, no trauma, and no caliber
@@ -324,6 +444,9 @@ def _create_sessions_from_multi_sheet(
             # Add shot data for this series
             for shot in shot_data:
                 shot_copy = {k: v for k, v in shot.items() if k != 'row'}
+                # Standardize caliber to match database value
+                if shot_copy.get('caliber'):
+                    shot_copy['caliber'] = get_standardized_caliber(db, shot_copy['caliber'])
                 shot_data_db = ShotDataModel(
                     test_session_id=db_test_session.id,
                     **shot_copy
