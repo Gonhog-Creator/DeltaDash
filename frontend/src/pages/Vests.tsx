@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useVests, useCreateVest, useUpdateVest, useDeleteVest, useUpdateVestLayers } from '../hooks/useVests';
 import { Vest, VestCreate, VestUpdate, VestLayerCreate } from '../api/vests';
 import { vestsApi } from '../api/vests';
@@ -9,7 +9,7 @@ import { useAuth } from '../hooks/useAuth';
 
 export function Vests() {
   const { data: vests, isLoading, error } = useVests();
-  const { data: materials } = useMaterials();
+  const { data: materials, refetch: refetchMaterials } = useMaterials();
   const createMutation = useCreateVest();
   const updateMutation = useUpdateVest();
   const deleteMutation = useDeleteVest();
@@ -20,6 +20,13 @@ export function Vests() {
   const [editingVest, setEditingVest] = useState<Vest | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Vest | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Refetch materials when form opens to get latest ply_count values
+  useEffect(() => {
+    if (showCreateForm || editingVest) {
+      refetchMaterials();
+    }
+  }, [showCreateForm, editingVest, refetchMaterials]);
   const [formData, setFormData] = useState<VestCreate>({
     vest_code: '',
     vest_type: '',
@@ -148,7 +155,6 @@ export function Vests() {
       fullVest.layers.map((layer) => ({
         layer_index: layer.layer_index,
         material_id: layer.material_id,
-        orientation_degrees: layer.orientation_degrees,
         layer_count: layer.layer_count,
         notes: layer.notes,
       }))
@@ -179,7 +185,6 @@ export function Vests() {
     const newLayer: VestLayerCreate = {
       layer_index: layers.length,
       material_id: null,
-      orientation_degrees: null,
       layer_count: 1,
       notes: '',
     };
@@ -420,20 +425,10 @@ export function Vests() {
                         <option value="">Select material...</option>
                         {materials?.map((material) => (
                           <option key={material.id} value={material.id}>
-                            {material.name} ({material.material_class || 'N/A'})
+                            {material.name} ({material.material_class || 'N/A'}) {material.ply_count ? `- ${material.ply_count} ply` : ''}
                           </option>
                         ))}
                       </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700">Orientation (degrees)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={layer.orientation_degrees ?? ''}
-                        onChange={(e) => updateLayer(index, 'orientation_degrees', e.target.value ? parseFloat(e.target.value) : null)}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                      />
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700">Layer Count</label>

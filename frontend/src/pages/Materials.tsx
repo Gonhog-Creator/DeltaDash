@@ -20,6 +20,8 @@ export function Materials() {
   const [fileToRemove, setFileToRemove] = useState<{ material: Material; fileType: 'mss' | 'sds' } | null>(null);
   const [mssFile, setMssFile] = useState<File | null>(null);
   const [sdsFile, setSdsFile] = useState<File | null>(null);
+  const [pendingMssDelete, setPendingMssDelete] = useState(false);
+  const [pendingSdsDelete, setPendingSdsDelete] = useState(false);
   const [showFileReplaceModal, setShowFileReplaceModal] = useState(false);
   const [fileToReplace, setFileToReplace] = useState<{ type: 'mss' | 'sds', file: File } | null>(null);
   const [formData, setFormData] = useState<MaterialCreate>({
@@ -30,6 +32,8 @@ export function Materials() {
     thickness_mm: null,
     thickness_tolerance_mm: null,
     material_function: '',
+    ply_count: null,
+    ply_orientations: null,
   });
 
   if (isLoading) return <div>Loading...</div>;
@@ -43,7 +47,7 @@ export function Materials() {
       if (sdsFile) files.sds = sdsFile;
       await createMutation.mutateAsync({ material: formData, files });
       setShowCreateForm(false);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', created_by_username: '' });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, created_by_username: '' });
       setMssFile(null);
       setSdsFile(null);
     } catch (err) {
@@ -60,24 +64,33 @@ export function Materials() {
       ) as MaterialUpdate;
       await updateMutation.mutateAsync({ id: editingMaterial.id, material: updatePayload });
 
-      // Upload files if any are selected
-      if (mssFile || sdsFile) {
-        const files: { mss?: File; sds?: File } = {};
-        if (mssFile) files.mss = mssFile;
-        if (sdsFile) files.sds = sdsFile;
+      // Execute pending file operations
+      const fileOperations = [];
+      
+      // Handle file uploads
+      if (mssFile) fileOperations.push(uploadFilesMutation.mutateAsync({ id: editingMaterial.id, files: { mss: mssFile } }));
+      if (sdsFile) fileOperations.push(uploadFilesMutation.mutateAsync({ id: editingMaterial.id, files: { sds: sdsFile } }));
+      
+      // Handle file deletions
+      if (pendingMssDelete) fileOperations.push(removeFileMutation.mutateAsync({ id: editingMaterial.id, fileType: 'mss' }));
+      if (pendingSdsDelete) fileOperations.push(removeFileMutation.mutateAsync({ id: editingMaterial.id, fileType: 'sds' }));
+      
+      if (fileOperations.length > 0) {
         try {
-          await uploadFilesMutation.mutateAsync({ id: editingMaterial.id, files });
-          refetch(); // Refresh the materials list to show updated filenames
+          await Promise.all(fileOperations);
+          refetch();
         } catch (uploadError) {
-          console.error('Failed to upload files:', uploadError);
-          alert('Material updated but file upload failed. Please try uploading files again.');
+          console.error('Failed to process file operations:', uploadError);
+          alert('Material updated but file operations failed. Please try again.');
         }
       }
 
       setEditingMaterial(null);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '' });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null });
       setMssFile(null);
       setSdsFile(null);
+      setPendingMssDelete(false);
+      setPendingSdsDelete(false);
     } catch (err) {
       console.error('Failed to update material:', err);
       alert('Failed to update material. Please try again.');
@@ -95,8 +108,10 @@ export function Materials() {
     } else {
       if (type === 'mss') {
         setMssFile(file);
+        setPendingMssDelete(false); // Clear pending delete if uploading
       } else {
         setSdsFile(file);
+        setPendingSdsDelete(false); // Clear pending delete if uploading
       }
     }
   };
@@ -106,8 +121,10 @@ export function Materials() {
     
     if (fileToReplace.type === 'mss') {
       setMssFile(fileToReplace.file);
+      setPendingMssDelete(false); // Clear pending delete if uploading
     } else {
       setSdsFile(fileToReplace.file);
+      setPendingSdsDelete(false); // Clear pending delete if uploading
     }
     
     setShowFileReplaceModal(false);
@@ -130,6 +147,24 @@ export function Materials() {
     }
   };
 
+  const handlePendingDelete = (fileType: 'mss' | 'sds') => {
+    if (fileType === 'mss') {
+      setPendingMssDelete(true);
+      setMssFile(null); // Clear any pending upload
+    } else {
+      setPendingSdsDelete(true);
+      setSdsFile(null); // Clear any pending upload
+    }
+  };
+
+  const cancelPendingDelete = (fileType: 'mss' | 'sds') => {
+    if (fileType === 'mss') {
+      setPendingMssDelete(false);
+    } else {
+      setPendingSdsDelete(false);
+    }
+  };
+
   const startEdit = (material: Material) => {
     setEditingMaterial(material);
     setFormData({
@@ -140,14 +175,18 @@ export function Materials() {
       thickness_mm: material.thickness_mm,
       thickness_tolerance_mm: material.thickness_tolerance_mm,
       material_function: material.material_function || '',
+      ply_count: material.ply_count,
+      ply_orientations: material.ply_orientations,
     });
   };
 
   const cancelEdit = () => {
     setEditingMaterial(null);
-    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '' });
+    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null });
     setMssFile(null);
     setSdsFile(null);
+    setPendingMssDelete(false);
+    setPendingSdsDelete(false);
   };
 
   return (
@@ -261,6 +300,56 @@ export function Materials() {
                   />
                 </div>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Ply Count: {formData.ply_count ?? 0}</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="6"
+                  step="1"
+                  value={formData.ply_count ?? 0}
+                  onChange={(e) => {
+                    const newPlyCount = parseInt(e.target.value);
+                    setFormData({ ...formData, ply_count: newPlyCount });
+                    // Initialize ply_orientations array when ply_count changes
+                    if (newPlyCount > 1) {
+                      setFormData(prev => ({ ...prev, ply_orientations: Array(newPlyCount).fill(0) }));
+                    } else if (newPlyCount === 1) {
+                      setFormData(prev => ({ ...prev, ply_orientations: [0] }));
+                    } else {
+                      setFormData(prev => ({ ...prev, ply_orientations: null }));
+                    }
+                  }}
+                  className="mt-1 block w-full"
+                />
+                <p className="mt-1 text-xs text-gray-500">Number of plies in this material (for multi-ply orientation configuration)</p>
+              </div>
+              {formData.ply_count && formData.ply_count > 1 && (
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Ply Orientations (degrees) - {formData.ply_count} plies
+                  </label>
+                  <div className="mt-1 grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {Array.from({ length: formData.ply_count }).map((_, plyIndex) => (
+                      <div key={plyIndex}>
+                        <label className="block text-xs text-gray-500 mb-1">Ply {plyIndex + 1}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={formData.ply_orientations?.[plyIndex] ?? ''}
+                          onChange={(e) => {
+                            const newOrientations = [...(formData.ply_orientations || [])];
+                            newOrientations[plyIndex] = e.target.value ? parseFloat(e.target.value) : 0;
+                            setFormData({ ...formData, ply_orientations: newOrientations });
+                          }}
+                          placeholder="0"
+                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-1"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {editingMaterial && role === 'admin' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Created By</label>
@@ -274,10 +363,10 @@ export function Materials() {
               )}
               <div>
                 <label className="block text-sm font-medium text-gray-700">MSS (Material Specification Sheet)</label>
-                {editingMaterial && editingMaterial.mss_file_path && (
+                {editingMaterial && editingMaterial.mss_file_path && !pendingMssDelete && (
                   <div className="mt-1 mb-2 flex items-center space-x-2">
                     <a
-                      href={`https://deltadash-backend-production.up.railway.app/api/v1/materials/${editingMaterial.id}/download/mss`}
+                      href={`/api/v1/materials/${editingMaterial.id}/download/mss`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-indigo-600 hover:text-indigo-900 text-sm"
@@ -286,11 +375,37 @@ export function Materials() {
                     </a>
                     <button
                       type="button"
-                      onClick={() => setFileToRemove({ material: editingMaterial, fileType: 'mss' })}
+                      onClick={() => handlePendingDelete('mss')}
                       className="text-red-600 hover:text-red-900 text-xs"
                       title="Remove file"
                     >
                       ✕ Remove
+                    </button>
+                  </div>
+                )}
+                {pendingMssDelete && (
+                  <div className="mt-1 mb-2 flex items-center space-x-2">
+                    <span className="text-orange-600 text-sm">File will be deleted on update</span>
+                    <button
+                      type="button"
+                      onClick={() => cancelPendingDelete('mss')}
+                      className="text-indigo-600 hover:text-indigo-900 text-xs"
+                      title="Cancel deletion"
+                    >
+                      ✕ Cancel
+                    </button>
+                  </div>
+                )}
+                {mssFile && (
+                  <div className="mt-1 mb-2 flex items-center space-x-2">
+                    <span className="text-green-600 text-sm">New file: {mssFile.name} (will upload on update)</span>
+                    <button
+                      type="button"
+                      onClick={() => setMssFile(null)}
+                      className="text-red-600 hover:text-red-900 text-xs"
+                      title="Cancel upload"
+                    >
+                      ✕ Cancel
                     </button>
                   </div>
                 )}
@@ -302,10 +417,10 @@ export function Materials() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">SDS (Safety Data Sheet)</label>
-                {editingMaterial && editingMaterial.sds_file_path && (
+                {editingMaterial && editingMaterial.sds_file_path && !pendingSdsDelete && (
                   <div className="mt-1 mb-2 flex items-center space-x-2">
                     <a
-                      href={`https://deltadash-backend-production.up.railway.app/api/v1/materials/${editingMaterial.id}/download/sds`}
+                      href={`/api/v1/materials/${editingMaterial.id}/download/sds`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-indigo-600 hover:text-indigo-900 text-sm"
@@ -314,11 +429,37 @@ export function Materials() {
                     </a>
                     <button
                       type="button"
-                      onClick={() => setFileToRemove({ material: editingMaterial, fileType: 'sds' })}
+                      onClick={() => handlePendingDelete('sds')}
                       className="text-red-600 hover:text-red-900 text-xs"
                       title="Remove file"
                     >
                       ✕ Remove
+                    </button>
+                  </div>
+                )}
+                {pendingSdsDelete && (
+                  <div className="mt-1 mb-2 flex items-center space-x-2">
+                    <span className="text-orange-600 text-sm">File will be deleted on update</span>
+                    <button
+                      type="button"
+                      onClick={() => cancelPendingDelete('sds')}
+                      className="text-indigo-600 hover:text-indigo-900 text-xs"
+                      title="Cancel deletion"
+                    >
+                      ✕ Cancel
+                    </button>
+                  </div>
+                )}
+                {sdsFile && (
+                  <div className="mt-1 mb-2 flex items-center space-x-2">
+                    <span className="text-green-600 text-sm">New file: {sdsFile.name} (will upload on update)</span>
+                    <button
+                      type="button"
+                      onClick={() => setSdsFile(null)}
+                      className="text-red-600 hover:text-red-900 text-xs"
+                      title="Cancel upload"
+                    >
+                      ✕ Cancel
                     </button>
                   </div>
                 )}
@@ -379,7 +520,7 @@ export function Materials() {
                   <div className="space-x-2">
                     {material.mss_file_path && (
                       <a
-                        href={`https://deltadash-backend-production.up.railway.app/api/v1/materials/${material.id}/download/mss`}
+                        href={`/api/v1/materials/${material.id}/download/mss`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-indigo-600 hover:text-indigo-900"
@@ -389,7 +530,7 @@ export function Materials() {
                     )}
                     {material.sds_file_path && (
                       <a
-                        href={`https://deltadash-backend-production.up.railway.app/api/v1/materials/${material.id}/download/sds`}
+                        href={`/api/v1/materials/${material.id}/download/sds`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-indigo-600 hover:text-indigo-900"
@@ -450,16 +591,6 @@ export function Materials() {
           variant="danger"
           onConfirm={handleFileReplaceConfirm}
           onCancel={handleFileReplaceCancel}
-        />
-      )}
-      {fileToRemove && (
-        <ConfirmModal
-          title="Remove File"
-          message={`Are you sure you want to remove the ${fileToRemove.fileType === 'mss' ? 'MSS' : 'SDS'} file from "${fileToRemove.material.name}"? This action cannot be undone.`}
-          confirmLabel="Remove"
-          variant="danger"
-          onConfirm={handleRemoveFileConfirm}
-          onCancel={() => setFileToRemove(null)}
         />
       )}
     </div>

@@ -1,5 +1,5 @@
-from sqlalchemy import Column, String, Numeric, DateTime, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, Numeric, DateTime, func, Integer
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 import uuid
 
 from app.db.base import Base
@@ -18,6 +18,8 @@ class Material(Base):
     weave_type = Column(String)
     coating = Column(String)
     color = Column(String)
+    ply_count = Column(Integer, nullable=True)  # Number of plies in this material
+    ply_orientations = Column(JSONB, nullable=True)  # Array of orientations for each ply
     areal_density_g_m2 = Column(Numeric(10, 2))
     thickness_mm = Column(Numeric(10, 3))
     thickness_tolerance_mm = Column(String)

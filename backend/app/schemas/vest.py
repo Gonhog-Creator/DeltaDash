@@ -7,7 +7,6 @@ from typing import Optional, Dict
 
 class VestLayerBase(BaseModel):
     material_id: Optional[UUID] = None
-    orientation_degrees: Optional[Decimal] = None
     layer_count: int = 1
     notes: Optional[str] = None
 

@@ -9,7 +9,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)),
 
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns, analytics, locations, protocols, shot_data, vests, admin
+from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns, analytics, locations, protocols, shot_data, vests, admin, ml
 
 setup_logging()
 
@@ -39,6 +39,7 @@ app.include_router(protocols.router, prefix="/api/v1/protocols", tags=["protocol
 app.include_router(shot_data.router, prefix="/api/v1/shot-data", tags=["shot-data"])
 app.include_router(vests.router, prefix="/api/v1/vests", tags=["vests"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(ml.router, prefix="/api/v1/ml", tags=["ml"])
 
 
 @app.get("/health")
@@ -48,13 +49,4 @@ def health_check():
 
 @app.get("/")
 def root():
-    return {"message": "Ballistic Test Analytics Platform API", "status": "🚀 Ready for Development", "optimized": True}
-
-
-@app.get("/debug/cors")
-def debug_cors():
-    return {
-        "cors_origins_env": settings.CORS_ORIGINS,
-        "cors_origins_list": settings.cors_origins_list,
-        "app_env": settings.APP_ENV
-    }
+    return {"message": "Ballistic Test Analytics Platform API", "status": "operational"}

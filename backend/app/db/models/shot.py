@@ -10,6 +10,7 @@ class Shot(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     test_session_id = Column(UUID(as_uuid=True), ForeignKey("test_sessions.id"), nullable=True)
+    vest_id = Column(UUID(as_uuid=True), ForeignKey("vests.id"), nullable=True)
     panel_id = Column(UUID(as_uuid=True), ForeignKey("armor_panels.id"), nullable=True)
     ammunition_id = Column(UUID(as_uuid=True), ForeignKey("ammunition.id"), nullable=True)
     shot_pattern_position_id = Column(UUID(as_uuid=True), ForeignKey("shot_pattern_positions.id"), nullable=True)

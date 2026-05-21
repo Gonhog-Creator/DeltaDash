@@ -11,6 +11,8 @@ export interface Material {
   weave_type: string | null;
   coating: string | null;
   color: string | null;
+  ply_count: number | null;
+  ply_orientations: number[] | null;
   areal_density_g_m2: number | null;
   thickness_mm: number | null;
   thickness_tolerance_mm: string | null;
@@ -38,6 +40,8 @@ export interface MaterialCreate {
   weave_type?: string | null;
   coating?: string | null;
   color?: string | null;
+  ply_count?: number | null;
+  ply_orientations?: number[] | null;
   areal_density_g_m2?: number | null;
   thickness_mm?: number | null;
   thickness_tolerance_mm?: string | null;
@@ -60,6 +64,8 @@ export interface MaterialUpdate {
   weave_type?: string | null;
   coating?: string | null;
   color?: string | null;
+  ply_count?: number | null;
+  ply_orientations?: number[] | null;
   areal_density_g_m2?: number | null;
   thickness_mm?: number | null;
   thickness_tolerance_mm?: string | null;

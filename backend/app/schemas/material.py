@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import UUID
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, List
 
 
 class MaterialBase(BaseModel):
@@ -15,6 +15,8 @@ class MaterialBase(BaseModel):
     weave_type: Optional[str] = None
     coating: Optional[str] = None
     color: Optional[str] = None
+    ply_count: Optional[int] = None
+    ply_orientations: Optional[List[Decimal]] = None
     areal_density_g_m2: Optional[Decimal] = Field(None, ge=0)
     thickness_mm: Optional[Decimal] = Field(None, ge=0)
     thickness_tolerance_mm: Optional[str] = None
@@ -44,6 +46,8 @@ class MaterialUpdate(BaseModel):
     weave_type: Optional[str] = None
     coating: Optional[str] = None
     color: Optional[str] = None
+    ply_count: Optional[int] = None
+    ply_orientations: Optional[List[Decimal]] = None
     areal_density_g_m2: Optional[Decimal] = Field(None, ge=0)
     thickness_mm: Optional[Decimal] = Field(None, ge=0)
     thickness_tolerance_mm: Optional[str] = None
@@ -77,6 +81,8 @@ class MaterialListItem(BaseModel):
     name: str
     manufacturer: Optional[str]
     material_class: Optional[str]
+    ply_count: Optional[int] = None
+    ply_orientations: Optional[List[Decimal]] = None
     areal_density_g_m2: Optional[Decimal]
     thickness_mm: Optional[Decimal]
     material_function: Optional[str]

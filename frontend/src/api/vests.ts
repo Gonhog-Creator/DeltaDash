@@ -5,7 +5,6 @@ export interface VestLayer {
   vest_id: string;
   layer_index: number;
   material_id: string | null;
-  orientation_degrees: number | null;
   layer_count: number;
   notes: string | null;
 }
@@ -13,7 +12,6 @@ export interface VestLayer {
 export interface VestLayerCreate {
   layer_index: number;
   material_id?: string | null;
-  orientation_degrees?: number | null;
   layer_count?: number;
   notes?: string | null;
 }

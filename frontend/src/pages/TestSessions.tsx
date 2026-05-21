@@ -294,9 +294,9 @@ export function TestSessions() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-xs truncate">Name</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lab</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-24 truncate">Lab</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Protocol</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vest</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Characteristic</th>
@@ -327,7 +327,7 @@ export function TestSessions() {
                     className="hover:bg-gray-50 cursor-pointer"
                     onClick={() => hasChildren && toggleGroup(parent.id)}
                   >
-                    <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                    <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 max-w-xs truncate">
                       {hasChildren && (
                         <span className="mr-2 text-gray-500">
                           {isExpanded ? '▼' : '▶'}
@@ -336,10 +336,10 @@ export function TestSessions() {
                       {parent.name}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.test_date || '-'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.lab_name || '-'}</td>
-                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate">{parent.protocol || '-'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 max-w-24 truncate" title={parent.lab_name || ''}>{parent.lab_name || '-'}</td>
+                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={parent.protocol || ''}>{parent.protocol || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.vest_code || '-'}</td>
-                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate">{formatConditioning(parent.conditioning)}</td>
+                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={formatConditioning(parent.conditioning)}>{formatConditioning(parent.conditioning)}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
                       {role !== 'viewer' && (
                         parent.excel_file_path ? (
@@ -390,14 +390,14 @@ export function TestSessions() {
                   </tr>
                   {isExpanded && hasChildren && sortedChildren.map((child) => (
                     <tr key={child.id} className="bg-gray-50 hover:bg-gray-100">
-                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 pl-12">
+                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 pl-12 max-w-xs truncate" title={child.name.replace(parent.name + ' - ', '')}>
                         {child.name.replace(parent.name + ' - ', '')}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{child.test_date || '-'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{child.lab_name || '-'}</td>
-                      <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate">{child.protocol || '-'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 max-w-24 truncate" title={child.lab_name || ''}>{child.lab_name || '-'}</td>
+                      <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={child.protocol || ''}>{child.protocol || '-'}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{child.vest_code || '-'}</td>
-                      <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate">{formatConditioning(child.conditioning)}</td>
+                      <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={formatConditioning(child.conditioning)}>{formatConditioning(child.conditioning)}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
                         {role !== 'viewer' && (
                           child.excel_file_path ? (
