@@ -10,7 +10,7 @@ if [ -n "$CURRENT_REVISION" ] && [ "$CURRENT_REVISION" != "None" ]; then
     if ! alembic show "$CURRENT_REVISION" >/dev/null 2>&1; then
         echo "Current revision $CURRENT_REVISION not found in migration files"
         echo "Stamping database to base revision to reset migration history"
-        alembic stamp head
+        alembic stamp None
     fi
 fi
 
