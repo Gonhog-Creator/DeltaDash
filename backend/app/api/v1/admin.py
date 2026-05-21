@@ -39,7 +39,7 @@ def sync_database(
     
     try:
         # Connect to remote database
-        remote_conn = psycopg2.connect(remote_db_url)
+        remote_conn = psycopg2.connect(remote_db_url, connect_timeout=10)
         remote_cursor = remote_conn.cursor()
         
         # Get local database session

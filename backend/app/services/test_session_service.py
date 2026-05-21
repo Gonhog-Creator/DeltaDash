@@ -38,6 +38,7 @@ def normalize_caliber(caliber: str) -> str:
         '223': '223rem',
         '762x51mm': '7.62x51mm',
         '556x45mm': '5.56x45mm',
+        '556nato': '5.56x45mm',
     }
     
     return caliber_aliases.get(normalized, normalized)
