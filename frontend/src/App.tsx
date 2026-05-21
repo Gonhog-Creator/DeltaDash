@@ -10,6 +10,7 @@ import { TestSessions } from './pages/TestSessions'
 import { TestSessionDetail } from './pages/TestSessionDetail'
 import { Analytics } from './pages/Analytics'
 import { Vests } from './pages/Vests'
+import { ModelTraining } from './pages/ModelTraining'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +40,7 @@ function App() {
                     <Route path="/test-sessions/:id" element={<TestSessionDetail />} />
                     <Route path="/vests" element={<Vests />} />
                     <Route path="/analytics" element={<Analytics />} />
+                    <Route path="/model-training" element={<ModelTraining />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </Layout>

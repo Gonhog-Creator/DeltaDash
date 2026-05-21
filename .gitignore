@@ -48,6 +48,11 @@ Thumbs.db
 storage/
 backend/storage/
 
+# ML Models
+backend/models/
+*.pkl
+*.joblib
+
 # Data files
 *.xlsx
 *.xls

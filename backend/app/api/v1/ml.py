@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.db.session import get_db
 from app.db.models.user import User
-from app.api.v1.auth import get_current_user
+from app.api.v1.auth import get_current_user, require_admin
 from ml.prediction_service import PredictionService
 from ml.model_training import ModelTrainer
 from ml.validation_service import ValidationService
@@ -80,12 +80,11 @@ def predict_bfd(
 def train_model(
     request: ModelTrainRequest,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """
     Train a new BFD prediction model (admin only)
     """
-    # TODO: Add admin role check
     
     try:
         trainer = ModelTrainer(db)

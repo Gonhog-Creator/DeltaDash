@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.db.models.model_run import ModelRun
 from app.db.models.prediction import Prediction
-from app.db.models.shot import Shot
+from app.db.models.shot_data import ShotData
 from app.db.models.vest import Vest
 from ml.feature_engineering import FeatureEngineer
 
@@ -70,8 +70,8 @@ class PredictionService:
         feature_columns = model_data['feature_columns']
         
         # Get vest and ammunition
-        vest = self.db.query(Vest).filter(Vest.id == vest_id).first()
-        ammunition = self.db.query(Shot).filter(Shot.ammunition_id == ammunition_id).first()
+        vest = self.db.query(Vest).filter(Vest.name == vest_id).first()
+        ammo = self.db.query(Ammunition).filter(Ammunition.caliber_diameter_mm == ammunition_id).first()
         
         if not vest:
             raise ValueError(f"Vest with id {vest_id} not found")
@@ -79,10 +79,10 @@ class PredictionService:
         # Create a mock shot object for feature extraction
         class MockShot:
             def __init__(self):
-                self.vest = vest
-                self.ammunition = None
-                self.measured_velocity_m_s = velocity_m_s
-                self.impact_angle_degrees = impact_angle_degrees
+                self.vest_number = vest_id
+                self.caliber = ammunition_id
+                self.velocity_m_s = velocity_m_s
+                self.angle_degrees = impact_angle_degrees
                 self.test_session = None
         
         mock_shot = MockShot()
@@ -145,13 +145,13 @@ class PredictionService:
         Returns:
             Number of comparable shots
         """
-        # Simplified - count all shots with vest_id
+        # Simplified - count all shots with vest_number
         # In production, use more sophisticated similarity metrics (e.g., k-NN)
         vest_id = features.get('vest_id')
         if vest_id:
-            count = self.db.query(Shot).filter(
-                Shot.vest_id == vest_id,
-                Shot.bfd_mm.isnot_(None)
+            count = self.db.query(ShotData).filter(
+                ShotData.vest_number == vest_id,
+                ShotData.trauma_mm.is_not(None)
             ).count()
             return count
         return 0

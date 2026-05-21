@@ -110,6 +110,11 @@ def update_material(
         raise HTTPException(status_code=404, detail="Material not found")
     
     update_data = material_update.model_dump(exclude_unset=True)
+    
+    # Convert Decimal values to floats for JSON serialization
+    if 'ply_orientations' in update_data and update_data['ply_orientations']:
+        update_data['ply_orientations'] = [float(x) for x in update_data['ply_orientations']]
+    
     for field, value in update_data.items():
         setattr(material, field, value)
     

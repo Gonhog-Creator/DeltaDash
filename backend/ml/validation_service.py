@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.db.models.prediction import Prediction
-from app.db.models.shot import Shot
+from app.db.models.shot_data import ShotData
 from app.db.models.model_run import ModelRun
 
 
@@ -68,19 +68,19 @@ class ValidationService:
             # This is simplified - in production, use more sophisticated matching
             input_data = prediction.input_json
             
-            # Look for shot with matching vest_id and ammunition_id
-            shot = self.db.query(Shot).filter(
-                Shot.vest_id == input_data.get('vest_id'),
-                Shot.ammunition_id == input_data.get('ammunition_id'),
-                Shot.bfd_mm.isnot_(None)
+            # Look for shot with matching vest_number and caliber
+            shot = self.db.query(ShotData).filter(
+                ShotData.vest_number == input_data.get('vest_id'),
+                ShotData.caliber == input_data.get('ammunition_id'),
+                ShotData.trauma_mm.is_not(None)
             ).first()
             
             if shot:
-                error = abs(float(prediction.predicted_bfd_mm) - float(shot.bfd_mm))
+                error = abs(float(prediction.predicted_bfd_mm) - float(shot.trauma_mm))
                 validation_results.append({
                     'prediction_id': str(prediction.id),
                     'predicted_bfd': float(prediction.predicted_bfd_mm),
-                    'actual_bfd': float(shot.bfd_mm),
+                    'actual_bfd': float(shot.trauma_mm),
                     'error_mm': error
                 })
         

@@ -5,7 +5,7 @@ Extracts and computes features from database for ML model training and predictio
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
-from app.db.models.shot import Shot
+from app.db.models.shot_data import ShotData
 from app.db.models.vest import Vest
 from app.db.models.vest_layer import VestLayer
 from app.db.models.material import Material
@@ -18,12 +18,12 @@ class FeatureEngineer:
     def __init__(self, db: Session):
         self.db = db
     
-    def extract_features_for_shot(self, shot: Shot) -> Dict:
+    def extract_features_for_shot(self, shot: ShotData) -> Dict:
         """
         Extract all features for a single shot
         
         Args:
-            shot: Shot object with loaded relationships
+            shot: ShotData object with loaded relationships
             
         Returns:
             Dictionary of feature names to values
@@ -33,96 +33,111 @@ class FeatureEngineer:
         # Projectile features
         features.update(self._extract_projectile_features(shot))
         
-        # Vest features
-        if shot.vest:
-            features.update(self._extract_vest_features(shot.vest))
+        # Vest features (from vest_number)
+        if shot.vest_number:
+            features.update(self._extract_vest_features_by_number(shot.vest_number))
         
         # Environmental features
         features.update(self._extract_environmental_features(shot))
         
         return features
     
-    def _extract_projectile_features(self, shot: Shot) -> Dict:
+    def _extract_projectile_features(self, shot: ShotData) -> Dict:
         """Extract projectile-related features"""
         features = {}
         
-        if shot.ammunition:
-            ammo = shot.ammunition
-            
-            # Basic projectile data
-            features['caliber'] = ammo.caliber_diameter_mm if ammo.caliber_diameter_mm else 0
-            features['projectile_mass_grains'] = float(ammo.projectile_mass_grains) if ammo.projectile_mass_grains else 0
-            features['projectile_mass_grams'] = float(ammo.projectile_mass_grams) if ammo.projectile_mass_grams else (float(ammo.projectile_mass_grains) / 15.432) if ammo.projectile_mass_grains else 0
+        # Caliber
+        features['caliber'] = shot.caliber or 'unknown'
         
-        # Velocity data (prefer measured over nominal)
-        velocity_m_s = float(shot.measured_velocity_m_s) if shot.measured_velocity_m_s else 0
-        if velocity_m_s == 0 and shot.ammunition:
-            velocity_m_s = float(shot.ammunition.nominal_velocity_m_s) if shot.ammunition.nominal_velocity_m_s else 0
-        
+        # Velocity
+        velocity_m_s = float(shot.velocity_m_s) if shot.velocity_m_s else 0
         features['velocity_m_s'] = velocity_m_s
         
-        # Derived features (physics-informed)
-        projectile_mass_g = features.get('projectile_mass_grams', 0) / 1000.0  # Convert to kg
+        # Get ammunition info from caliber
+        ammo = self.db.query(Ammunition).filter(Ammunition.caliber == shot.caliber).first()
+        
+        # Projectile mass (from ammunition if available)
+        if ammo:
+            if ammo.projectile_mass_grains:
+                features['projectile_mass_grains'] = float(ammo.projectile_mass_grains)
+            if ammo.projectile_mass_grams:
+                features['projectile_mass_grams'] = float(ammo.projectile_mass_grams)
+            elif ammo.projectile_mass_grains:
+                features['projectile_mass_grams'] = float(ammo.projectile_mass_grains) / 15.432
+            # Use nominal velocity if measured not available
+            if velocity_m_s == 0 and ammo.nominal_velocity_m_s:
+                velocity_m_s = float(ammo.nominal_velocity_m_s)
+                features['velocity_m_s'] = velocity_m_s
+        else:
+            features['projectile_mass_grains'] = 0
+            features['projectile_mass_grams'] = 0
+        
+        # Derived features
+        projectile_mass_g = features.get('projectile_mass_grams', 0) / 1000.0
         features['kinetic_energy_joules'] = 0.5 * projectile_mass_g * (velocity_m_s ** 2) if projectile_mass_g > 0 else 0
         features['momentum'] = projectile_mass_g * velocity_m_s if projectile_mass_g > 0 else 0
-        
-        # Strain-rate indicator (velocity × material type interaction)
-        features['strain_rate_indicator'] = velocity_m_s  # Will be combined with material type later
+        features['strain_rate_indicator'] = velocity_m_s
         
         # Impact angle
-        features['impact_angle_degrees'] = float(shot.impact_angle_degrees) if shot.impact_angle_degrees else 0
+        features['impact_angle_degrees'] = float(shot.angle_degrees) if shot.angle_degrees else 0
         
-        # Projectile type encoding (simplified - will need proper encoding in production)
-        if shot.ammunition and shot.ammunition.projectile_type:
-            features['projectile_type'] = shot.ammunition.projectile_type
-        else:
-            features['projectile_type'] = 'unknown'
+        # Projectile type
+        features['projectile_type'] = ammo.projectile_type if ammo and ammo.projectile_type else 'unknown'
         
         return features
     
-    def _extract_vest_features(self, vest: Vest) -> Dict:
-        """Extract vest-related features"""
+    def _extract_vest_features_by_number(self, vest_number: str) -> Dict:
+        """Extract vest-related features by vest number"""
         features = {}
         
-        # Basic vest data
-        features['total_layers'] = vest.total_layers if vest.total_layers else 0
-        features['total_thickness_mm'] = float(vest.total_thickness_mm) if vest.total_thickness_mm else 0
+        # Try to find vest by number/name
+        vest = self.db.query(Vest).filter(Vest.name == vest_number).first()
         
-        # Get vest layers with materials
-        layers = self.db.query(VestLayer).filter(VestLayer.vest_id == vest.id).all()
-        
-        if layers:
-            # Calculate total areal density
-            total_areal_density = 0
-            fabric_types = []
+        if vest:
+            # Basic vest data
+            features['total_layers'] = vest.total_layers if vest.total_layers else 0
+            features['total_thickness_mm'] = float(vest.total_thickness_mm) if vest.total_thickness_mm else 0
+            features['vest_id'] = str(vest.id)
             
-            for layer in layers:
-                if layer.material:
-                    material = layer.material
-                    if material.areal_density_g_m2:
-                        total_areal_density += float(material.areal_density_g_m2)
-                    
-                    if material.fiber_type:
-                        fabric_types.append(material.fiber_type)
+            # Get vest layers with materials
+            layers = self.db.query(VestLayer).filter(VestLayer.vest_id == vest.id).all()
             
-            features['total_areal_density_g_m2'] = total_areal_density
-            features['layer_count'] = len(layers)
-            
-            # Fabric type distribution (simplified - will need proper encoding in production)
-            features['primary_fabric_type'] = fabric_types[0] if fabric_types else 'unknown'
-            
-            # Energy absorption capacity (areal density × material properties)
-            # For now, use areal density as proxy (will add material properties when available)
-            features['energy_absorption_capacity'] = total_areal_density
+            if layers:
+                # Calculate total areal density
+                total_areal_density = 0
+                fabric_types = []
+                
+                for layer in layers:
+                    if layer.material:
+                        material = layer.material
+                        if material.areal_density_g_m2:
+                            total_areal_density += float(material.areal_density_g_m2)
+                        
+                        if material.fiber_type:
+                            fabric_types.append(material.fiber_type)
+                
+                features['total_areal_density_g_m2'] = total_areal_density
+                features['layer_count'] = len(layers)
+                features['primary_fabric_type'] = fabric_types[0] if fabric_types else 'unknown'
+                features['energy_absorption_capacity'] = total_areal_density
+            else:
+                features['total_areal_density_g_m2'] = 0
+                features['layer_count'] = 0
+                features['primary_fabric_type'] = 'unknown'
+                features['energy_absorption_capacity'] = 0
         else:
+            # Default values if vest not found
+            features['total_layers'] = 0
+            features['total_thickness_mm'] = 0
             features['total_areal_density_g_m2'] = 0
             features['layer_count'] = 0
             features['primary_fabric_type'] = 'unknown'
             features['energy_absorption_capacity'] = 0
+            features['vest_id'] = vest_number  # Use vest_number as fallback
         
         return features
     
-    def _extract_environmental_features(self, shot: Shot) -> Dict:
+    def _extract_environmental_features(self, shot: ShotData) -> Dict:
         """Extract environmental-related features"""
         features = {}
         
@@ -130,7 +145,7 @@ class FeatureEngineer:
             session = shot.test_session
             
             # Clay temperature
-            features['clay_temperature_c'] = float(session.clay_temperature_c) if session.clay_temperature_c else 20.0
+            features['clay_temperature_c'] = float(session.ambient_temperature_c) if session.ambient_temperature_c else 20.0
             
             # Humidity
             features['humidity_percent'] = float(session.humidity_percent) if session.humidity_percent else 50.0
@@ -155,9 +170,9 @@ class FeatureEngineer:
         Returns:
             Tuple of (features_list, targets_list)
         """
-        shots = self.db.query(Shot).filter(
-            Shot.bfd_mm.isnot_(None),
-            Shot.vest_id.isnot_(None)
+        shots = self.db.query(ShotData).filter(
+            ShotData.trauma_mm.is_not(None),
+            ShotData.vest_number.is_not(None)
         ).all()
         
         features_list = []
@@ -166,7 +181,7 @@ class FeatureEngineer:
         for shot in shots:
             features = self.extract_features_for_shot(shot)
             features_list.append(features)
-            targets_list.append(float(shot.bfd_mm))
+            targets_list.append(float(shot.trauma_mm))
         
         return features_list, targets_list
     
