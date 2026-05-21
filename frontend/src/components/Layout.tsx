@@ -100,14 +100,6 @@ export function Layout({ children }: LayoutProps) {
               Admin
             </span>
           )}
-          {isAdmin && (
-            <button
-              onClick={() => setShowLocationModal(true)}
-              className="ml-auto px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-xs"
-            >
-              Manage Labs
-            </button>
-          )}
         </div>
         <nav className="flex-1 py-4 overflow-y-auto">
           {navItems.map((item) => (
