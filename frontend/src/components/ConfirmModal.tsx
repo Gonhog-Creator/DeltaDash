@@ -8,6 +8,7 @@ interface ConfirmModalProps {
   variant?: 'danger' | 'default';
   onConfirm: () => void;
   onCancel: () => void;
+  disabled?: boolean;
 }
 
 export function ConfirmModal({
@@ -18,6 +19,7 @@ export function ConfirmModal({
   variant = 'default',
   onConfirm,
   onCancel,
+  disabled = false,
 }: ConfirmModalProps) {
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -55,10 +57,11 @@ export function ConfirmModal({
           <button
             type="button"
             onClick={onConfirm}
+            disabled={disabled}
             className={`px-4 py-2 rounded-md text-sm text-white ${
               variant === 'danger'
-                ? 'bg-red-600 hover:bg-red-700'
-                : 'bg-indigo-600 hover:bg-indigo-700'
+                ? 'bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed'
+                : 'bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed'
             }`}
           >
             {confirmLabel}

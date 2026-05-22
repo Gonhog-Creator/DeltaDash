@@ -21,9 +21,13 @@ export function Dashboard() {
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [backupConfirmText, setBackupConfirmText] = useState('');
   const [restoreConfirmText, setRestoreConfirmText] = useState('');
-  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [selectedBackup, setSelectedBackup] = useState<string | null>(null);
+  const [backups, setBackups] = useState<any[]>([]);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [restoreTaskId, setRestoreTaskId] = useState<string | null>(null);
+  const [restoreProgress, setRestoreProgress] = useState<{status: string, progress: number, message: string} | null>(null);
   const [version, setVersion] = useState<string>('unknown');
 
   useEffect(() => {
@@ -49,6 +53,12 @@ export function Dashboard() {
     fetchVersion();
   }, []);
 
+  useEffect(() => {
+    if (showRestoreModal) {
+      fetchBackups();
+    }
+  }, [showRestoreModal]);
+
   const handleSync = async () => {
     setIsSyncing(true);
     try {
@@ -69,29 +79,32 @@ export function Dashboard() {
   const handleBackup = async () => {
     setIsBackingUp(true);
     try {
-      const response = await fetch('/api/v1/admin/backup', {
-        method: 'POST',
+      const response = await apiClient.post<{ message: string; filename: string }>('/api/v1/admin/backup');
+
+      // Download the backup file
+      const downloadResponse = await fetch(`/api/v1/admin/backups/${response.filename}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
       });
-      
-      if (!response.ok) {
-        throw new Error('Backup failed');
+
+      if (!downloadResponse.ok) {
+        throw new Error('Failed to download backup');
       }
-      
-      const blob = await response.blob();
+
+      const blob = await downloadResponse.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `deltadash_backup_${new Date().toISOString().slice(0, 10)}.zip`;
+      a.download = response.filename;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      
+
       setShowBackupModal(false);
       setBackupConfirmText('');
+      alert('Backup created successfully');
     } catch (error) {
       console.error('Failed to create backup:', error);
       alert('Failed to create backup. Check console for details.');
@@ -100,39 +113,151 @@ export function Dashboard() {
     }
   };
 
-  const handleRestore = async () => {
-    if (!restoreFile) {
-      alert('Please select a backup file');
-      return;
-    }
-    
-    setIsRestoring(true);
+  const fetchBackups = async () => {
     try {
-      const formData = new FormData();
-      formData.append('backup_file', restoreFile);
-      
-      const response = await fetch('/api/v1/admin/restore', {
-        method: 'POST',
+      const response = await apiClient.get<{ backups: any[] }>('/api/v1/admin/backups');
+      setBackups(response.backups);
+    } catch (error) {
+      console.error('Failed to fetch backups:', error);
+    }
+  };
+
+  const handleDownloadBackup = async (filename: string) => {
+    try {
+      const response = await fetch(`/api/v1/admin/backups/${filename}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
-        body: formData,
       });
-      
+
       if (!response.ok) {
-        throw new Error('Restore failed');
+        throw new Error('Failed to download backup');
       }
-      
-      alert('Backup restored successfully. The page will now reload.');
-      window.location.reload();
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Failed to download backup:', error);
+      alert('Failed to download backup');
+    }
+  };
+
+  const handleDeleteBackup = async (filename: string) => {
+    if (!confirm(`Are you sure you want to delete ${filename}?`)) {
+      return;
+    }
+
+    try {
+      await apiClient.delete(`/api/v1/admin/backups/${filename}`);
+      await fetchBackups();
+    } catch (error) {
+      console.error('Failed to delete backup:', error);
+      alert('Failed to delete backup');
+    }
+  };
+
+  const handleUploadBackup = async (file: File) => {
+    setIsUploading(true);
+    try {
+      // Convert file to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Remove data URL prefix
+          const base64 = result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const base64Content = await base64Promise;
+
+      const response = await apiClient.post<{ message: string; filename: string }>('/api/v1/admin/backups/upload-base64', {
+        filename: file.name,
+        content: base64Content
+      });
+
+      await fetchBackups();
+      alert('Backup uploaded successfully');
+    } catch (error) {
+      console.error('Failed to upload backup:', error);
+      alert('Failed to upload backup. Check console for details.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!selectedBackup) {
+      alert('Please select a backup to restore');
+      return;
+    }
+
+    setIsRestoring(true);
+    setRestoreProgress(null);
+    try {
+      const response = await apiClient.post<{ task_id: string; message: string }>('/api/v1/admin/restore', {
+        filename: selectedBackup
+      });
+
+      setRestoreTaskId(response.task_id);
+
+      // Poll for progress
+      const pollInterval = setInterval(async () => {
+        try {
+          const progressResponse = await fetch(`/api/v1/admin/restore/progress/${response.task_id}`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            },
+          });
+
+          if (!progressResponse.ok) {
+            clearInterval(pollInterval);
+            throw new Error('Failed to get progress');
+          }
+
+          const progress = await progressResponse.json();
+          setRestoreProgress(progress);
+
+          if (progress.status === 'completed') {
+            clearInterval(pollInterval);
+            setIsRestoring(false);
+            setShowRestoreModal(false);
+            setRestoreConfirmText('');
+            setSelectedBackup(null);
+            setRestoreTaskId(null);
+            setRestoreProgress(null);
+            alert('Backup restored successfully. The page will now reload.');
+            window.location.reload();
+          } else if (progress.status === 'error') {
+            clearInterval(pollInterval);
+            setIsRestoring(false);
+            setRestoreTaskId(null);
+            setRestoreProgress(null);
+            alert(`Restore failed: ${progress.message}`);
+          }
+        } catch (error) {
+          clearInterval(pollInterval);
+          setIsRestoring(false);
+          setRestoreTaskId(null);
+          setRestoreProgress(null);
+          console.error('Failed to get progress:', error);
+        }
+      }, 1000);
+
     } catch (error) {
       console.error('Failed to restore backup:', error);
       alert('Failed to restore backup. Check console for details.');
-    } finally {
       setIsRestoring(false);
-      setShowRestoreModal(false);
-      setRestoreConfirmText('');
-      setRestoreFile(null);
     }
   };
 
@@ -275,12 +400,71 @@ export function Dashboard() {
           title="Restore Backup"
           message={
             <div className="space-y-4">
-              <p className="text-sm text-gray-600">This will replace the current database and storage files with the backup. Type "confirm" to proceed.</p>
-              <input
-                type="file"
-                onChange={(e) => setRestoreFile(e.target.files?.[0] || null)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              />
+              <p className="text-sm text-gray-600">This will replace the current database and storage files with the selected backup.</p>
+              <div className="border-t pt-4">
+                <p className="text-sm font-medium text-gray-700 mb-2">Upload a backup file</p>
+                <input
+                  type="file"
+                  id="backup-upload"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      handleUploadBackup(file);
+                    }
+                  }}
+                />
+                <label
+                  htmlFor="backup-upload"
+                  className={`inline-flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {isUploading ? 'Uploading...' : 'Choose file to upload'}
+                </label>
+              </div>
+              {backups.length === 0 ? (
+                <p className="text-sm text-gray-500">No backups available. Upload a backup file above.</p>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {backups.map((backup) => (
+                    <div
+                      key={backup.filename}
+                      className={`p-3 border rounded-md cursor-pointer ${
+                        selectedBackup === backup.filename ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                      onClick={() => setSelectedBackup(backup.filename)}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{backup.filename}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(backup.created).toLocaleString()} • {(backup.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadBackup(backup.filename);
+                            }}
+                            className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded"
+                          >
+                            Download
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteBackup(backup.filename);
+                            }}
+                            className="text-xs px-2 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               <input
                 type="text"
                 value={restoreConfirmText}
@@ -288,17 +472,35 @@ export function Dashboard() {
                 placeholder="Type 'confirm'"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
               />
+              {isRestoring && (
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-blue-800">
+                      {restoreProgress?.message || 'Starting restore...'}
+                    </p>
+                    <p className="text-sm text-blue-600">{restoreProgress?.progress || 0}%</p>
+                  </div>
+                  <div className="w-full bg-blue-200 rounded-full h-2.5">
+                    <div
+                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                      style={{ width: `${restoreProgress?.progress || 0}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )}
             </div>
           }
-          confirmLabel="Restore"
+          confirmLabel={isRestoring ? "Restoring..." : "Restore"}
           variant="danger"
           onConfirm={handleRestore}
           onCancel={() => {
-            setShowRestoreModal(false);
-            setRestoreConfirmText('');
-            setRestoreFile(null);
+            if (!isRestoring) {
+              setShowRestoreModal(false);
+              setRestoreConfirmText('');
+              setSelectedBackup(null);
+            }
           }}
-          disabled={restoreConfirmText !== 'confirm' || !restoreFile || isRestoring}
+          disabled={restoreConfirmText !== 'confirm' || !selectedBackup || isRestoring}
         />
       )}
     </div>

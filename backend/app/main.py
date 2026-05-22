@@ -13,7 +13,11 @@ from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots
 
 setup_logging()
 
-app = FastAPI(title="Ballistic Test Analytics Platform", version="0.1.0")
+app = FastAPI(
+    title="Ballistic Test Analytics Platform",
+    version="0.1.0",
+    max_request_size=50 * 1024 * 1024  # 50MB max request size
+)
 
 # CORS middleware
 app.add_middleware(

@@ -61,6 +61,7 @@ def get_velocity_vs_bfd(
     for shot, test_session, parent_session in shot_data:
         # Intelligent caliber matching to find correct ammunition
         ammunition = None
+        standardized_caliber = None
         if shot.caliber:
             normalized_shot_caliber = normalize_caliber(shot.caliber)
             shot_caliber_number = extract_caliber_number(shot.caliber)
@@ -68,16 +69,19 @@ def get_velocity_vs_bfd(
             # Try exact match first on text caliber field
             if normalized_shot_caliber in caliber_to_ammo:
                 ammunition = caliber_to_ammo[normalized_shot_caliber]
+                standardized_caliber = ammunition.caliber
             else:
                 # Try fuzzy matching on text caliber field
                 for ammo_normalized, ammo in caliber_to_ammo.items():
                     # Check if one is a substring of the other
                     if normalized_shot_caliber in ammo_normalized or ammo_normalized in normalized_shot_caliber:
                         ammunition = ammo
+                        standardized_caliber = ammunition.caliber
                         break
                     # Check for common variations (e.g., .357 vs .357 mag)
                     if normalized_shot_caliber.replace('.', '').replace('mag', '') == ammo_normalized.replace('.', '').replace('mag', ''):
                         ammunition = ammo
+                        standardized_caliber = ammunition.caliber
                         break
             
             # If text matching failed, try numeric matching using diameter fields
@@ -86,11 +90,17 @@ def get_velocity_vs_bfd(
                     # Try matching against caliber_diameter_mm (for metric calibers like 9mm)
                     if ammo.caliber_diameter_mm and abs(float(ammo.caliber_diameter_mm) - shot_caliber_number) < 0.1:
                         ammunition = ammo
+                        standardized_caliber = ammunition.caliber
                         break
                     # Try matching against caliber_inch (for imperial calibers like .357)
                     if ammo.caliber_inch and abs(float(ammo.caliber_inch) - shot_caliber_number) < 0.01:
                         ammunition = ammo
+                        standardized_caliber = ammunition.caliber
                         break
+            
+            # If no ammunition match found, use normalized caliber as fallback
+            if not standardized_caliber:
+                standardized_caliber = normalized_shot_caliber
         
         # Convert bullet mass to kg using centralized equations
         bullet_mass_kg = None
@@ -110,7 +120,7 @@ def get_velocity_vs_bfd(
             velocity=float(shot.velocity_m_s) if shot.velocity_m_s else None,
             bullet_energy=bullet_energy,
             bfd_mm=float(shot.trauma_mm) if shot.trauma_mm else None,
-            caliber=shot.caliber,
+            caliber=standardized_caliber,
             protection_level=shot.protection_level,
             test_session_id=str(shot.test_session_id) if shot.test_session_id else None,
             test_session_name=test_session.name if test_session else None,

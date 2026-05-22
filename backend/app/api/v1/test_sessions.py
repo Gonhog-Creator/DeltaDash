@@ -4,9 +4,10 @@ from sqlalchemy.orm import Session
 import os
 import uuid
 from pathlib import Path
+import json
 
 from app.db.session import get_db
-from app.db.models import TestSession as TestSessionModel, ShotData as ShotDataModel, Shot as ShotModel, Vest as VestModel
+from app.db.models import TestSession as TestSessionModel, ShotData as ShotDataModel, Shot as ShotModel, Vest as VestModel, AuditLog
 from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.test_session import TestSessionCreate, TestSessionUpdate, TestSession
 from app.schemas.shot_data import ShotDataCreate
@@ -317,6 +318,36 @@ def delete_test_session(
     # Query child sessions first
     child_sessions = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == test_session_id).all()
 
+    # Audit log: Record what will be deleted before deletion
+    audit_log = AuditLog(
+        user_id=current_user.id,
+        action="delete_test_session",
+        entity_type="test_session",
+        entity_id=test_session.id,
+        before_json={
+            "test_session": {
+                "id": str(test_session.id),
+                "name": test_session.name,
+                "test_date": str(test_session.test_date) if test_session.test_date else None,
+                "lab_name": test_session.lab_name,
+                "protocol": test_session.protocol,
+                "vest_id": str(test_session.vest_id) if test_session.vest_id else None,
+                "excel_file_path": test_session.excel_file_path,
+                "parent_test_group_id": str(test_session.parent_test_group_id) if test_session.parent_test_group_id else None,
+            },
+            "child_sessions": [
+                {
+                    "id": str(child.id),
+                    "name": child.name,
+                }
+                for child in child_sessions
+            ],
+        },
+        after_json={"status": "deleted"}
+    )
+    db.add(audit_log)
+    db.flush()
+
     # Null out parent_test_group_id to break the foreign key constraint
     db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == test_session_id).update({"parent_test_group_id": None})
     db.flush()
@@ -389,6 +420,7 @@ def bulk_reupload_all_test_sessions(
     """
     Admin endpoint: Re-upload all test sessions that have an associated Excel file.
     This is useful for testing when the Excel parsing logic changes.
+    WARNING: This will delete all existing test sessions and shot data before re-uploading.
     """
     # Get all parent test sessions with Excel files
     parent_sessions = db.query(TestSessionModel).filter(
@@ -407,6 +439,37 @@ def bulk_reupload_all_test_sessions(
         all_session_ids.append(parent_session.id)
         child_sessions = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == parent_session.id).all()
         all_session_ids.extend([child.id for child in child_sessions])
+    
+    # Audit log: Record what will be deleted before deletion
+    deleted_test_sessions = db.query(TestSessionModel).filter(TestSessionModel.id.in_(all_session_ids)).all()
+    deleted_shot_data = db.query(ShotDataModel).filter(ShotDataModel.test_session_id.in_(all_session_ids)).all()
+    
+    audit_log = AuditLog(
+        user_id=current_user.id,
+        action="bulk_reupload_all_test_sessions",
+        entity_type="test_session",
+        entity_id=None,
+        before_json={
+            "deleted_test_sessions": [
+                {
+                    "id": str(ts.id),
+                    "name": ts.name,
+                    "test_date": str(ts.test_date) if ts.test_date else None,
+                    "lab_name": ts.lab_name,
+                    "protocol": ts.protocol,
+                    "vest_id": str(ts.vest_id) if ts.vest_id else None,
+                    "excel_file_path": ts.excel_file_path,
+                    "parent_test_group_id": str(ts.parent_test_group_id) if ts.parent_test_group_id else None,
+                }
+                for ts in deleted_test_sessions
+            ],
+            "deleted_shot_data_count": len(deleted_shot_data),
+            "session_count": len(deleted_test_sessions),
+        },
+        after_json={"status": "deleted_before_reupload"}
+    )
+    db.add(audit_log)
+    db.flush()
     
     # Set parent_test_group_id to None for all sessions to break foreign key constraints
     db.query(TestSessionModel).filter(TestSessionModel.id.in_(all_session_ids)).update({"parent_test_group_id": None})
