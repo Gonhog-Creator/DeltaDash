@@ -31,7 +31,6 @@ export function Vests() {
     vest_code: '',
     vest_type: '',
     threat_level: '',
-    protection_class: '',
     total_layers: null,
     total_thickness_mm: null,
     sizes: {},
@@ -65,7 +64,6 @@ export function Vests() {
         vest_code: '',
         vest_type: '',
         threat_level: '',
-        protection_class: '',
         total_layers: null,
         total_thickness_mm: null,
         sizes: {},
@@ -242,8 +240,8 @@ export function Vests() {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 >
                   <option value="">Select type...</option>
-                  <option value="soft">Soft</option>
-                  <option value="hard">Hard</option>
+                  <option value="Soft">Soft</option>
+                  <option value="Hard">Hard</option>
                   <option value="IWC">IWC</option>
                 </select>
               </div>
@@ -481,22 +479,36 @@ export function Vests() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vest Code</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Threat Level</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Protection Class</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Layers</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thickness</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {vests?.map((vest) => (
-              <tr key={vest.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{vest.vest_code}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.vest_type || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.threat_level || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.protection_class || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.total_layers || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.total_thickness_mm || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+            {vests?.map((vest) => {
+              // Calculate estimated thickness from layers if not provided
+              let thicknessDisplay = vest.total_thickness_mm ? `${vest.total_thickness_mm} mm` : '-';
+              if (!vest.total_thickness_mm && vest.layers && vest.layers.length > 0) {
+                const estimatedThickness = vest.layers.reduce((sum, layer) => {
+                  const material = materials?.find(m => m.id === layer.material_id);
+                  if (material && material.thickness_mm && layer.layer_count) {
+                    return sum + (material.thickness_mm * layer.layer_count);
+                  }
+                  return sum;
+                }, 0);
+                if (estimatedThickness > 0) {
+                  thicknessDisplay = `${estimatedThickness.toFixed(2)} mm (estimated)`;
+                }
+              }
+
+              return (
+                <tr key={vest.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{vest.vest_code}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.vest_type || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.threat_level || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.total_layers || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{thicknessDisplay}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   {role !== 'viewer' && (
                     <>
                       <button
@@ -516,10 +528,11 @@ export function Vests() {
                   {role === 'viewer' && '-'}
                 </td>
               </tr>
-            ))}
+              );
+            })}
             {vests?.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
                   No vests found. Click "Add Vest" to create one.
                 </td>
               </tr>

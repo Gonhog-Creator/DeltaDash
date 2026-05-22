@@ -144,7 +144,7 @@ def create_test_session_from_excel(
     test_name: str = Form(...),
     location_id: Optional[str] = Form(None),
     protocol: Optional[str] = Form(None),
-    vest_id: Optional[str] = Form(None),
+    vest_id: str = Form(...),
     test_date: Optional[str] = Form(None),
     date_format: Optional[str] = Form(None),  # 'spanish' or 'english' for ambiguous dates
     db: Session = Depends(get_db),
@@ -195,6 +195,56 @@ def create_test_session_from_excel(
         humidity=None,    # Service will extract from parsed data
         is_full_path=True,
     )
+
+
+@router.patch("/{session_id}/vest", response_model=TestSession)
+def update_session_vest(
+    session_id: str,
+    vest_id: str = Form(...),
+    cascade: bool = Form(False),
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access)
+):
+    """Update vest for a test session, optionally cascading to all child sessions"""
+    session = db.query(TestSessionModel).filter(TestSessionModel.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found")
+    
+    session.vest_id = vest_id
+    
+    # Cascade to children if requested
+    if cascade:
+        children = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == session_id).all()
+        for child in children:
+            child.vest_id = vest_id
+    
+    db.commit()
+    db.refresh(session)
+    
+    # Return updated session with vest code
+    vest = db.query(VestModel).filter(VestModel.id == vest_id).first()
+    session_dict = {
+        "id": session.id,
+        "name": session.name,
+        "test_date": session.test_date,
+        "lab_name": session.lab_name,
+        "protocol": session.protocol,
+        "clay_temperature_c": session.clay_temperature_c,
+        "ambient_temperature_c": session.ambient_temperature_c,
+        "humidity_percent": session.humidity_percent,
+        "conditioning": session.conditioning,
+        "size": session.size,
+        "ballistic_limit": session.ballistic_limit,
+        "parent_test_group_id": session.parent_test_group_id,
+        "vest_id": session.vest_id,
+        "vest_name": vest.vest_code if vest else None,
+        "vest_code": vest.vest_code if vest else None,
+        "excel_file_path": session.excel_file_path,
+        "notes": session.notes,
+        "created_at": session.created_at,
+        "updated_at": session.updated_at,
+    }
+    return session_dict
 
 
 @router.get("/stats")

@@ -50,6 +50,10 @@ export function TestSessions() {
   const [protocol, setProtocol] = useState('');
   const [selectedVestId, setSelectedVestId] = useState('');
   const [testDate, setTestDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showVestChangeModal, setShowVestChangeModal] = useState(false);
+  const [vestChangeTarget, setVestChangeTarget] = useState<TestSession | null>(null);
+  const [newVestId, setNewVestId] = useState('');
+  const [cascadeVest, setCascadeVest] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminModalType, setAdminModalType] = useState<'locations' | 'protocols' | 'bulk-reupload'>('locations');
@@ -88,6 +92,25 @@ export function TestSessions() {
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error loading test sessions</div>;
+
+  const handleVestChange = async () => {
+    if (!vestChangeTarget || !newVestId) return;
+    try {
+      const formData = new FormData();
+      formData.append('vest_id', newVestId);
+      formData.append('cascade', cascadeVest.toString());
+      
+      await apiClient.patch(`/api/v1/test-sessions/${vestChangeTarget.id}/vest`, formData);
+      setShowVestChangeModal(false);
+      setVestChangeTarget(null);
+      setNewVestId('');
+      setCascadeVest(false);
+      window.location.reload();
+    } catch (err) {
+      console.error('Failed to change vest:', err);
+      alert('Failed to change vest');
+    }
+  };
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
@@ -159,14 +182,17 @@ export function TestSessions() {
 
   const handleCreateFromExcel = async (e: React.FormEvent, dateFormat?: string) => {
     e.preventDefault();
-    if (!excelFile || !testName) return;
+    if (!excelFile || !testName || !selectedVestId) {
+      alert('Please select a vest');
+      return;
+    }
     try {
       await createFromExcelMutation.mutateAsync({
         file: excelFile,
         testName,
         locationId: selectedLocationId || undefined,
         protocol: protocol || undefined,
-        vestId: selectedVestId || undefined,
+        vestId: selectedVestId,
         testDate: testDate || undefined,
         dateFormat: dateFormat || undefined,
       });
@@ -342,19 +368,31 @@ export function TestSessions() {
                     <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={formatConditioning(parent.conditioning)}>{formatConditioning(parent.conditioning)}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
                       {role !== 'viewer' && (
-                        parent.excel_file_path ? (
-                          <span className="text-green-600">Uploaded</span>
-                        ) : (
+                        <>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setUploadTarget(parent);
+                              setVestChangeTarget(parent);
+                              setShowVestChangeModal(true);
                             }}
-                            className="text-indigo-600 hover:text-indigo-900"
+                            className="text-indigo-600 hover:text-indigo-900 mr-2"
                           >
-                            Upload
+                            Change Vest
                           </button>
-                        )
+                          parent.excel_file_path ? (
+                            <span className="text-green-600">Uploaded</span>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setUploadTarget(parent);
+                              }}
+                              className="text-indigo-600 hover:text-indigo-900"
+                            >
+                              Upload
+                            </button>
+                          )
+                        </>
                       )}
                       {role === 'viewer' && (
                         parent.excel_file_path ? (
@@ -592,6 +630,53 @@ export function TestSessions() {
             setProtocol('');
             setSelectedVestId('');
             setTestDate(new Date().toISOString().split('T')[0]);
+          }}
+        />
+      )}
+
+      {showVestChangeModal && vestChangeTarget && (
+        <ConfirmModal
+          title="Change Vest"
+          message={
+            <div className="space-y-4">
+              <p>Change vest for {vestChangeTarget.name}</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Vest</label>
+                <select
+                  value={newVestId}
+                  onChange={(e) => setNewVestId(e.target.value)}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                >
+                  <option value="">Select vest...</option>
+                  {vests?.map((vest) => (
+                    <option key={vest.id} value={vest.id}>
+                      {vest.vest_code} - {vest.vest_type || 'N/A'} - {vest.threat_level || 'N/A'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="cascade"
+                  checked={cascadeVest}
+                  onChange={(e) => setCascadeVest(e.target.checked)}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <label htmlFor="cascade" className="ml-2 block text-sm text-gray-900">
+                  Apply to all child sessions
+                </label>
+              </div>
+            </div>
+          }
+          confirmLabel="Change Vest"
+          variant="default"
+          onConfirm={handleVestChange}
+          onCancel={() => {
+            setShowVestChangeModal(false);
+            setVestChangeTarget(null);
+            setNewVestId('');
+            setCascadeVest(false);
           }}
         />
       )}

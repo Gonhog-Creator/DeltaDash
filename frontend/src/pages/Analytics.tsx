@@ -26,7 +26,7 @@ interface AnalyticsData {
 }
 
 type AxisOption = 'velocity' | 'bullet_energy' | 'bfd_mm' | 'ballistic_limit';
-type ColorGroupingOption = 'test_session' | 'side' | 'shot_number' | 'result' | 'protection_level';
+type ColorGroupingOption = 'test_session' | 'side' | 'shot_number' | 'result' | 'protection_level' | 'vest';
 
 const AXIS_OPTIONS: { value: AxisOption; label: string }[] = [
   { value: 'velocity', label: 'Velocity (m/s)' },
@@ -41,6 +41,7 @@ const COLOR_GROUPING_OPTIONS: { value: ColorGroupingOption; label: string; type:
   { value: 'shot_number', label: 'Shot Number (Group)', type: 'category' },
   { value: 'result', label: 'Test Result (OK/Punctured)', type: 'category' },
   { value: 'protection_level', label: 'Protection Level', type: 'category' },
+  { value: 'vest', label: 'Vest', type: 'category' },
 ];
 
 export function Analytics() {
@@ -135,6 +136,8 @@ export function Analytics() {
         return 'Unknown';
       case 'protection_level':
         return point.protection_level || 'Unknown';
+      case 'vest':
+        return point.vest_number || 'Unknown';
       default:
         return null;
     }

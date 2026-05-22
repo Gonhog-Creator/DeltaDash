@@ -21,7 +21,6 @@ export interface Vest {
   vest_code: string;
   vest_type: string | null;
   threat_level: string | null;
-  protection_class: string | null;
   total_layers: number | null;
   total_thickness_mm: number | null;
   sizes: Record<string, number> | null;
@@ -38,7 +37,6 @@ export interface VestCreate {
   vest_code: string;
   vest_type?: string | null;
   threat_level?: string | null;
-  protection_class?: string | null;
   total_layers?: number | null;
   total_thickness_mm?: number | null;
   sizes?: Record<string, number> | null;
@@ -53,7 +51,6 @@ export interface VestUpdate {
   vest_code?: string | null;
   vest_type?: string | null;
   threat_level?: string | null;
-  protection_class?: string | null;
   total_layers?: number | null;
   total_thickness_mm?: number | null;
   sizes?: Record<string, number> | null;
@@ -68,7 +65,6 @@ export interface VestListItem {
   vest_code: string;
   vest_type: string | null;
   threat_level: string | null;
-  protection_class: string | null;
   total_layers: number | null;
   total_thickness_mm: number | null;
   sizes: Record<string, number> | null;
