@@ -39,17 +39,21 @@ def sync_database(
     
     try:
         # Connect to remote database
+        print(f"Attempting to connect to remote database: {remote_db_url}")
         remote_conn = psycopg2.connect(remote_db_url, connect_timeout=10)
         remote_cursor = remote_conn.cursor()
+        print("Successfully connected to remote database")
         
         # Get local database session
         local_db: Session = SessionLocal()
         
         try:
             # Sync ammunition
+            print("Syncing ammunition...")
             remote_cursor.execute("SELECT * FROM ammunition")
             columns = [desc[0] for desc in remote_cursor.description]
             ammunition_data = remote_cursor.fetchall()
+            print(f"Found {len(ammunition_data)} ammunition records")
             
             for row in ammunition_data:
                 ammo_dict = dict(zip(columns, row))
@@ -64,6 +68,9 @@ def sync_database(
                         if key != 'id' and hasattr(existing, key):
                             setattr(existing, key, value)
             
+            local_db.commit()
+            print("Ammunition synced successfully")
+            
             # Sync materials
             remote_cursor.execute("SELECT * FROM materials")
             columns = [desc[0] for desc in remote_cursor.description]
@@ -71,16 +78,21 @@ def sync_database(
             
             for row in materials_data:
                 material_dict = dict(zip(columns, row))
+                # Filter out columns that don't exist in the local Material model
+                valid_columns = {key: value for key, value in material_dict.items() if hasattr(Material, key)}
                 # Check if material already exists
-                existing = local_db.query(Material).filter(Material.id == material_dict['id']).first()
+                existing = local_db.query(Material).filter(Material.id == valid_columns['id']).first()
                 if not existing:
-                    new_material = Material(**material_dict)
+                    new_material = Material(**valid_columns)
                     local_db.add(new_material)
                 else:
                     # Update existing material
-                    for key, value in material_dict.items():
+                    for key, value in valid_columns.items():
                         if key != 'id' and hasattr(existing, key):
                             setattr(existing, key, value)
+            
+            local_db.commit()
+            print("Materials synced successfully")
             
             # Sync vests
             remote_cursor.execute("SELECT * FROM vests")
@@ -89,16 +101,21 @@ def sync_database(
             
             for row in vests_data:
                 vest_dict = dict(zip(columns, row))
+                # Filter out columns that don't exist in the local Vest model
+                valid_columns = {key: value for key, value in vest_dict.items() if hasattr(Vest, key)}
                 # Check if vest already exists
-                existing = local_db.query(Vest).filter(Vest.id == vest_dict['id']).first()
+                existing = local_db.query(Vest).filter(Vest.id == valid_columns['id']).first()
                 if not existing:
-                    new_vest = Vest(**vest_dict)
+                    new_vest = Vest(**valid_columns)
                     local_db.add(new_vest)
                 else:
                     # Update existing vest
-                    for key, value in vest_dict.items():
+                    for key, value in valid_columns.items():
                         if key != 'id' and hasattr(existing, key):
                             setattr(existing, key, value)
+            
+            local_db.commit()
+            print("Vests synced successfully")
             
             # Sync test sessions
             remote_cursor.execute("SELECT * FROM test_sessions")
@@ -107,16 +124,22 @@ def sync_database(
             
             for row in test_sessions_data:
                 session_dict = dict(zip(columns, row))
+                # Filter out columns that don't exist in the local TestSession model
+                valid_columns = {key: value for key, value in session_dict.items() if hasattr(TestSession, key)}
                 # Check if session already exists
-                existing = local_db.query(TestSession).filter(TestSession.id == session_dict['id']).first()
+                existing = local_db.query(TestSession).filter(TestSession.id == valid_columns['id']).first()
                 if not existing:
-                    new_session = TestSession(**session_dict)
+                    new_session = TestSession(**valid_columns)
                     local_db.add(new_session)
                 else:
                     # Update existing session
-                    for key, value in session_dict.items():
+                    for key, value in valid_columns.items():
                         if key != 'id' and hasattr(existing, key):
                             setattr(existing, key, value)
+            
+            # Commit test sessions before syncing shot data to satisfy foreign key constraint
+            local_db.commit()
+            print("Test sessions synced successfully")
             
             # Sync shot data
             remote_cursor.execute("SELECT * FROM shot_data")
@@ -125,14 +148,16 @@ def sync_database(
             
             for row in shot_data:
                 shot_dict = dict(zip(columns, row))
+                # Filter out columns that don't exist in the local ShotData model
+                valid_columns = {key: value for key, value in shot_dict.items() if hasattr(ShotData, key)}
                 # Check if shot already exists
-                existing = local_db.query(ShotData).filter(ShotData.id == shot_dict['id']).first()
+                existing = local_db.query(ShotData).filter(ShotData.id == valid_columns['id']).first()
                 if not existing:
-                    new_shot = ShotData(**shot_dict)
+                    new_shot = ShotData(**valid_columns)
                     local_db.add(new_shot)
                 else:
                     # Update existing shot
-                    for key, value in shot_dict.items():
+                    for key, value in valid_columns.items():
                         if key != 'id' and hasattr(existing, key):
                             setattr(existing, key, value)
             
@@ -148,6 +173,9 @@ def sync_database(
             
         except Exception as e:
             local_db.rollback()
+            print(f"Sync error: {str(e)}")
+            import traceback
+            traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
         finally:
             local_db.close()

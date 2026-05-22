@@ -27,6 +27,11 @@ def normalize_caliber(caliber: str) -> str:
     # Remove leading/trailing dots
     normalized = normalized.strip('.')
     
+    # Remove leading zeros from numbers (e.g., "0.357" -> ".357", "0.44" -> ".44")
+    # But preserve the decimal point
+    if normalized and normalized[0] == '0' and len(normalized) > 1 and normalized[1] == '.':
+        normalized = normalized[1:]  # Remove leading zero, keep the dot
+    
     # Common caliber aliases for matching
     caliber_aliases = {
         '9mm': '9x19mm',
@@ -40,6 +45,12 @@ def normalize_caliber(caliber: str) -> str:
         '556x45mm': '5.56x45mm',
         '556nato': '5.56x45mm',
     }
+    
+    # For decimal-only calibers (like .357, .44), also try without the dot (357, 44)
+    # This handles cases where database has "357" but Excel has ".357" or "0.357"
+    if normalized and normalized[0] == '.' and normalized.replace('.', '').isdigit():
+        # It's a decimal number like .357 - add version without dot to aliases
+        caliber_aliases[normalized] = normalized[1:]  # ".357" -> "357"
     
     return caliber_aliases.get(normalized, normalized)
 

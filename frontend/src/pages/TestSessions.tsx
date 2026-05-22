@@ -50,10 +50,6 @@ export function TestSessions() {
   const [protocol, setProtocol] = useState('');
   const [selectedVestId, setSelectedVestId] = useState('');
   const [testDate, setTestDate] = useState(new Date().toISOString().split('T')[0]);
-  const [showVestChangeModal, setShowVestChangeModal] = useState(false);
-  const [vestChangeTarget, setVestChangeTarget] = useState<TestSession | null>(null);
-  const [newVestId, setNewVestId] = useState('');
-  const [cascadeVest, setCascadeVest] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminModalType, setAdminModalType] = useState<'locations' | 'protocols' | 'bulk-reupload'>('locations');
@@ -92,25 +88,6 @@ export function TestSessions() {
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error loading test sessions</div>;
-
-  const handleVestChange = async () => {
-    if (!vestChangeTarget || !newVestId) return;
-    try {
-      const formData = new FormData();
-      formData.append('vest_id', newVestId);
-      formData.append('cascade', cascadeVest.toString());
-      
-      await apiClient.patch(`/api/v1/test-sessions/${vestChangeTarget.id}/vest`, formData);
-      setShowVestChangeModal(false);
-      setVestChangeTarget(null);
-      setNewVestId('');
-      setCascadeVest(false);
-      window.location.reload();
-    } catch (err) {
-      console.error('Failed to change vest:', err);
-      alert('Failed to change vest');
-    }
-  };
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
@@ -325,7 +302,7 @@ export function TestSessions() {
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-24 truncate">Lab</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Protocol</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vest</th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Characteristic</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Cond.</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Excel</th>
                 <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
@@ -353,46 +330,36 @@ export function TestSessions() {
                     className="hover:bg-gray-50 cursor-pointer"
                     onClick={() => hasChildren && toggleGroup(parent.id)}
                   >
-                    <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 max-w-xs truncate">
+                    <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 max-w-xs truncate" title={parent.name}>
                       {hasChildren && (
                         <span className="mr-2 text-gray-500">
                           {isExpanded ? '▼' : '▶'}
                         </span>
                       )}
-                      {parent.name}
+                      {parent.name.length > 30 ? parent.name.substring(0, 30) + '...' : parent.name}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.test_date || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 max-w-24 truncate" title={parent.lab_name || ''}>{parent.lab_name || '-'}</td>
                     <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={parent.protocol || ''}>{parent.protocol || '-'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.vest_code || '-'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={parent.vest_code || ''}>
+                      {parent.vest_code ? (parent.vest_code.length > 15 ? parent.vest_code.substring(0, 15) + '...' : parent.vest_code) : '-'}
+                    </td>
                     <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={formatConditioning(parent.conditioning)}>{formatConditioning(parent.conditioning)}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
                       {role !== 'viewer' && (
-                        <>
+                        parent.excel_file_path ? (
+                          <span className="text-green-600">Uploaded</span>
+                        ) : (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setVestChangeTarget(parent);
-                              setShowVestChangeModal(true);
+                              setUploadTarget(parent);
                             }}
-                            className="text-indigo-600 hover:text-indigo-900 mr-2"
+                            className="text-indigo-600 hover:text-indigo-900"
                           >
-                            Change Vest
+                            Upload
                           </button>
-                          parent.excel_file_path ? (
-                            <span className="text-green-600">Uploaded</span>
-                          ) : (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setUploadTarget(parent);
-                              }}
-                              className="text-indigo-600 hover:text-indigo-900"
-                            >
-                              Upload
-                            </button>
-                          )
-                        </>
+                        )
                       )}
                       {role === 'viewer' && (
                         parent.excel_file_path ? (
@@ -429,12 +396,17 @@ export function TestSessions() {
                   {isExpanded && hasChildren && sortedChildren.map((child) => (
                     <tr key={child.id} className="bg-gray-50 hover:bg-gray-100">
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 pl-12 max-w-xs truncate" title={child.name.replace(parent.name + ' - ', '')}>
-                        {child.name.replace(parent.name + ' - ', '')}
+                        {(() => {
+                          const childName = child.name.replace(parent.name + ' - ', '');
+                          return childName.length > 30 ? childName.substring(0, 30) + '...' : childName;
+                        })()}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{child.test_date || '-'}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 max-w-24 truncate" title={child.lab_name || ''}>{child.lab_name || '-'}</td>
                       <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={child.protocol || ''}>{child.protocol || '-'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{child.vest_code || '-'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={child.vest_code || ''}>
+                        {child.vest_code ? (child.vest_code.length > 15 ? child.vest_code.substring(0, 15) + '...' : child.vest_code) : '-'}
+                      </td>
                       <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={formatConditioning(child.conditioning)}>{formatConditioning(child.conditioning)}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
                         {role !== 'viewer' && (
@@ -630,53 +602,6 @@ export function TestSessions() {
             setProtocol('');
             setSelectedVestId('');
             setTestDate(new Date().toISOString().split('T')[0]);
-          }}
-        />
-      )}
-
-      {showVestChangeModal && vestChangeTarget && (
-        <ConfirmModal
-          title="Change Vest"
-          message={
-            <div className="space-y-4">
-              <p>Change vest for {vestChangeTarget.name}</p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">New Vest</label>
-                <select
-                  value={newVestId}
-                  onChange={(e) => setNewVestId(e.target.value)}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
-                >
-                  <option value="">Select vest...</option>
-                  {vests?.map((vest) => (
-                    <option key={vest.id} value={vest.id}>
-                      {vest.vest_code} - {vest.vest_type || 'N/A'} - {vest.threat_level || 'N/A'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="cascade"
-                  checked={cascadeVest}
-                  onChange={(e) => setCascadeVest(e.target.checked)}
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                />
-                <label htmlFor="cascade" className="ml-2 block text-sm text-gray-900">
-                  Apply to all child sessions
-                </label>
-              </div>
-            </div>
-          }
-          confirmLabel="Change Vest"
-          variant="default"
-          onConfirm={handleVestChange}
-          onCancel={() => {
-            setShowVestChangeModal(false);
-            setVestChangeTarget(null);
-            setNewVestId('');
-            setCascadeVest(false);
           }}
         />
       )}
@@ -974,6 +899,11 @@ export function TestSessions() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Excel File</label>
+                {editTarget.excel_file_path && (
+                  <div className="mb-2 text-sm text-gray-600">
+                    Current file: <span className="font-medium">{editTarget.excel_file_path}</span>
+                  </div>
+                )}
                 <input
                   type="file"
                   accept=".xlsx,.xls"
@@ -1042,6 +972,21 @@ export function TestSessions() {
                   </div>
                 </>
               )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Vest</label>
+                <select
+                  value={editTarget.vest_id || ''}
+                  onChange={(e) => setEditTarget({ ...editTarget, vest_id: e.target.value || null })}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                >
+                  <option value="">Select vest...</option>
+                  {vests?.map((vest) => (
+                    <option key={vest.id} value={vest.id}>
+                      {vest.vest_code} - {vest.vest_type || 'N/A'} - {vest.threat_level || 'N/A'}
+                    </option>
+                  ))}
+                </select>
+              </div>
               {editTarget.parent_test_group_id && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Conditioning</label>
@@ -1105,6 +1050,7 @@ export function TestSessions() {
                   lab_name: editTarget.lab_name,
                   operator: editTarget.operator,
                   protocol: editTarget.protocol,
+                  vest_id: editTarget.vest_id,
                   conditioning: editTarget.conditioning,
                   ambient_temperature_c: editTarget.ambient_temperature_c,
                   humidity_percent: editTarget.humidity_percent,
