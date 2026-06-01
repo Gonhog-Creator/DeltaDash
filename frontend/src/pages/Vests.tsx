@@ -473,13 +473,15 @@ export function Vests() {
 
       {!(showCreateForm || editingVest) && (
       <div className="bg-white shadow rounded-lg overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vest Code</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Threat Level</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Layers</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Composition</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thickness</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
@@ -503,10 +505,11 @@ export function Vests() {
 
               return (
                 <tr key={vest.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{vest.vest_code}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900 break-words">{vest.vest_code}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.vest_type || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.threat_level || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.total_layers || '-'}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500 break-words" title={vest.composition || ''}>{vest.composition || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{thicknessDisplay}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   {role !== 'viewer' && (
@@ -532,13 +535,14 @@ export function Vests() {
             })}
             {vests?.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
                   No vests found. Click "Add Vest" to create one.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        </div>
       </div>
       )}
       {deleteTarget && (

@@ -31,6 +31,7 @@ export function Layout({ children }: LayoutProps) {
     { path: '/vests', label: 'Vests' },
     { path: '/ammunition', label: 'Ammunition' },
     { path: '/analytics', label: 'Analytics' },
+    { path: '/ballistic-testing', label: 'Ballistic Testing' },
     ...(isAdmin ? [{ path: '/model-training', label: 'Model Training' }] : []),
   ];
 

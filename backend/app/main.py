@@ -9,7 +9,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)),
 
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns, analytics, locations, protocols, shot_data, vests, admin, ml
+from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns, analytics, locations, protocols, shot_data, vests, admin, ballistic
 
 setup_logging()
 
@@ -43,7 +43,7 @@ app.include_router(protocols.router, prefix="/api/v1/protocols", tags=["protocol
 app.include_router(shot_data.router, prefix="/api/v1/shot-data", tags=["shot-data"])
 app.include_router(vests.router, prefix="/api/v1/vests", tags=["vests"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
-app.include_router(ml.router, prefix="/api/v1/ml", tags=["ml"])
+app.include_router(ballistic.router, prefix="/api/v1", tags=["ballistic"])
 
 
 @app.get("/health")

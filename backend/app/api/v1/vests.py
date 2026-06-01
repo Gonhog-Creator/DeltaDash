@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from app.db.session import get_db
 from app.db.models import Vest as VestModel, VestLayer
+from app.db.models.material import Material
 from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.vest import VestCreate, VestUpdate, Vest, VestListItem, VestLayerCreate
 from app.db.models.user import User as UserModel
@@ -21,7 +22,7 @@ def list_vests(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
 ):
-    query = db.query(VestModel)
+    query = db.query(VestModel).options(joinedload(VestModel.layers))
     
     if vest_type:
         query = query.filter(VestModel.vest_type == vest_type)
@@ -30,7 +31,40 @@ def list_vests(
         query = query.filter(VestModel.threat_level == threat_level)
     
     vests = query.offset(skip).limit(limit).all()
-    return vests
+    
+    # Build composition string for each vest
+    result = []
+    for vest in vests:
+        # Get materials for this vest's layers
+        material_ids = [layer.material_id for layer in vest.layers if layer.material_id]
+        materials = {}
+        if material_ids:
+            material_records = db.query(Material).filter(Material.id.in_(material_ids)).all()
+            materials = {m.id: m for m in material_records}
+        
+        # Build composition string
+        composition_parts = []
+        for layer in sorted(vest.layers, key=lambda l: l.layer_index):
+            if layer.material_id and layer.material_id in materials:
+                material = materials[layer.material_id]
+                part = f"{layer.layer_count} {material.name}"
+                composition_parts.append(part)
+        
+        vest_dict = {
+            "id": vest.id,
+            "vest_code": vest.vest_code,
+            "vest_type": vest.vest_type,
+            "threat_level": vest.threat_level,
+            "protection_class": vest.protection_class,
+            "total_layers": vest.total_layers,
+            "total_thickness_mm": vest.total_thickness_mm,
+            "sizes": vest.sizes,
+            "created_by_username": vest.created_by_username if hasattr(vest, 'created_by_username') else None,
+            "composition": ", ".join(composition_parts) if composition_parts else None
+        }
+        result.append(VestListItem(**vest_dict))
+    
+    return result
 
 
 @router.post("/", response_model=Vest, status_code=status.HTTP_201_CREATED)

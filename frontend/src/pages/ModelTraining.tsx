@@ -1,327 +1,341 @@
-import { useState } from 'react';
-import { useAuth } from '../hooks/useAuth';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
-
-interface ModelVersion {
-  id: string;
-  version: string;
-  created_at: string;
-  training_row_count: number;
-  metrics: {
-    rmse?: number;
-    mae?: number;
-    r2?: number;
-    cv_rmse?: number;
-    cv_rmse_std?: number;
-  };
-  artifact_path: string;
-  is_current: boolean;
-}
-
-interface ValidationMetrics {
-  model_run_id: string;
-  validation_count: number;
-  rmse?: number;
-  mae?: number;
-  max_error?: number;
-  min_error?: number;
-  within_2mm?: number;
-  within_2mm_percent?: number;
-  validation_date: string;
-}
+import { useAuth } from '../hooks/useAuth';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export function ModelTraining() {
-  const { isAdmin } = useAuth();
-  const queryClient = useQueryClient();
-  const [trainingParams, setTrainingParams] = useState({
-    n_estimators: 100,
-    max_depth: 6,
-    learning_rate: 0.1,
-    test_size: 0.2,
-  });
-  const [isTraining, setIsTraining] = useState(false);
+  const { role } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [trainingStatus, setTrainingStatus] = useState<any>(null);
+  const [healthStatus, setHealthStatus] = useState<any>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [modelVersions, setModelVersions] = useState<any[]>([]);
+  const [modelName, setModelName] = useState<string>('');
+  const [trainingWarnings, setTrainingWarnings] = useState<string[]>([]);
+  const [deleteVersion, setDeleteVersion] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [editVersion, setEditVersion] = useState<string | null>(null);
+  const [editName, setEditName] = useState<string>('');
+  const [showEditModal, setShowEditModal] = useState(false);
 
-  // Fetch model versions
-  const { data: modelVersions, isLoading: isLoadingVersions } = useQuery({
-    queryKey: ['ml', 'models', 'versions'],
-    queryFn: async () => {
-      const data = await apiClient.get<{ versions: ModelVersion[] }>('/api/v1/ml/models/versions');
-      return data.versions;
-    },
-  });
+  const handleTrain = async () => {
+    setLoading(true);
+    setError(null);
+    setTrainingStatus(null);
+    setTrainingWarnings([]);
 
-  // Fetch current model
-  const { data: currentModel, error: currentModelError } = useQuery({
-    queryKey: ['ml', 'models', 'current'],
-    queryFn: async () => {
-      const data = await apiClient.get('/api/v1/ml/models/current');
-      return data;
-    },
-    retry: false,
-  });
-
-  // Fetch validation metrics
-  const { data: validationMetrics } = useQuery({
-    queryKey: ['ml', 'validation'],
-    queryFn: async () => {
-      const data = await apiClient.get<ValidationMetrics>('/api/v1/ml/models/validate');
-      return data;
-    },
-    enabled: !!currentModel && !currentModelError,
-  });
-
-  // Train model mutation
-  const trainMutation = useMutation({
-    mutationFn: async (params: typeof trainingParams) => {
-      setIsTraining(true);
-      const data = await apiClient.post('/api/v1/ml/models/train', params);
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ml', 'models', 'versions'] });
-      queryClient.invalidateQueries({ queryKey: ['ml', 'models', 'current'] });
-      setIsTraining(false);
-    },
-    onError: () => {
-      setIsTraining(false);
-    },
-  });
-
-  const handleTrain = () => {
-    if (isAdmin) {
-      trainMutation.mutate(trainingParams);
+    try {
+      const url = modelName ? `/api/v1/ballistic/train?model_name=${encodeURIComponent(modelName)}` : '/api/v1/ballistic/train';
+      const result = await apiClient.post<any>(url);
+      setTrainingStatus(result);
+      setTrainingWarnings(result.warnings || []);
+      setShowSuccessModal(true);
+      setModelName(''); // Clear model name after training
+      handleListVersions(); // Refresh versions after training
+    } catch (err: any) {
+      setError(err.detail || 'Training failed');
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (!isAdmin) {
+  const handleCheckHealth = async () => {
+    try {
+      const result = await apiClient.get<any>('/api/v1/ballistic/health');
+      setHealthStatus(result);
+    } catch (err: any) {
+      setError(err.detail || 'Health check failed');
+    }
+  };
+
+  const handleGetMetrics = async () => {
+    try {
+      const result = await apiClient.get<any>('/api/v1/ballistic/metrics');
+      setTrainingStatus(result);
+    } catch (err: any) {
+      setError(err.detail || 'Failed to fetch metrics');
+    }
+  };
+
+  const handleListVersions = async () => {
+    try {
+      const result = await apiClient.get<any>('/api/v1/ballistic/versions');
+      setModelVersions(result.versions || []);
+    } catch (err: any) {
+      setError(err.detail || 'Failed to fetch versions');
+    }
+  };
+
+  const handleLoadVersion = async (version: string) => {
+    try {
+      await apiClient.post<any>(`/api/v1/ballistic/load-version/${version}`);
+      alert(`Model version ${version} loaded successfully`);
+      handleCheckHealth(); // Refresh health to show current version
+    } catch (err: any) {
+      setError(err.detail || 'Failed to load version');
+    }
+  };
+
+  const handleDeleteClick = (version: string) => {
+    setDeleteVersion(version);
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteVersion) return;
+
+    console.log('Deleting version:', deleteVersion);
+    console.log('Full version object:', modelVersions.find(v => v.version === deleteVersion));
+
+    try {
+      await apiClient.delete<any>(`/api/v1/ballistic/versions/${deleteVersion}`);
+      setShowDeleteModal(false);
+      setDeleteVersion(null);
+      handleListVersions(); // Refresh versions list
+    } catch (err: any) {
+      setError(err.detail || 'Failed to delete version');
+    }
+  };
+
+  const handleEditClick = (version: string, currentName: string) => {
+    setEditVersion(version);
+    setEditName(currentName);
+    setShowEditModal(true);
+  };
+
+  const handleEditConfirm = async () => {
+    if (!editVersion || !editName.trim()) return;
+
+    try {
+      await apiClient.put<any>(`/api/v1/ballistic/versions/${editVersion}/name?new_name=${encodeURIComponent(editName)}`);
+      setShowEditModal(false);
+      setEditVersion(null);
+      setEditName('');
+      handleListVersions(); // Refresh versions list
+    } catch (err: any) {
+      setError(err.detail || 'Failed to update model name');
+    }
+  };
+
+  // Load versions on mount
+  useEffect(() => {
+    handleListVersions();
+  }, []);
+
+  if (role !== 'admin') {
     return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-gray-500">Admin access required</p>
+      <div className="p-6">
+        <h1 className="text-3xl font-bold mb-6">Model Training</h1>
+        <div className="bg-red-50 border border-red-200 rounded p-4">
+          <p className="text-red-800">Access denied. Admin only.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Model Training</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Train and manage XGBoost models for BFD prediction
-        </p>
-      </div>
+    <div className="p-6">
+      <h1 className="text-3xl font-bold mb-6">Model Training</h1>
 
-      {/* Training Section */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Train New Model</h2>
-        
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Number of Estimators: {trainingParams.n_estimators}
-            </label>
-            <input
-              type="range"
-              min="50"
-              max="500"
-              step="50"
-              value={trainingParams.n_estimators}
-              onChange={(e) => setTrainingParams({ ...trainingParams, n_estimators: parseInt(e.target.value) })}
-              className="w-full"
-            />
-            <p className="text-xs text-gray-500 mt-1">Number of trees in the ensemble</p>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Max Depth: {trainingParams.max_depth}
-            </label>
-            <input
-              type="range"
-              min="3"
-              max="12"
-              step="1"
-              value={trainingParams.max_depth}
-              onChange={(e) => setTrainingParams({ ...trainingParams, max_depth: parseInt(e.target.value) })}
-              className="w-full"
-            />
-            <p className="text-xs text-gray-500 mt-1">Maximum depth of each tree</p>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Learning Rate: {trainingParams.learning_rate}
-            </label>
-            <input
-              type="range"
-              min="0.01"
-              max="0.5"
-              step="0.01"
-              value={trainingParams.learning_rate}
-              onChange={(e) => setTrainingParams({ ...trainingParams, learning_rate: parseFloat(e.target.value) })}
-              className="w-full"
-            />
-            <p className="text-xs text-gray-500 mt-1">Step size shrinkage</p>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Test Size: {trainingParams.test_size}
-            </label>
-            <input
-              type="range"
-              min="0.1"
-              max="0.4"
-              step="0.05"
-              value={trainingParams.test_size}
-              onChange={(e) => setTrainingParams({ ...trainingParams, test_size: parseFloat(e.target.value) })}
-              className="w-full"
-            />
-            <p className="text-xs text-gray-500 mt-1">Proportion for testing</p>
+      <div className="space-y-6">
+        {/* Controls */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-xl font-semibold mb-4">Model Controls</h2>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Model Name (Optional)</label>
+              <input
+                type="text"
+                value={modelName}
+                onChange={(e) => setModelName(e.target.value)}
+                placeholder="e.g., March 2025 1.1"
+                className="w-full border rounded p-2"
+              />
+            </div>
+            <button
+              onClick={handleTrain}
+              disabled={loading}
+              className="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 disabled:bg-gray-400"
+            >
+              {loading ? 'Training...' : 'Train Model (From Database)'}
+            </button>
+            <button
+              onClick={handleCheckHealth}
+              className="w-full bg-gray-600 text-white py-2 px-4 rounded hover:bg-gray-700"
+            >
+              Check Model Health
+            </button>
+            <button
+              onClick={handleGetMetrics}
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
+            >
+              Get Training Metrics
+            </button>
           </div>
         </div>
 
-        <button
-          onClick={handleTrain}
-          disabled={isTraining}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-        >
-          {isTraining ? 'Training...' : 'Train Model'}
-        </button>
-
-        {trainMutation.data && (
-          <div className="mt-4 p-4 bg-green-50 rounded-md">
-            <p className="text-sm text-green-800 font-medium">Training completed successfully!</p>
-            <div className="mt-2 text-sm text-green-700">
-              <p>RMSE: {trainMutation.data.rmse?.toFixed(4)}</p>
-              <p>MAE: {trainMutation.data.mae?.toFixed(4)}</p>
-              <p>R²: {trainMutation.data.r2?.toFixed(4)}</p>
-              <p>Training samples: {trainMutation.data.training_samples}</p>
+        {/* Health Status */}
+        {healthStatus && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold mb-4">Model Health</h2>
+            <div className="space-y-2">
+              <div><strong>Status:</strong> {healthStatus.status}</div>
+              <div><strong>Version:</strong> {healthStatus.version || 'N/A'}</div>
+              <div><strong>Trained At:</strong> {healthStatus.trained_at || 'N/A'}</div>
+              <div><strong>Regression Targets:</strong> {healthStatus.regression_targets?.join(', ') || 'None'}</div>
+              <div><strong>Classification Targets:</strong> {healthStatus.classification_targets?.join(', ') || 'None'}</div>
+              <div><strong>Feature Count:</strong> {healthStatus.feature_count}</div>
+              <div><strong>Material Count:</strong> {healthStatus.material_count}</div>
+              <div className="border-t pt-2 mt-2">
+                <div className="font-semibold mb-2">Database Counts:</div>
+                <div><strong>Shots:</strong> {healthStatus.shot_count}</div>
+                <div><strong>Vests:</strong> {healthStatus.vest_count}</div>
+                <div><strong>Vest Layers:</strong> {healthStatus.vest_layer_count}</div>
+              </div>
             </div>
           </div>
         )}
 
-        {trainMutation.error && (
-          <div className="mt-4 p-4 bg-red-50 rounded-md">
-            <p className="text-sm text-red-800 font-medium">Training failed</p>
-            <p className="text-sm text-red-700 mt-1">
-              {trainMutation.error instanceof Error ? trainMutation.error.message : 'Please try again.'}
-            </p>
-            <p className="text-xs text-red-600 mt-2">
-              Make sure you have shot data with BFD measurements in the database.
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Current Model Info */}
-      {currentModel && !currentModelError && (
+        {/* Model Versions */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Current Model</h2>
-          <div className="space-y-2">
-            <p><span className="font-medium">Version:</span> {currentModel.version}</p>
-            <p><span className="font-medium">Created:</span> {new Date(currentModel.created_at).toLocaleString()}</p>
-            <p><span className="font-medium">Training samples:</span> {currentModel.training_row_count}</p>
-            {currentModel.metrics && (
-              <div className="mt-2">
-                <p className="font-medium">Metrics:</p>
-                <p>RMSE: {currentModel.metrics.rmse?.toFixed(4)}</p>
-                <p>MAE: {currentModel.metrics.mae?.toFixed(4)}</p>
-                <p>R²: {currentModel.metrics.r2?.toFixed(4)}</p>
+          <h2 className="text-xl font-semibold mb-4">Model Versions</h2>
+          {modelVersions.length === 0 ? (
+            <p className="text-sm text-gray-600">No model versions available. Train a model to create the first version.</p>
+          ) : (
+            <div className="space-y-2">
+              {modelVersions.map((version) => (
+                <div key={version.version} className="flex items-center justify-between p-3 bg-gray-50 rounded">
+                  <div>
+                    <div className="font-medium">{version.model_name || version.version}</div>
+                    <div className="text-xs text-gray-600">{new Date(version.trained_at).toLocaleString()}</div>
+                  </div>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => handleLoadVersion(version.version)}
+                      className="px-3 py-1 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700"
+                    >
+                      Load
+                    </button>
+                    <button
+                      onClick={() => handleEditClick(version.version, version.model_name || version.version)}
+                      className="px-3 py-1 bg-gray-600 text-white text-sm rounded hover:bg-gray-700"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeleteClick(version.version)}
+                      className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Training Status/Metrics */}
+        {trainingStatus && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold mb-4">Training Status</h2>
+
+            {/* Warnings */}
+            {trainingWarnings.length > 0 && (
+              <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded p-4">
+                <h3 className="font-semibold text-yellow-800 mb-2">Warnings</h3>
+                <ul className="text-sm text-yellow-700 list-disc list-inside">
+                  {trainingWarnings.map((warning, index) => (
+                    <li key={index}>{warning}</li>
+                  ))}
+                </ul>
               </div>
             )}
-          </div>
-        </div>
-      )}
 
-      {!currentModel && !currentModelError && (
-        <div className="bg-yellow-50 rounded-lg p-6">
-          <h2 className="text-lg font-semibold text-yellow-900 mb-2">No Model Trained Yet</h2>
-          <p className="text-sm text-yellow-800">
-            Train your first model using the controls above. You need shot data with BFD measurements in the database.
-          </p>
-        </div>
-      )}
-
-      {/* Model Versions */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Model Versions</h2>
-        {isLoadingVersions ? (
-          <p className="text-gray-500">Loading...</p>
-        ) : modelVersions && modelVersions.length > 0 ? (
-          <div className="space-y-2">
-            {modelVersions.map((version) => (
-              <div
-                key={version.id}
-                className={`p-3 rounded-md border ${
-                  version.is_current ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200'
-                }`}
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="font-medium">
-                      {version.version}
-                      {version.is_current && (
-                        <span className="ml-2 px-2 py-0.5 text-xs bg-indigo-100 text-indigo-800 rounded">
-                          Current
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      {new Date(version.created_at).toLocaleString()}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      Training samples: {version.training_row_count}
-                    </p>
-                  </div>
-                  {version.metrics && (
-                    <div className="text-sm text-right">
-                      <p>RMSE: {version.metrics.rmse?.toFixed(4)}</p>
-                      <p>R²: {version.metrics.r2?.toFixed(4)}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
+            <pre className="text-xs overflow-auto bg-gray-100 p-4 rounded">
+              {JSON.stringify(trainingStatus, null, 2)}
+            </pre>
           </div>
-        ) : (
-          <p className="text-gray-500">No models trained yet</p>
+        )}
+
+        {/* Error */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded p-4">
+            <h3 className="font-semibold text-red-800 mb-2">Error</h3>
+            <p className="text-sm text-red-600">{error}</p>
+          </div>
         )}
       </div>
 
-      {/* Validation Metrics */}
-      {validationMetrics && validationMetrics.validation_count > 0 && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Validation Metrics</h2>
-          <div className="space-y-2">
-            <p><span className="font-medium">Validation count:</span> {validationMetrics.validation_count}</p>
-            <p><span className="font-medium">RMSE:</span> {validationMetrics.rmse?.toFixed(4)}</p>
-            <p><span className="font-medium">MAE:</span> {validationMetrics.mae?.toFixed(4)}</p>
-            <p><span className="font-medium">Max error:</span> {validationMetrics.max_error?.toFixed(4)}</p>
-            <p><span className="font-medium">Within 2mm:</span> {validationMetrics.within_2mm_percent?.toFixed(1)}%</p>
-            <p className="text-sm text-gray-500 mt-2">
-              Validated on: {new Date(validationMetrics.validation_date).toLocaleString()}
-            </p>
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <ConfirmModal
+          title="Training Complete"
+          message="The ML model has been trained successfully using data from the database."
+          confirmLabel="OK"
+          cancelLabel=""
+          onConfirm={() => setShowSuccessModal(false)}
+          onCancel={() => setShowSuccessModal(false)}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <ConfirmModal
+          title="Delete Model"
+          message={`Are you sure you want to delete model version "${deleteVersion}"? This action cannot be undone.`}
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          variant="danger"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => {
+            setShowDeleteModal(false);
+            setDeleteVersion(null);
+          }}
+        />
+      )}
+
+      {/* Edit Name Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowEditModal(false)} />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Model Name</h3>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Model Name</label>
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="w-full border rounded p-2"
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditVersion(null);
+                  setEditName('');
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleEditConfirm}
+                disabled={!editName.trim()}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Save
+              </button>
+            </div>
           </div>
         </div>
       )}
-
-      {/* Training Time Info */}
-      <div className="bg-blue-50 rounded-lg p-4">
-        <h3 className="font-medium text-blue-900 mb-2">Training Time Information</h3>
-        <p className="text-sm text-blue-800">
-          XGBoost training typically takes 10-60 seconds depending on:
-        </p>
-        <ul className="text-sm text-blue-800 list-disc list-inside mt-2">
-          <li>Number of training samples in database</li>
-          <li>Number of estimators (trees)</li>
-          <li>Max depth of trees</li>
-          <li>Server hardware</li>
-        </ul>
-        <p className="text-sm text-blue-800 mt-2">
-          With typical ballistic test data (hundreds to thousands of shots), expect 20-40 seconds.
-        </p>
-      </div>
     </div>
   );
 }

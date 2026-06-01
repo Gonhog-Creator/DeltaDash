@@ -261,6 +261,10 @@ export function TestSessionDetail() {
                 <span className="ml-2 text-sm text-gray-900">{testSession.protocol || '-'}</span>
               </div>
               <div>
+                <span className="text-sm font-medium text-gray-500">Vest:</span>
+                <span className="ml-2 text-sm text-gray-900">{testSession.vest?.vest_code || testSession.vest?.name || '-'}</span>
+              </div>
+              <div>
                 <span className="text-sm font-medium text-gray-500">Characteristic:</span>
                 <span className="ml-2 text-sm text-gray-900">{formatConditioning(testSession.conditioning)}</span>
               </div>

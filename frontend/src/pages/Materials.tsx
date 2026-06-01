@@ -301,13 +301,13 @@ export function Materials() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Ply Count: {formData.ply_count ?? 0}</label>
+                <label className="block text-sm font-medium text-gray-700">Ply Count: {formData.ply_count ?? 1}</label>
                 <input
                   type="range"
-                  min="0"
+                  min="1"
                   max="6"
                   step="1"
-                  value={formData.ply_count ?? 0}
+                  value={formData.ply_count ?? 1}
                   onChange={(e) => {
                     const newPlyCount = parseInt(e.target.value);
                     setFormData({ ...formData, ply_count: newPlyCount });
@@ -316,8 +316,6 @@ export function Materials() {
                       setFormData(prev => ({ ...prev, ply_orientations: Array(newPlyCount).fill(0) }));
                     } else if (newPlyCount === 1) {
                       setFormData(prev => ({ ...prev, ply_orientations: [0] }));
-                    } else {
-                      setFormData(prev => ({ ...prev, ply_orientations: null }));
                     }
                   }}
                   className="mt-1 block w-full"

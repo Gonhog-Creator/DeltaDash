@@ -5,6 +5,7 @@ from app.db.session import SessionLocal
 from app.db.models.material import Material
 from app.db.models.test_session import TestSession
 from app.db.models.vest import Vest
+from app.db.models.vest_layer import VestLayer
 from app.db.models.shot_data import ShotData
 from app.db.models.ammunition import Ammunition
 from app.api.v1.auth import get_current_active_user, get_current_user
@@ -121,6 +122,29 @@ def sync_database(
             local_db.commit()
             print("Vests synced successfully")
             
+            # Sync vest layers
+            remote_cursor.execute("SELECT * FROM vest_layers")
+            columns = [desc[0] for desc in remote_cursor.description]
+            vest_layers_data = remote_cursor.fetchall()
+            
+            for row in vest_layers_data:
+                layer_dict = dict(zip(columns, row))
+                # Filter out columns that don't exist in the local VestLayer model
+                valid_columns = {key: value for key, value in layer_dict.items() if hasattr(VestLayer, key)}
+                # Check if layer already exists
+                existing = local_db.query(VestLayer).filter(VestLayer.id == valid_columns['id']).first()
+                if not existing:
+                    new_layer = VestLayer(**valid_columns)
+                    local_db.add(new_layer)
+                else:
+                    # Update existing layer
+                    for key, value in valid_columns.items():
+                        if key != 'id' and hasattr(existing, key):
+                            setattr(existing, key, value)
+            
+            local_db.commit()
+            print("Vest layers synced successfully")
+            
             # Sync test sessions
             remote_cursor.execute("SELECT * FROM test_sessions")
             columns = [desc[0] for desc in remote_cursor.description]
@@ -171,6 +195,7 @@ def sync_database(
                 "ammunition": len(ammunition_data),
                 "materials": len(materials_data),
                 "vests": len(vests_data),
+                "vest_layers": len(vest_layers_data),
                 "test_sessions": len(test_sessions_data),
                 "shot_data": len(shot_data)
             }}

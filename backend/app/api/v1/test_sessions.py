@@ -273,16 +273,43 @@ def get_stats(
     }
 
 
-@router.get("/{test_session_id}", response_model=TestSession)
+@router.get("/{test_session_id}")
 def get_test_session(
     test_session_id: str,
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
 ):
-    test_session = db.query(TestSessionModel).filter(TestSessionModel.id == test_session_id).first()
+    test_session = db.query(TestSessionModel, VestModel).outerjoin(VestModel, TestSessionModel.vest_id == VestModel.id).filter(TestSessionModel.id == test_session_id).first()
     if not test_session:
         raise HTTPException(status_code=404, detail="Test session not found")
-    return test_session
+    
+    session, vest = test_session
+    
+    session_dict = {
+        "id": session.id,
+        "name": session.name,
+        "test_date": session.test_date,
+        "lab_name": session.lab_name,
+        "protocol": session.protocol,
+        "clay_temperature_c": session.clay_temperature_c,
+        "ambient_temperature_c": session.ambient_temperature_c,
+        "humidity_percent": session.humidity_percent,
+        "conditioning": session.conditioning,
+        "size": session.size,
+        "ballistic_limit": session.ballistic_limit,
+        "parent_test_group_id": session.parent_test_group_id,
+        "vest_id": session.vest_id,
+        "vest": {
+            "id": vest.id if vest else None,
+            "vest_code": vest.vest_code if vest else None,
+            "name": vest.vest_code if vest else None,
+        } if vest else None,
+        "excel_file_path": session.excel_file_path,
+        "notes": session.notes,
+        "created_at": session.created_at,
+        "updated_at": session.updated_at,
+    }
+    return session_dict
 
 
 @router.patch("/{test_session_id}", response_model=TestSession)

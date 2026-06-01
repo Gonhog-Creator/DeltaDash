@@ -79,6 +79,7 @@ class VestListItem(BaseModel):
     total_thickness_mm: Optional[Decimal]
     sizes: Optional[Dict[str, float]] = None
     created_by_username: Optional[str] = None
+    composition: Optional[str] = None
 
     class Config:
         from_attributes = True
