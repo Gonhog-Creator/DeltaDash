@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useViewerMode } from '../contexts/ViewerModeContext';
 import { useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
 import { LocationManagementModal } from './LocationManagementModal';
@@ -11,8 +12,11 @@ interface LayoutProps {
 
 export function Layout({ children }: LayoutProps) {
   const { user, logout, isLoggingOut, isAdmin } = useAuth();
+  const { isViewerMode, setViewerMode } = useViewerMode();
   const location = useLocation();
   const [version, setVersion] = useState<string>('0.1.0');
+  
+  const effectiveIsAdmin = isAdmin && !isViewerMode;
   
   // Location management state
   const { data: locations } = useLocations();
@@ -31,8 +35,8 @@ export function Layout({ children }: LayoutProps) {
     { path: '/vests', label: 'Vests' },
     { path: '/ammunition', label: 'Ammunition' },
     { path: '/analytics', label: 'Analytics' },
-    { path: '/ballistic-testing', label: 'Ballistic Testing' },
-    ...(isAdmin ? [{ path: '/model-training', label: 'Model Training' }] : []),
+    { path: '/predictions', label: 'Predictions' },
+    ...(effectiveIsAdmin ? [{ path: '/model-training', label: 'Model Training' }] : []),
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -97,7 +101,7 @@ export function Layout({ children }: LayoutProps) {
       <aside className="w-56 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
         <div className="h-16 flex items-center px-4 border-b border-gray-200">
           <h1 className="text-lg font-bold text-gray-900">DeltaDash</h1>
-          {isAdmin && (
+          {effectiveIsAdmin && (
             <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded-full">
               Admin
             </span>
@@ -126,6 +130,18 @@ export function Layout({ children }: LayoutProps) {
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-end px-6">
           <span className="text-sm text-gray-700 mr-4">{user?.email}</span>
+          {isAdmin && (
+            <button
+              onClick={() => setViewerMode(!isViewerMode)}
+              className={`mr-4 text-sm px-3 py-1 rounded border ${
+                isViewerMode 
+                  ? 'bg-blue-100 text-blue-800 border-blue-300' 
+                  : 'bg-gray-100 text-gray-600 border-gray-300'
+              }`}
+            >
+              {isViewerMode ? 'Viewer Mode' : 'Admin Mode'}
+            </button>
+          )}
           <button
             onClick={() => logout()}
             disabled={isLoggingOut}

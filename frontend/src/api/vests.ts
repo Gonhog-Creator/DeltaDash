@@ -28,6 +28,7 @@ export interface Vest {
   stitch_pattern: string | null;
   backing_material: string | null;
   notes: string | null;
+  created_by_username: string | null;
   created_at: string;
   updated_at: string;
   layers: VestLayer[];
@@ -44,6 +45,7 @@ export interface VestCreate {
   stitch_pattern?: string | null;
   backing_material?: string | null;
   notes?: string | null;
+  created_by_username?: string | null;
   layers?: VestLayerCreate[];
 }
 
@@ -58,6 +60,7 @@ export interface VestUpdate {
   stitch_pattern?: string | null;
   backing_material?: string | null;
   notes?: string | null;
+  created_by_username?: string | null;
 }
 
 export interface VestListItem {

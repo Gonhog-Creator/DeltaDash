@@ -4,6 +4,7 @@ import { Material, MaterialCreate, MaterialUpdate } from '../api/materials';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { normalizeString } from '../utils/string';
 import { useAuth } from '../hooks/useAuth';
+import { useViewerMode } from '../contexts/ViewerModeContext';
 
 export function Materials() {
   const { data: materials, isLoading, error, refetch } = useMaterials();
@@ -13,6 +14,14 @@ export function Materials() {
   const deleteMutation = useDeleteMaterial();
   const removeFileMutation = useRemoveMaterialFile();
   const { role } = useAuth();
+  const { isViewerMode } = useViewerMode();
+  
+  const canViewComplete = role === 'admin' || role === 'editor';
+
+  const shouldShowElongationFields = (materialClass: string | null) => {
+    const allowedClasses = ['fabric', 'foam', 'UHMWPE', 'aramid'];
+    return materialClass ? allowedClasses.includes(materialClass) : false;
+  };
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
@@ -24,6 +33,7 @@ export function Materials() {
   const [pendingSdsDelete, setPendingSdsDelete] = useState(false);
   const [showFileReplaceModal, setShowFileReplaceModal] = useState(false);
   const [fileToReplace, setFileToReplace] = useState<{ type: 'mss' | 'sds', file: File } | null>(null);
+  const [errorInputValues, setErrorInputValues] = useState<Record<string, string>>({});
   const [formData, setFormData] = useState<MaterialCreate>({
     name: '',
     material_class: '',
@@ -34,6 +44,15 @@ export function Materials() {
     material_function: '',
     ply_count: null,
     ply_orientations: null,
+    elongation_longitudinal_percent: null,
+    elongation_longitudinal_error_percent: null,
+    force_longitudinal_newtons: null,
+    force_longitudinal_error_percent: null,
+    elongation_transverse_percent: null,
+    elongation_transverse_error_percent: null,
+    force_transverse_newtons: null,
+    force_transverse_error_percent: null,
+    stretch_test_length: '5cm',
   });
 
   if (isLoading) return <div>Loading...</div>;
@@ -47,7 +66,8 @@ export function Materials() {
       if (sdsFile) files.sds = sdsFile;
       await createMutation.mutateAsync({ material: formData, files });
       setShowCreateForm(false);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, created_by_username: '' });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', created_by_username: '' });
+      setErrorInputValues({});
       setMssFile(null);
       setSdsFile(null);
     } catch (err) {
@@ -78,15 +98,18 @@ export function Materials() {
       if (fileOperations.length > 0) {
         try {
           await Promise.all(fileOperations);
-          refetch();
         } catch (uploadError) {
           console.error('Failed to process file operations:', uploadError);
           alert('Material updated but file operations failed. Please try again.');
         }
       }
 
+      // Always refetch to get fresh data from server
+      refetch();
+
       setEditingMaterial(null);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm' });
+      setErrorInputValues({});
       setMssFile(null);
       setSdsFile(null);
       setPendingMssDelete(false);
@@ -177,16 +200,89 @@ export function Materials() {
       material_function: material.material_function || '',
       ply_count: material.ply_count,
       ply_orientations: material.ply_orientations,
+      elongation_longitudinal_percent: material.elongation_longitudinal_percent,
+      elongation_longitudinal_error_percent: material.elongation_longitudinal_error_percent,
+      force_longitudinal_newtons: material.force_longitudinal_newtons,
+      force_longitudinal_error_percent: material.force_longitudinal_error_percent,
+      elongation_transverse_percent: material.elongation_transverse_percent,
+      elongation_transverse_error_percent: material.elongation_transverse_error_percent,
+      force_transverse_newtons: material.force_transverse_newtons,
+      force_transverse_error_percent: material.force_transverse_error_percent,
+      stretch_test_length: material.stretch_test_length || '5cm',
+      created_by_username: material.created_by_username,
+    });
+    setErrorInputValues({
+      elongation_longitudinal_error_percent: material.elongation_longitudinal_error_percent?.toString() || '',
+      elongation_transverse_error_percent: material.elongation_transverse_error_percent?.toString() || '',
+      force_longitudinal_error_percent: material.force_longitudinal_error_percent?.toString() || '',
+      force_transverse_error_percent: material.force_transverse_error_percent?.toString() || '',
     });
   };
 
   const cancelEdit = () => {
     setEditingMaterial(null);
-    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null });
+    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm' });
+    setErrorInputValues({});
     setMssFile(null);
     setSdsFile(null);
     setPendingMssDelete(false);
     setPendingSdsDelete(false);
+  };
+
+  const isMaterialComplete = (material: Material) => {
+    const allowedClasses = ['fabric', 'foam', 'UHMWPE', 'aramid'];
+    const hasElongationFields = material.material_class ? allowedClasses.includes(material.material_class) : false;
+    
+    const requiredFields = [
+      material.areal_density_g_m2,
+      material.thickness_mm,
+    ];
+    
+    if (hasElongationFields) {
+      requiredFields.push(
+        material.elongation_longitudinal_percent,
+        material.elongation_longitudinal_error_percent,
+        material.force_longitudinal_newtons,
+        material.force_longitudinal_error_percent,
+        material.elongation_transverse_percent,
+        material.elongation_transverse_error_percent,
+        material.force_transverse_newtons,
+        material.force_transverse_error_percent
+      );
+    }
+    
+    return requiredFields.every(field => field !== null && field !== undefined && field !== '');
+  };
+
+  const evaluateMathExpression = (value: string): number | null => {
+    if (!value.trim()) return null;
+    
+    // Check if it's a simple number
+    if (!/[\/*+\-]/.test(value)) {
+      const parsed = parseFloat(value);
+      return isNaN(parsed) ? null : parsed;
+    }
+    
+    try {
+      // Safe evaluation of simple math expressions
+      // Only allow numbers, basic operators, and parentheses
+      const sanitized = value.replace(/[^0-9\.\+\-\*\/\(\)\s]/g, '');
+      const result = Function('"use strict"; return (' + sanitized + ')')();
+      
+      if (typeof result === 'number' && !isNaN(result) && isFinite(result)) {
+        // Multiply by 100 to get percentage and round to 2 decimal places
+        return Math.round(result * 100 * 100) / 100;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const handlePercentageErrorBlur = (fieldName: keyof MaterialCreate, value: string) => {
+    const evaluated = evaluateMathExpression(value);
+    setFormData({ ...formData, [fieldName]: evaluated });
+    setErrorInputValues({ ...errorInputValues, [fieldName]: evaluated !== null ? evaluated.toString() : '' });
   };
 
   return (
@@ -231,16 +327,12 @@ export function Materials() {
                   <option value="aramid">Aramid</option>
                   <option value="UHMWPE">UHMWPE</option>
                   <option value="nylon">Nylon</option>
-                  <option value="basalt">Basalt</option>
-                  <option value="carbon_fiber">Carbon Fiber</option>
-                  <option value="glass_fiber">Glass Fiber</option>
                   <option value="fabric">Fabric</option>
                   <option value="ceramic">Ceramic</option>
                   <option value="metal">Metal</option>
+                  <option value="steel">Steel</option>
                   <option value="foam">Foam</option>
                   <option value="rubber">Rubber</option>
-                  <option value="film">Film</option>
-                  <option value="coating">Coating</option>
                   <option value="other">Other</option>
                 </select>
               </div>
@@ -348,17 +440,130 @@ export function Materials() {
                   </div>
                 </div>
               )}
-              {editingMaterial && role === 'admin' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Created By</label>
-                  <input
-                    type="text"
-                    value={formData.created_by_username || ''}
-                    onChange={(e) => setFormData({ ...formData, created_by_username: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                  />
+              {shouldShowElongationFields(formData.material_class) && (
+              <div className="md:col-span-2">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Elongation & Force Measurements</h3>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Longitudinal Force (N)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={formData.force_longitudinal_newtons ?? ''}
+                        onChange={(e) => setFormData({ ...formData, force_longitudinal_newtons: e.target.value ? parseFloat(e.target.value) : null })}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Longitudinal Force Error (%)</label>
+                      <input
+                        type="text"
+                        step="0.01"
+                        value={errorInputValues.force_longitudinal_error_percent ?? formData.force_longitudinal_error_percent ?? ''}
+                        onChange={(e) => setErrorInputValues({ ...errorInputValues, force_longitudinal_error_percent: e.target.value })}
+                        onBlur={(e) => handlePercentageErrorBlur('force_longitudinal_error_percent', e.target.value)}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Longitudinal % Elongation</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={formData.elongation_longitudinal_percent ?? ''}
+                        onChange={(e) => setFormData({ ...formData, elongation_longitudinal_percent: e.target.value ? parseFloat(e.target.value) : null })}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Longitudinal Error (%)</label>
+                      <input
+                        type="text"
+                        step="0.01"
+                        value={errorInputValues.elongation_longitudinal_error_percent ?? formData.elongation_longitudinal_error_percent ?? ''}
+                        onChange={(e) => setErrorInputValues({ ...errorInputValues, elongation_longitudinal_error_percent: e.target.value })}
+                        onBlur={(e) => handlePercentageErrorBlur('elongation_longitudinal_error_percent', e.target.value)}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Transverse Force (N)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={formData.force_transverse_newtons ?? ''}
+                        onChange={(e) => setFormData({ ...formData, force_transverse_newtons: e.target.value ? parseFloat(e.target.value) : null })}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Transverse Force Error (%)</label>
+                      <input
+                        type="text"
+                        step="0.01"
+                        value={errorInputValues.force_transverse_error_percent ?? formData.force_transverse_error_percent ?? ''}
+                        onChange={(e) => setErrorInputValues({ ...errorInputValues, force_transverse_error_percent: e.target.value })}
+                        onBlur={(e) => handlePercentageErrorBlur('force_transverse_error_percent', e.target.value)}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Transverse % Elongation</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={formData.elongation_transverse_percent ?? ''}
+                        onChange={(e) => setFormData({ ...formData, elongation_transverse_percent: e.target.value ? parseFloat(e.target.value) : null })}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Transverse Error (%)</label>
+                      <input
+                        type="text"
+                        step="0.01"
+                        value={errorInputValues.elongation_transverse_error_percent ?? formData.elongation_transverse_error_percent ?? ''}
+                        onChange={(e) => setErrorInputValues({ ...errorInputValues, elongation_transverse_error_percent: e.target.value })}
+                        onBlur={(e) => handlePercentageErrorBlur('elongation_transverse_error_percent', e.target.value)}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700">Test Strip Length</label>
+                      <div className="mt-2 flex items-center space-x-4">
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name="stretch_test_length"
+                            value="5cm"
+                            checked={formData.stretch_test_length === '5cm'}
+                            onChange={(e) => setFormData({ ...formData, stretch_test_length: e.target.value })}
+                            className="mr-2"
+                          />
+                          <span className="text-sm text-gray-700">5cm</span>
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name="stretch_test_length"
+                            value="2.5cm"
+                            checked={formData.stretch_test_length === '2.5cm'}
+                            onChange={(e) => setFormData({ ...formData, stretch_test_length: e.target.value })}
+                            className="mr-2"
+                          />
+                          <span className="text-sm text-gray-700">2.5cm</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              )}
+              </div>
+            )}
               <div>
                 <label className="block text-sm font-medium text-gray-700">MSS (Material Specification Sheet)</label>
                 {editingMaterial && editingMaterial.mss_file_path && !pendingMssDelete && (
@@ -467,6 +672,17 @@ export function Materials() {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
+              {editingMaterial && role === 'admin' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Created By</label>
+                  <input
+                    type="text"
+                    value={formData.created_by_username || ''}
+                    onChange={(e) => setFormData({ ...formData, created_by_username: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                  />
+                </div>
+              )}
             </div>
             <div className="flex justify-end space-x-3">
               <button
@@ -490,7 +706,8 @@ export function Materials() {
 
       {!(showCreateForm || editingMaterial) && (
       <div className="bg-white shadow rounded-lg overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
@@ -498,22 +715,25 @@ export function Materials() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Manufacturer</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Areal Density (g/m²)</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thickness (mm)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ply</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Files</th>
+              {canViewComplete && !isViewerMode && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Complete</th>
+              )}
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {materials?.map((material) => (
               <tr key={material.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{material.name}</td>
+                <td className="px-6 py-4 text-sm font-medium text-gray-900 break-words">{material.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {normalizeString(material.material_class) || '-'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.manufacturer || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.areal_density_g_m2 ? Math.round(Number(material.areal_density_g_m2)) : '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.thickness_mm ? Number(material.thickness_mm).toFixed(2) : '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.created_by_username || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.ply_count ?? '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   <div className="space-x-2">
                     {material.mss_file_path && (
@@ -539,6 +759,13 @@ export function Materials() {
                     {!material.mss_file_path && !material.sds_file_path && '-'}
                   </div>
                 </td>
+                {canViewComplete && !isViewerMode && (
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {isMaterialComplete(material) && (
+                      <span className="text-green-500 text-lg">✓</span>
+                    )}
+                  </td>
+                )}
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   {role !== 'viewer' && (
                     <>
@@ -562,13 +789,14 @@ export function Materials() {
             ))}
             {materials?.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={canViewComplete && !isViewerMode ? 9 : 8} className="px-6 py-4 text-center text-sm text-gray-500">
                   No materials found. Click "Add Material" to create one.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        </div>
       </div>
       )}
       {deleteTarget && (

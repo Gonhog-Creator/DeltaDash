@@ -5,6 +5,7 @@ import os
 import uuid
 from pathlib import Path
 import json
+from datetime import datetime, timezone
 
 from app.db.session import get_db
 from app.db.models import TestSession as TestSessionModel, ShotData as ShotDataModel, Shot as ShotModel, Vest as VestModel, AuditLog
@@ -370,7 +371,8 @@ def delete_test_session(
                 for child in child_sessions
             ],
         },
-        after_json={"status": "deleted"}
+        after_json={"status": "deleted"},
+        created_at=datetime.now(timezone.utc)
     )
     db.add(audit_log)
     db.flush()
@@ -460,6 +462,28 @@ def bulk_reupload_all_test_sessions(
     
     all_created_sessions = []
     
+    # First, verify all Excel files exist before deleting anything
+    missing_files = []
+    for parent_session in parent_sessions:
+        excel_file_path = parent_session.excel_file_path
+        if excel_file_path.startswith('./'):
+            original_file_path = excel_file_path
+        else:
+            original_file_path = os.path.join(settings.material_docs_dir, excel_file_path)
+        
+        # If file not found, try to find it by filename in material_docs directory
+        if not os.path.exists(original_file_path):
+            filename = os.path.basename(excel_file_path)
+            alt_path = os.path.join(settings.material_docs_dir, filename)
+            if not os.path.exists(alt_path):
+                missing_files.append(f"{parent_session.name}: {excel_file_path}")
+    
+    if missing_files:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot proceed with bulk reupload. The following Excel files are missing: {', '.join(missing_files)}"
+        )
+    
     # Collect all session IDs to be deleted
     all_session_ids = []
     for parent_session in parent_sessions:
@@ -493,7 +517,8 @@ def bulk_reupload_all_test_sessions(
             "deleted_shot_data_count": len(deleted_shot_data),
             "session_count": len(deleted_test_sessions),
         },
-        after_json={"status": "deleted_before_reupload"}
+        after_json={"status": "deleted_before_reupload"},
+        created_at=datetime.now(timezone.utc)
     )
     db.add(audit_log)
     db.flush()

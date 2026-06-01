@@ -43,7 +43,19 @@ def create_material(
     manufacturer: Optional[str] = Form(None),
     areal_density_g_m2: Optional[float] = Form(None),
     thickness_mm: Optional[float] = Form(None),
+    thickness_tolerance_mm: Optional[str] = Form(None),
     material_function: Optional[str] = Form(None),
+    ply_count: Optional[int] = Form(1),
+    ply_orientations: Optional[str] = Form(None),
+    elongation_longitudinal_percent: Optional[float] = Form(None),
+    elongation_longitudinal_error_percent: Optional[float] = Form(None),
+    force_longitudinal_newtons: Optional[float] = Form(None),
+    force_longitudinal_error_percent: Optional[float] = Form(None),
+    elongation_transverse_percent: Optional[float] = Form(None),
+    elongation_transverse_error_percent: Optional[float] = Form(None),
+    force_transverse_newtons: Optional[float] = Form(None),
+    force_transverse_error_percent: Optional[float] = Form(None),
+    stretch_test_length: Optional[str] = Form(None),
     mss_file: Optional[UploadFile] = File(None),
     sds_file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
@@ -55,9 +67,27 @@ def create_material(
         'manufacturer': manufacturer,
         'areal_density_g_m2': areal_density_g_m2,
         'thickness_mm': thickness_mm,
+        'thickness_tolerance_mm': thickness_tolerance_mm,
         'material_function': material_function,
+        'ply_count': ply_count,
+        'elongation_longitudinal_percent': elongation_longitudinal_percent,
+        'elongation_longitudinal_error_percent': elongation_longitudinal_error_percent,
+        'force_longitudinal_newtons': force_longitudinal_newtons,
+        'force_longitudinal_error_percent': force_longitudinal_error_percent,
+        'elongation_transverse_percent': elongation_transverse_percent,
+        'elongation_transverse_error_percent': elongation_transverse_error_percent,
+        'force_transverse_newtons': force_transverse_newtons,
+        'force_transverse_error_percent': force_transverse_error_percent,
+        'stretch_test_length': stretch_test_length,
         'created_by_username': current_user.username,
     }
+
+    if ply_orientations:
+        try:
+            import json
+            material_data['ply_orientations'] = json.loads(ply_orientations)
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     os.makedirs(settings.material_docs_dir, exist_ok=True)
 

@@ -8,6 +8,8 @@ from app.db.models.vest import Vest
 from app.db.models.vest_layer import VestLayer
 from app.db.models.shot_data import ShotData
 from app.db.models.ammunition import Ammunition
+from app.db.models.model_run import ModelRun
+from app.db.models.prediction import Prediction
 from app.api.v1.auth import get_current_active_user, get_current_user
 from app.db.models.user import User
 from app.core.config import settings
@@ -190,6 +192,49 @@ def sync_database(
                             setattr(existing, key, value)
             
             local_db.commit()
+            print("Shot data synced successfully")
+            
+            # Sync model runs
+            remote_cursor.execute("SELECT * FROM model_runs")
+            columns = [desc[0] for desc in remote_cursor.description]
+            model_runs_data = remote_cursor.fetchall()
+            print(f"Found {len(model_runs_data)} model run records")
+            
+            for row in model_runs_data:
+                model_run_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in model_run_dict.items() if hasattr(ModelRun, key)}
+                existing = local_db.query(ModelRun).filter(ModelRun.id == valid_columns['id']).first()
+                if not existing:
+                    new_model_run = ModelRun(**valid_columns)
+                    local_db.add(new_model_run)
+                else:
+                    for key, value in valid_columns.items():
+                        if key != 'id' and hasattr(existing, key):
+                            setattr(existing, key, value)
+            
+            local_db.commit()
+            print("Model runs synced successfully")
+            
+            # Sync predictions
+            remote_cursor.execute("SELECT * FROM predictions")
+            columns = [desc[0] for desc in remote_cursor.description]
+            predictions_data = remote_cursor.fetchall()
+            print(f"Found {len(predictions_data)} prediction records")
+            
+            for row in predictions_data:
+                prediction_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in prediction_dict.items() if hasattr(Prediction, key)}
+                existing = local_db.query(Prediction).filter(Prediction.id == valid_columns['id']).first()
+                if not existing:
+                    new_prediction = Prediction(**valid_columns)
+                    local_db.add(new_prediction)
+                else:
+                    for key, value in valid_columns.items():
+                        if key != 'id' and hasattr(existing, key):
+                            setattr(existing, key, value)
+            
+            local_db.commit()
+            print("Predictions synced successfully")
             
             return {"message": "Database sync completed successfully", "synced_records": {
                 "ammunition": len(ammunition_data),
@@ -197,7 +242,9 @@ def sync_database(
                 "vests": len(vests_data),
                 "vest_layers": len(vest_layers_data),
                 "test_sessions": len(test_sessions_data),
-                "shot_data": len(shot_data)
+                "shot_data": len(shot_data),
+                "model_runs": len(model_runs_data),
+                "predictions": len(predictions_data)
             }}
             
         except Exception as e:
@@ -240,24 +287,41 @@ def create_backup(
             # Parse DATABASE_URL to get connection details
             # Format: postgresql://user:password@host:port/database
             if db_url:
-                # Use pg_dump to create a database dump, then compress with gzip
+                # Use pg_dump to create a database dump
                 try:
+                    # Check if pg_dump is available
+                    subprocess.run(['which', 'pg_dump'], capture_output=True, check=True)
+                    
                     subprocess.run(
                         ['pg_dump', db_url, '-f', db_backup_file],
                         check=True,
                         capture_output=True
                     )
-                    # Compress the SQL file with gzip
-                    compressed_file = db_backup_file + '.gz'
-                    subprocess.run(
-                        ['gzip', '-9', db_backup_file],
-                        check=True,
-                        capture_output=True
-                    )
-                    zipf.write(compressed_file, 'database_dump.sql.gz')
-                    os.remove(compressed_file)  # Clean up compressed file
+                    
+                    # Compress the SQL file with gzip if available
+                    try:
+                        subprocess.run(['which', 'gzip'], capture_output=True, check=True)
+                        compressed_file = db_backup_file + '.gz'
+                        subprocess.run(
+                            ['gzip', '-9', db_backup_file],
+                            check=True,
+                            capture_output=True
+                        )
+                        zipf.write(compressed_file, 'database_dump.sql.gz')
+                        os.remove(compressed_file)  # Clean up compressed file
+                    except subprocess.CalledProcessError:
+                        # gzip not available, add uncompressed file
+                        zipf.write(db_backup_file, 'database_dump.sql')
+                    
+                    # Clean up the SQL file if it still exists
+                    if os.path.exists(db_backup_file):
+                        os.remove(db_backup_file)
+                        
                 except subprocess.CalledProcessError as e:
-                    raise HTTPException(status_code=500, detail=f"Database dump failed: {e.stderr.decode()}")
+                    # pg_dump failed, try to provide more detailed error
+                    stderr = e.stderr.decode() if e.stderr else str(e)
+                    print(f"pg_dump failed: {stderr}")
+                    raise HTTPException(status_code=500, detail=f"Database dump failed: {stderr}")
 
             # Add storage files to the zip
             storage_dirs = [
@@ -266,10 +330,30 @@ def create_backup(
                 settings.reports_dir,
                 settings.model_artifacts_dir
             ]
+            
+            # Exclude backups directory from backup to prevent exponential growth
+            backup_dir = os.path.join(settings.upload_dir, 'backups')
 
             for storage_dir in storage_dirs:
                 if os.path.exists(storage_dir):
+                    # Calculate directory size before zipping
+                    dir_size = 0
+                    file_count = 0
                     for root, dirs, files in os.walk(storage_dir):
+                        # Skip backups directory
+                        if backup_dir in root:
+                            continue
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            file_size = os.path.getsize(file_path)
+                            dir_size += file_size
+                            file_count += 1
+                    print(f"Backup: Adding {storage_dir} - {file_count} files, {dir_size / (1024*1024):.2f} MB")
+                    
+                    for root, dirs, files in os.walk(storage_dir):
+                        # Skip backups directory
+                        if backup_dir in root:
+                            continue
                         for file in files:
                             file_path = os.path.join(root, file)
                             arcname = os.path.relpath(file_path, os.path.dirname(storage_dir))
@@ -333,7 +417,10 @@ def download_backup(
         return FileResponse(
             backup_path,
             media_type='application/zip',
-            filename=filename
+            filename=filename,
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"'
+            }
         )
 
     except HTTPException:
@@ -698,7 +785,19 @@ def get_restore_progress(
     if task_id not in restore_progress:
         return {"status": "error", "progress": 0, "message": "Task not found or expired"}
 
-    return restore_progress[task_id]
+    progress = restore_progress[task_id]
+    
+    # Clean up old completed tasks to prevent memory leaks
+    if progress.get("status") in ["completed", "error"]:
+        # Keep for 5 minutes then delete
+        if "completed_at" not in progress:
+            progress["completed_at"] = datetime.now().isoformat()
+        else:
+            completed_time = datetime.fromisoformat(progress["completed_at"])
+            if (datetime.now() - completed_time).total_seconds() > 300:
+                del restore_progress[task_id]
+    
+    return progress
 
 
 @router.get("/version")

@@ -23,7 +23,15 @@ class MaterialBase(BaseModel):
     density_g_cm3: Optional[Decimal] = Field(None, ge=0)
     tensile_strength_mpa: Optional[Decimal] = Field(None, ge=0)
     modulus_gpa: Optional[Decimal] = Field(None, ge=0)
-    elongation_percent: Optional[Decimal] = Field(None, ge=0)
+    elongation_longitudinal_percent: Optional[Decimal] = Field(None, ge=0)
+    elongation_longitudinal_error_percent: Optional[Decimal] = Field(None, ge=0)
+    force_longitudinal_newtons: Optional[Decimal] = Field(None, ge=0)
+    force_longitudinal_error_percent: Optional[Decimal] = Field(None, ge=0)
+    elongation_transverse_percent: Optional[Decimal] = Field(None, ge=0)
+    elongation_transverse_error_percent: Optional[Decimal] = Field(None, ge=0)
+    force_transverse_newtons: Optional[Decimal] = Field(None, ge=0)
+    force_transverse_error_percent: Optional[Decimal] = Field(None, ge=0)
+    stretch_test_length: Optional[str] = None
     material_function: Optional[str] = None
     created_by_username: Optional[str] = None
     mss_file_path: Optional[str] = None
@@ -54,7 +62,15 @@ class MaterialUpdate(BaseModel):
     density_g_cm3: Optional[Decimal] = Field(None, ge=0)
     tensile_strength_mpa: Optional[Decimal] = Field(None, ge=0)
     modulus_gpa: Optional[Decimal] = Field(None, ge=0)
-    elongation_percent: Optional[Decimal] = Field(None, ge=0)
+    elongation_longitudinal_percent: Optional[Decimal] = Field(None, ge=0)
+    elongation_longitudinal_error_percent: Optional[Decimal] = Field(None, ge=0)
+    force_longitudinal_newtons: Optional[Decimal] = Field(None, ge=0)
+    force_longitudinal_error_percent: Optional[Decimal] = Field(None, ge=0)
+    elongation_transverse_percent: Optional[Decimal] = Field(None, ge=0)
+    elongation_transverse_error_percent: Optional[Decimal] = Field(None, ge=0)
+    force_transverse_newtons: Optional[Decimal] = Field(None, ge=0)
+    force_transverse_error_percent: Optional[Decimal] = Field(None, ge=0)
+    stretch_test_length: Optional[str] = None
     material_function: Optional[str] = None
     created_by_username: Optional[str] = None
     mss_file_path: Optional[str] = None
@@ -85,6 +101,15 @@ class MaterialListItem(BaseModel):
     ply_orientations: Optional[List[Decimal]] = None
     areal_density_g_m2: Optional[Decimal]
     thickness_mm: Optional[Decimal]
+    elongation_longitudinal_percent: Optional[Decimal] = None
+    elongation_longitudinal_error_percent: Optional[Decimal] = None
+    force_longitudinal_newtons: Optional[Decimal] = None
+    force_longitudinal_error_percent: Optional[Decimal] = None
+    elongation_transverse_percent: Optional[Decimal] = None
+    elongation_transverse_error_percent: Optional[Decimal] = None
+    force_transverse_newtons: Optional[Decimal] = None
+    force_transverse_error_percent: Optional[Decimal] = None
+    stretch_test_length: Optional[str] = None
     material_function: Optional[str]
     created_by_username: Optional[str]
     mss_file_path: Optional[str]

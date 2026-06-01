@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useMaterials } from '../hooks/useMaterials';
 import { useShots } from '../hooks/useShots';
-import { usePanels } from '../hooks/usePanels';
+import { useVests } from '../hooks/useVests';
 import { useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
@@ -11,7 +11,7 @@ import { normalizeString } from '../utils/string';
 export function Dashboard() {
   const { data: materials } = useMaterials();
   const { data: shots } = useShots();
-  const { data: panels } = usePanels();
+  const { data: vests } = useVests();
   const { isAdmin, role } = useAuth();
   const [stats, setStats] = useState({ test_session_count: 0, total_shots: 0 });
   const [isSyncing, setIsSyncing] = useState(false);
@@ -262,10 +262,10 @@ export function Dashboard() {
   };
 
   const dashboardStats = [
+    { label: 'Total Vests', value: vests?.length || 0, color: 'bg-green-500' },
     { label: 'Total Materials', value: materials?.length || 0, color: 'bg-blue-500' },
-    { label: 'Total Shots', value: stats.total_shots || 0, color: 'bg-purple-500' },
-    { label: 'Total Products', value: panels?.length || 0, color: 'bg-green-500' },
     { label: 'Test Sessions', value: stats.test_session_count || 0, color: 'bg-orange-500' },
+    { label: 'Total Shots', value: stats.total_shots || 0, color: 'bg-purple-500' },
   ];
 
   return (
@@ -337,6 +337,15 @@ export function Dashboard() {
           <div className="space-y-3">
             <Link to="/materials" className="block w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-md text-sm text-gray-700">
               Materials
+            </Link>
+            <Link to="/vests" className="block w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-md text-sm text-gray-700">
+              Vests
+            </Link>
+            <Link to="/analytics" className="block w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-md text-sm text-gray-700">
+              Analytics
+            </Link>
+            <Link to="/predictions" className="block w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-md text-sm text-gray-700">
+              Predictions
             </Link>
             <Link to="/ammunition" className="block w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-md text-sm text-gray-700">
               Ammunition

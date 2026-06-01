@@ -38,6 +38,7 @@ export function Vests() {
     stitch_pattern: '',
     backing_material: '',
     notes: '',
+    created_by_username: '',
     layers: [],
   });
 
@@ -505,8 +506,8 @@ export function Vests() {
 
               return (
                 <tr key={vest.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-sm font-medium text-gray-900 break-words">{vest.vest_code}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.vest_type || '-'}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900 break-words">{vest.vest_code?.toUpperCase()}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.vest_type ? vest.vest_type.charAt(0).toUpperCase() + vest.vest_type.slice(1).toLowerCase() : '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.threat_level || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.total_layers || '-'}</td>
                   <td className="px-6 py-4 text-sm text-gray-500 break-words" title={vest.composition || ''}>{vest.composition || '-'}</td>
