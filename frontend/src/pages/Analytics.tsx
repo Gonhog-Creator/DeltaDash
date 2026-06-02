@@ -19,6 +19,7 @@ interface AnalyticsPoint {
   shot_number: string | null;
   angle_degrees: number | null;
   trauma_qualitative: string | null;
+  is_official: boolean | null;
 }
 
 interface AnalyticsData {
@@ -69,6 +70,7 @@ export function Analytics() {
   // Filters
   const [selectedCalibers, setSelectedCalibers] = useState<string[]>([]);
   const [selectedProtectionLevels, setSelectedProtectionLevels] = useState<string[]>([]);
+  const [selectedIsOfficial, setSelectedIsOfficial] = useState<boolean | null>(null);
 
   if (isLoading) {
     return (
@@ -174,6 +176,11 @@ export function Analytics() {
 
     // Filter by protection level
     if (selectedProtectionLevels.length > 0 && (!p.protection_level || !selectedProtectionLevels.includes(p.protection_level))) {
+      return false;
+    }
+
+    // Filter by is_official
+    if (selectedIsOfficial !== null && p.is_official !== selectedIsOfficial) {
       return false;
     }
 
@@ -294,7 +301,7 @@ export function Analytics() {
 
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Filters</h2>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Ammunition Type (Caliber)</label>
                 <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
@@ -352,6 +359,49 @@ export function Analytics() {
                     className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
                   >
                     Clear protection level filter
+                  </button>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Session Type</label>
+                <div className="space-y-2 border rounded-md p-2">
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      name="isOfficial"
+                      checked={selectedIsOfficial === null}
+                      onChange={() => setSelectedIsOfficial(null)}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="text-sm text-gray-700">All</span>
+                  </label>
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      name="isOfficial"
+                      checked={selectedIsOfficial === false}
+                      onChange={() => setSelectedIsOfficial(false)}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="text-sm text-gray-700">Test Sessions</span>
+                  </label>
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      name="isOfficial"
+                      checked={selectedIsOfficial === true}
+                      onChange={() => setSelectedIsOfficial(true)}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="text-sm text-gray-700">Official Certifications</span>
+                  </label>
+                </div>
+                {selectedIsOfficial !== null && (
+                  <button
+                    onClick={() => setSelectedIsOfficial(null)}
+                    className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
+                  >
+                    Clear session type filter
                   </button>
                 )}
               </div>

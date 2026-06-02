@@ -18,6 +18,7 @@ class AnalyticsPoint(BaseModel):
     shot_number: Optional[str] = None
     angle_degrees: Optional[float] = None  # Angle in degrees
     trauma_qualitative: Optional[str] = None  # Test result (OK, punctured, perforada)
+    is_official: Optional[bool] = None
 
 
 class AnalyticsData(BaseModel):

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { testSessionsApi, TestSessionCreate, TestSessionUpdate } from '../api/test_session';
 
-export function useTestSessions(params?: { skip?: number; limit?: number }) {
+export function useTestSessions(params?: { skip?: number; limit?: number; is_official?: boolean }) {
   return useQuery({
     queryKey: ['testSessions', params],
     queryFn: () => testSessionsApi.list(params),
@@ -31,8 +31,8 @@ export function useCreateFromExcel() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ file, testName, locationId, protocol, vestId, testDate, dateFormat }: { file: File; testName: string; locationId?: string; protocol?: string; vestId?: string; testDate?: string; dateFormat?: string }) =>
-      testSessionsApi.createFromExcel(file, testName, locationId, protocol, vestId, testDate, dateFormat),
+    mutationFn: ({ file, testName, locationId, protocol, vestId, testDate, dateFormat, isOfficial }: { file: File; testName: string; locationId?: string; protocol?: string; vestId?: string; testDate?: string; dateFormat?: string; isOfficial?: boolean }) =>
+      testSessionsApi.createFromExcel(file, testName, locationId, protocol, vestId, testDate, dateFormat, isOfficial),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['testSessions'] });
     },

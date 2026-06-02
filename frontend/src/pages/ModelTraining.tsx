@@ -274,9 +274,7 @@ export function ModelTraining() {
           title="Training Complete"
           message="The ML model has been trained successfully using data from the database."
           confirmLabel="OK"
-          cancelLabel=""
           onConfirm={() => setShowSuccessModal(false)}
-          onCancel={() => setShowSuccessModal(false)}
         />
       )}
 

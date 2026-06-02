@@ -12,6 +12,7 @@ import { Analytics } from './pages/Analytics'
 import { Vests } from './pages/Vests'
 import { BallisticTesting } from './pages/BallisticTesting'
 import { ModelTraining } from './pages/ModelTraining'
+import { OfficialCertifications } from './pages/OfficialCertifications'
 import { ViewerModeProvider } from './contexts/ViewerModeContext'
 
 const queryClient = new QueryClient({
@@ -40,6 +41,7 @@ function App() {
                       <Route path="/materials" element={<Materials />} />
                       <Route path="/ammunition" element={<AmmunitionPage />} />
                       <Route path="/test-sessions" element={<TestSessions />} />
+                      <Route path="/official-certifications" element={<OfficialCertifications />} />
                       <Route path="/test-sessions/:id" element={<TestSessionDetail />} />
                       <Route path="/vests" element={<Vests />} />
                       <Route path="/analytics" element={<Analytics />} />

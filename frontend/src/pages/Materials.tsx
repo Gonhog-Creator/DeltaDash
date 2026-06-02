@@ -23,6 +23,12 @@ export function Materials() {
     return materialClass ? allowedClasses.includes(materialClass) : false;
   };
 
+  const calculateForcePerCm = (force: number | null, testLength: string | null) => {
+    if (!force || !testLength) return null;
+    const lengthInCm = testLength === '5cm' ? 5 : 2.5;
+    return force / lengthInCm;
+  };
+
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Material | null>(null);
@@ -34,6 +40,8 @@ export function Materials() {
   const [showFileReplaceModal, setShowFileReplaceModal] = useState(false);
   const [fileToReplace, setFileToReplace] = useState<{ type: 'mss' | 'sds', file: File } | null>(null);
   const [errorInputValues, setErrorInputValues] = useState<Record<string, string>>({});
+  const [sortField, setSortField] = useState<keyof Material | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [formData, setFormData] = useState<MaterialCreate>({
     name: '',
     material_class: '',
@@ -254,6 +262,41 @@ export function Materials() {
     return requiredFields.every(field => field !== null && field !== undefined && field !== '');
   };
 
+  const handleSort = (field: keyof Material) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const getSortedMaterials = (materials: Material[] | undefined) => {
+    if (!materials || !sortField) return materials;
+    
+    return [...materials].sort((a, b) => {
+      const aValue = a[sortField];
+      const bValue = b[sortField];
+      
+      if (aValue === null || aValue === undefined) return 1;
+      if (bValue === null || bValue === undefined) return -1;
+      
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return sortDirection === 'asc' 
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue);
+      }
+      
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortDirection === 'asc' 
+          ? aValue - bValue
+          : bValue - aValue;
+      }
+      
+      return 0;
+    });
+  };
+
   const evaluateMathExpression = (value: string): number | null => {
     if (!value.trim()) return null;
     
@@ -454,6 +497,11 @@ export function Materials() {
                         onChange={(e) => setFormData({ ...formData, force_longitudinal_newtons: e.target.value ? parseFloat(e.target.value) : null })}
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                       />
+                      {formData.force_longitudinal_newtons && (
+                        <div className="mt-1 text-xs text-gray-600">
+                          Force/cm: {calculateForcePerCm(formData.force_longitudinal_newtons, formData.stretch_test_length)?.toFixed(2) || '-'} N/cm
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700">Longitudinal Force Error (%)</label>
@@ -498,6 +546,11 @@ export function Materials() {
                         onChange={(e) => setFormData({ ...formData, force_transverse_newtons: e.target.value ? parseFloat(e.target.value) : null })}
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                       />
+                      {formData.force_transverse_newtons && (
+                        <div className="mt-1 text-xs text-gray-600">
+                          Force/cm: {calculateForcePerCm(formData.force_transverse_newtons, formData.stretch_test_length)?.toFixed(2) || '-'} N/cm
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700">Transverse Force Error (%)</label>
@@ -710,11 +763,36 @@ export function Materials() {
           <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Class</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Manufacturer</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Areal Density (g/m²)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thickness (mm)</th>
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('name')}
+              >
+                Name {sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('material_class')}
+              >
+                Class {sortField === 'material_class' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('manufacturer')}
+              >
+                Manufacturer {sortField === 'manufacturer' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('areal_density_g_m2')}
+              >
+                Areal Density (g/m²) {sortField === 'areal_density_g_m2' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('thickness_mm')}
+              >
+                Thickness (mm) {sortField === 'thickness_mm' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ply</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Files</th>
               {canViewComplete && !isViewerMode && (
@@ -724,7 +802,7 @@ export function Materials() {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {materials?.map((material) => (
+            {getSortedMaterials(materials)?.map((material) => (
               <tr key={material.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 text-sm font-medium text-gray-900 break-words">{material.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

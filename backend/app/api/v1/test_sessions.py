@@ -26,10 +26,16 @@ router = APIRouter(redirect_slashes=False)
 def list_test_sessions(
     skip: int = 0,
     limit: int = 100,
+    is_official: Optional[bool] = None,
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
 ):
-    test_sessions = db.query(TestSessionModel, VestModel).outerjoin(VestModel, TestSessionModel.vest_id == VestModel.id).order_by(TestSessionModel.name).offset(skip).limit(limit).all()
+    query = db.query(TestSessionModel, VestModel).outerjoin(VestModel, TestSessionModel.vest_id == VestModel.id)
+    
+    if is_official is not None:
+        query = query.filter(TestSessionModel.is_official == is_official)
+    
+    test_sessions = query.order_by(TestSessionModel.name).offset(skip).limit(limit).all()
     
     result = []
     for session, vest in test_sessions:
@@ -51,6 +57,7 @@ def list_test_sessions(
             "vest_code": vest.vest_code if vest else None,
             "excel_file_path": session.excel_file_path,
             "notes": session.notes,
+            "is_official": session.is_official,
             "created_at": session.created_at,
             "updated_at": session.updated_at,
         }
@@ -98,6 +105,7 @@ def extract_date_from_excel(
 @router.post("/bulk-upload", response_model=List[TestSession], status_code=status.HTTP_201_CREATED)
 def bulk_upload_excel(
     excel_files: List[UploadFile] = File(...),
+    is_official: Optional[bool] = Form(False),
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(require_write_access)
 ):
@@ -130,6 +138,7 @@ def bulk_upload_excel(
                 temperature=None,
                 humidity=None,
                 is_full_path=True,
+                is_official=is_official,
             )
             created_sessions.extend(sessions)
         except Exception as e:
@@ -149,6 +158,7 @@ def create_test_session_from_excel(
     vest_id: str = Form(...),
     test_date: Optional[str] = Form(None),
     date_format: Optional[str] = Form(None),  # 'spanish' or 'english' for ambiguous dates
+    is_official: Optional[bool] = Form(False),
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(require_write_access)
 ):
@@ -196,6 +206,7 @@ def create_test_session_from_excel(
         temperature=None,  # Service will extract from parsed data
         humidity=None,    # Service will extract from parsed data
         is_full_path=True,
+        is_official=is_official,
     )
 
 

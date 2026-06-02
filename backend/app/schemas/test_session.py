@@ -20,6 +20,7 @@ class TestSessionBase(BaseModel):
     vest_id: Optional[UUID] = None
     excel_file_path: Optional[str] = None
     notes: Optional[str] = None
+    is_official: Optional[bool] = False
 
 
 class TestSessionCreate(TestSessionBase):
@@ -41,6 +42,7 @@ class TestSessionUpdate(BaseModel):
     vest_id: Optional[UUID] = None
     excel_file_path: Optional[str] = None
     notes: Optional[str] = None
+    is_official: Optional[bool] = None
 
 
 class TestSessionInDB(TestSessionBase):

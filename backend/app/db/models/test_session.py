@@ -23,5 +23,6 @@ class TestSession(Base):
     vest_id = Column(UUID(as_uuid=True), ForeignKey('vests.id'), nullable=True)
     excel_file_path = Column(String)
     notes = Column(String)
+    is_official = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

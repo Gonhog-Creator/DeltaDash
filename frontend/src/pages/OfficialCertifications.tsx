@@ -11,9 +11,9 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { LocationManagementModal } from '../components/LocationManagementModal';
 import { ProtocolManagementModal } from '../components/ProtocolManagementModal';
 
-export function TestSessions() {
+export function OfficialCertifications() {
   const navigate = useNavigate();
-  const { data: testSessions, isLoading, error } = useTestSessions({ is_official: false });
+  const { data: testSessions, isLoading, error } = useTestSessions({ is_official: true });
   const { data: locations } = useLocations();
   const { data: protocols } = useProtocols();
   const { data: vests } = useVests();
@@ -50,7 +50,7 @@ export function TestSessions() {
   const [protocol, setProtocol] = useState('');
   const [selectedVestId, setSelectedVestId] = useState('');
   const [testDate, setTestDate] = useState(new Date().toISOString().split('T')[0]);
-  const [isOfficial, setIsOfficial] = useState(false);
+  const [isOfficial, setIsOfficial] = useState(true);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminModalType, setAdminModalType] = useState<'locations' | 'protocols' | 'bulk-reupload'>('locations');
@@ -182,7 +182,7 @@ export function TestSessions() {
       setProtocol('');
       setSelectedVestId('');
       setTestDate(new Date().toISOString().split('T')[0]);
-      setIsOfficial(false);
+      setIsOfficial(true);
       setShowDateFormatModal(false);
       setDateInfo(null);
     } catch (err: any) {
@@ -243,7 +243,7 @@ export function TestSessions() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Test Sessions</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Official Certifications</h1>
         <div className="flex gap-2">
           {isAdmin && (
             <>
@@ -465,7 +465,7 @@ export function TestSessions() {
             {testSessions?.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
-                  No test sessions found. Click "Upload Excel" to create one.
+                  No official certifications found. Click "Upload Excel" to create one.
                 </td>
               </tr>
             )}
@@ -616,7 +616,7 @@ export function TestSessions() {
             setProtocol('');
             setSelectedVestId('');
             setTestDate(new Date().toISOString().split('T')[0]);
-            setIsOfficial(false);
+            setIsOfficial(true);
           }}
         />
       )}

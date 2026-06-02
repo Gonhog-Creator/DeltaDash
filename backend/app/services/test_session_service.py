@@ -178,6 +178,7 @@ def create_sessions_from_excel_data(
     temperature: Optional[float],
     humidity: Optional[float],
     is_full_path: bool = False,
+    is_official: Optional[bool] = False,
 ) -> List[TestSessionModel]:
     """Create test sessions from Excel file data."""
     import os
@@ -210,7 +211,7 @@ def create_sessions_from_excel_data(
         
         # Multi-sheet file - create separate test sessions for each sheet
         return _create_sessions_from_multi_sheet(
-            db, parsed_data, test_name, location_name, protocol, vest_id, test_date, excel_file_path
+            db, parsed_data, test_name, location_name, protocol, vest_id, test_date, excel_file_path, is_official
         )
     else:
         # Single-sheet file - extract size from sheet name
@@ -263,6 +264,7 @@ def create_sessions_from_excel_data(
                 humidity_percent=humidity,
                 vest_id=vest_id,
                 excel_file_path=excel_file_path,
+                is_official=is_official,
             )
             db.add(parent_session)
             db.commit()
@@ -298,6 +300,7 @@ def create_sessions_from_excel_data(
                     parent_test_group_id=parent_session.id,
                     vest_id=vest_id,
                     excel_file_path=excel_file_path,
+                    is_official=is_official,
                 )
                 db.add(db_test_session)
                 db.commit()
@@ -332,6 +335,7 @@ def create_sessions_from_excel_data(
                 ballistic_limit=conditioning_size.get('ballistic_limit', False),
                 vest_id=vest_id,
                 excel_file_path=excel_file_path,
+                is_official=is_official,
             )
             db.add(db_test_session)
             db.commit()
@@ -362,6 +366,7 @@ def _create_sessions_from_multi_sheet(
     vest_id: Optional[str],
     test_date: Optional[str],
     excel_file_path: str,
+    is_official: Optional[bool] = False,
 ) -> List[TestSessionModel]:
     """Create test sessions from multi-sheet Excel data (parent + child sessions per series per sheet)."""
     # Create parent session
@@ -378,6 +383,7 @@ def _create_sessions_from_multi_sheet(
         humidity_percent=humidity,
         vest_id=vest_id,
         excel_file_path=excel_file_path,
+        is_official=is_official,
     )
     db.add(parent_session)
     db.commit()
@@ -448,6 +454,7 @@ def _create_sessions_from_multi_sheet(
                 parent_test_group_id=parent_session.id,
                 vest_id=vest_id,
                 excel_file_path=excel_file_path,
+                is_official=is_official,
             )
             db.add(db_test_session)
             db.commit()

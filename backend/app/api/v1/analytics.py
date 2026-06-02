@@ -130,6 +130,7 @@ def get_velocity_vs_bfd(
             shot_number=shot.shot_number,
             angle_degrees=angle_degrees_value,
             trauma_qualitative=shot.trauma_qualitative,
+            is_official=test_session.is_official if test_session else None,
         )
         points.append(point)
     

@@ -18,6 +18,7 @@ export interface TestSession {
   vest_code: string | null;
   excel_file_path: string | null;
   notes: string | null;
+  is_official: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -47,10 +48,11 @@ export interface TestSessionUpdate {
 }
 
 export const testSessionsApi = {
-  list: (params?: { skip?: number; limit?: number }) => {
+  list: (params?: { skip?: number; limit?: number; is_official?: boolean }) => {
     const searchParams = new URLSearchParams();
     if (params?.skip) searchParams.append('skip', params.skip.toString());
     if (params?.limit) searchParams.append('limit', params.limit.toString());
+    if (params?.is_official !== undefined) searchParams.append('is_official', params.is_official.toString());
     const query = searchParams.toString();
     return apiClient.get<TestSession[]>(`/api/v1/test-sessions${query ? `?${query}` : ''}`);
   },
@@ -59,7 +61,7 @@ export const testSessionsApi = {
 
   create: (testSession: TestSessionCreate) => apiClient.post<TestSession>('/api/v1/test-sessions', testSession),
 
-  createFromExcel: (file: File, testName: string, locationId?: string, protocol?: string, vestId?: string, testDate?: string, dateFormat?: string) => {
+  createFromExcel: (file: File, testName: string, locationId?: string, protocol?: string, vestId?: string, testDate?: string, dateFormat?: string, isOfficial?: boolean) => {
     const formData = new FormData();
     formData.append('excel_file', file);
     formData.append('test_name', testName);
@@ -77,6 +79,9 @@ export const testSessionsApi = {
     }
     if (dateFormat) {
       formData.append('date_format', dateFormat);
+    }
+    if (isOfficial !== undefined) {
+      formData.append('is_official', isOfficial.toString());
     }
     return apiClient.post<TestSession[]>('/api/v1/test-sessions/from-excel', formData);
   },
