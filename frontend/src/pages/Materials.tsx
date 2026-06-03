@@ -139,21 +139,25 @@ export function Materials() {
   };
 
   const handleFileChange = (type: 'mss' | 'sds', file: File | null) => {
-    if (!file || !editingMaterial) return;
+    if (!file) return;
     
-    // Check if a file already exists
-    const existingFile = type === 'mss' ? editingMaterial.mss_file_path : editingMaterial.sds_file_path;
-    if (existingFile) {
-      setFileToReplace({ type, file });
-      setShowFileReplaceModal(true);
-    } else {
-      if (type === 'mss') {
-        setMssFile(file);
-        setPendingMssDelete(false); // Clear pending delete if uploading
-      } else {
-        setSdsFile(file);
-        setPendingSdsDelete(false); // Clear pending delete if uploading
+    // If editing, check if a file already exists and show replace modal
+    if (editingMaterial) {
+      const existingFile = type === 'mss' ? editingMaterial.mss_file_path : editingMaterial.sds_file_path;
+      if (existingFile) {
+        setFileToReplace({ type, file });
+        setShowFileReplaceModal(true);
+        return;
       }
+    }
+    
+    // Set the file for upload
+    if (type === 'mss') {
+      setMssFile(file);
+      setPendingMssDelete(false); // Clear pending delete if uploading
+    } else {
+      setSdsFile(file);
+      setPendingSdsDelete(false); // Clear pending delete if uploading
     }
   };
 
@@ -268,6 +272,11 @@ export function Materials() {
         material.force_transverse_newtons,
         material.force_transverse_error_percent
       );
+    }
+    
+    // Compressed plates must have fabric composition selected
+    if (material.material_class === 'compressed_plate') {
+      requiredFields.push(material.fabric_composition_ids);
     }
     
     return requiredFields.every(field => field !== null && field !== undefined && field !== '');
