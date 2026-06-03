@@ -176,6 +176,16 @@ export function ModelTraining() {
                   <div className="font-semibold mb-2">Data Health Statistics:</div>
                   <div className="text-sm space-y-1">
                     <div><strong>Total Data Points:</strong> {healthStatus.data_health.total_data_points}</div>
+                    {healthStatus.data_health.material_distribution && (
+                      <div>
+                        <strong>Material Distribution:</strong>
+                        <div className="ml-4 text-xs">
+                          {Object.entries(healthStatus.data_health.material_distribution).map(([material, count]) => (
+                            <div key={material}>{material}: {count}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {healthStatus.data_health.ammunition_distribution && (
                       <div>
                         <strong>Ammunition Distribution:</strong>

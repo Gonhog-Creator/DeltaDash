@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import Plot from 'react-plotly.js';
 import { apiClient } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
+import { VelocityVsBfdChart, EnergyVsVelocityChart, EnergyVsBfdChart } from '../components/AnalyticsCharts';
 
 interface AnalyticsPoint {
   velocity: number | null;
@@ -53,7 +54,7 @@ export function Analytics() {
     queryFn: () => apiClient.get<AnalyticsData>('/api/v1/analytics/velocity-vs-bfd'),
   });
 
-  const [activeTab, setActiveTab] = useState<'builder' | 'velocity-bfd' | 'energy-velocity'>('builder');
+  const [activeTab, setActiveTab] = useState<'builder' | 'velocity-bfd' | 'energy-velocity' | 'energy-bfd'>('builder');
   const [xAxis, setXAxis] = useState<AxisOption>('bfd_mm');
   const [yAxis, setYAxis] = useState<AxisOption>('velocity');
   const [colorGrouping, setColorGrouping] = useState<ColorGroupingOption>('side');
@@ -244,6 +245,16 @@ export function Analytics() {
           >
             Bullet Energy vs Velocity
           </button>
+          <button
+            onClick={() => setActiveTab('energy-bfd')}
+            className={`${
+              activeTab === 'energy-bfd'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+          >
+            Bullet Energy vs BFD
+          </button>
         </nav>
       </div>
 
@@ -253,20 +264,6 @@ export function Analytics() {
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Chart Configuration</h2>
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">X-Axis</label>
-                <select
-                  value={xAxis}
-                  onChange={(e) => handleXAxisChange(e.target.value as AxisOption)}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
-                >
-                  {AXIS_OPTIONS.map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Y-Axis</label>
                 <select
                   value={yAxis}
@@ -274,11 +271,29 @@ export function Analytics() {
                   disabled={xAxis === 'ballistic_limit'}
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border disabled:bg-gray-100 disabled:text-gray-500"
                 >
-                  {AXIS_OPTIONS.map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
+                  {AXIS_OPTIONS.map(option => {
+                    return (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">X-Axis</label>
+                <select
+                  value={xAxis}
+                  onChange={(e) => handleXAxisChange(e.target.value as AxisOption)}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                >
+                  {AXIS_OPTIONS.map(option => {
+                    return (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div>
@@ -289,11 +304,13 @@ export function Analytics() {
                   disabled={xAxis === 'ballistic_limit'}
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border disabled:bg-gray-100 disabled:text-gray-500"
                 >
-                  {COLOR_GROUPING_OPTIONS.map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
+                  {COLOR_GROUPING_OPTIONS.map(option => {
+                    return (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             </div>
@@ -580,329 +597,41 @@ export function Analytics() {
           )}
         </div>
       ) : activeTab === 'energy-velocity' ? (
-        <div className="space-y-6">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Filters</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ammunition Type (Caliber)</label>
-                <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
-                  {uniqueCalibers.map(caliber => (
-                    <label key={caliber} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedCalibers.includes(caliber)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedCalibers([...selectedCalibers, caliber]);
-                          } else {
-                            setSelectedCalibers(selectedCalibers.filter(c => c !== caliber));
-                          }
-                        }}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span className="text-sm text-gray-700">{caliber}</span>
-                    </label>
-                  ))}
-                </div>
-                {selectedCalibers.length > 0 && (
-                  <button
-                    onClick={() => setSelectedCalibers([])}
-                    className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
-                  >
-                    Clear caliber filter
-                  </button>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Protection Level</label>
-                <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
-                  {uniqueProtectionLevels.map(level => (
-                    <label key={level} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedProtectionLevels.includes(level)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedProtectionLevels([...selectedProtectionLevels, level]);
-                          } else {
-                            setSelectedProtectionLevels(selectedProtectionLevels.filter(l => l !== level));
-                          }
-                        }}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span className="text-sm text-gray-700">{level}</span>
-                    </label>
-                  ))}
-                </div>
-                {selectedProtectionLevels.length > 0 && (
-                  <button
-                    onClick={() => setSelectedProtectionLevels([])}
-                    className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
-                  >
-                    Clear protection level filter
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              Bullet Energy vs Velocity
-            </h2>
-            <p className="text-sm text-gray-600 mb-4">
-              Y-axis: Bullet Energy (J)<br />
-              X-axis: Velocity (m/s)
-            </p>
-            
-          {analyticsData && analyticsData.points.length > 0 ? (
-            <div className="h-[600px]">
-              <Plot
-                data={[
-                  {
-                    x: filteredPoints.map(p => p.velocity),
-                    y: filteredPoints.map(p => p.bullet_energy),
-                    mode: 'markers',
-                    type: 'scatter',
-                    marker: {
-                      size: 8,
-                      color: filteredPoints.map(p => p.caliber),
-                      colorscale: 'Viridis',
-                      showscale: true,
-                      colorbar: {
-                        title: 'Caliber',
-                        x: 1.02,
-                      },
-                    },
-                    text: filteredPoints.map(p => 
-                      `Test Session: ${p.test_session_name || p.test_session_id || 'N/A'}<br>Shot: ${p.shot_number || 'N/A'}<br>Vest: ${p.vest_number || 'N/A'}<br>Side: ${p.side ? p.side.charAt(0).toUpperCase() + p.side.slice(1) : 'N/A'}${p.angle_degrees ? ` (${p.angle_degrees}°)` : ''}<br>Caliber: ${p.caliber || 'N/A'}<br>Protection Level: ${p.protection_level || 'N/A'}<br>Velocity: ${p.velocity?.toFixed(2) || 'N/A'} m/s<br>Bullet Energy: ${p.bullet_energy?.toFixed(2) || 'N/A'} J`
-                    ),
-                    hoverinfo: 'text+x+y',
-                    name: 'Shots',
-                  },
-                ]}
-                layout={{
-                  autosize: true,
-                  margin: { t: 40, r: 40, b: 60, l: 80 },
-                  xaxis: {
-                    title: 'Velocity (m/s)',
-                    gridcolor: '#e5e7eb',
-                    zerolinecolor: '#9ca3af',
-                  },
-                  yaxis: {
-                    title: 'Bullet Energy (J)',
-                    gridcolor: '#e5e7eb',
-                    zerolinecolor: '#9ca3af',
-                  },
-                  hovermode: 'closest',
-                  plot_bgcolor: 'rgba(255, 255, 255, 0.8)',
-                  paper_bgcolor: 'white',
-                  font: {
-                    family: 'Inter, sans-serif',
-                  },
-                }}
-                config={{
-                  responsive: true,
-                  displayModeBar: true,
-                  modeBarButtonsToRemove: ['lasso2d', 'select2d'],
-                  displaylogo: false,
-                }}
-                style={{ width: '100%', height: '100%' }}
-              />
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-96">
-              <div className="text-gray-500">No data available</div>
-            </div>
-          )}
-
-          {isAdmin && (
-            <div className="bg-gray-50 rounded-lg shadow p-4 border border-gray-200 mt-4">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-sm font-semibold text-gray-700">Debug Info</h3>
-                <button
-                  onClick={() => {
-                    const data = JSON.stringify(analyticsData?.points || [], null, 2);
-                    navigator.clipboard.writeText(data);
-                  }}
-                  className="text-xs text-indigo-600 hover:text-indigo-800"
-                >
-                  Copy Raw Data
-                </button>
-              </div>
-              <div className="text-xs text-gray-600 space-y-1">
-                <p>Total points in dataset: {analyticsData?.points.length || 0}</p>
-                <p>Filtered points displayed: {filteredPoints.length}</p>
-                <p>Points with bullet energy: {analyticsData?.points.filter(p => p.bullet_energy !== null).length || 0}</p>
-                <p>Points with velocity: {analyticsData?.points.filter(p => p.velocity !== null).length || 0}</p>
-              </div>
-            </div>
-          )}
-        </div>
-        </div>
+        <EnergyVsVelocityChart
+          filteredPoints={filteredPoints}
+          isAdmin={isAdmin}
+          analyticsData={analyticsData}
+          uniqueCalibers={uniqueCalibers}
+          uniqueProtectionLevels={uniqueProtectionLevels}
+          selectedCalibers={selectedCalibers}
+          selectedProtectionLevels={selectedProtectionLevels}
+          setSelectedCalibers={setSelectedCalibers}
+          setSelectedProtectionLevels={setSelectedProtectionLevels}
+        />
+      ) : activeTab === 'energy-bfd' ? (
+        <EnergyVsBfdChart
+          filteredPoints={filteredPoints}
+          isAdmin={isAdmin}
+          analyticsData={analyticsData}
+          uniqueCalibers={uniqueCalibers}
+          uniqueProtectionLevels={uniqueProtectionLevels}
+          selectedCalibers={selectedCalibers}
+          selectedProtectionLevels={selectedProtectionLevels}
+          setSelectedCalibers={setSelectedCalibers}
+          setSelectedProtectionLevels={setSelectedProtectionLevels}
+        />
       ) : (
-        <div className="space-y-6">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Filters</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ammunition Type (Caliber)</label>
-                <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
-                  {uniqueCalibers.map(caliber => (
-                    <label key={caliber} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedCalibers.includes(caliber)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedCalibers([...selectedCalibers, caliber]);
-                          } else {
-                            setSelectedCalibers(selectedCalibers.filter(c => c !== caliber));
-                          }
-                        }}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span className="text-sm text-gray-700">{caliber}</span>
-                    </label>
-                  ))}
-                </div>
-                {selectedCalibers.length > 0 && (
-                  <button
-                    onClick={() => setSelectedCalibers([])}
-                    className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
-                  >
-                    Clear caliber filter
-                  </button>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Protection Level</label>
-                <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
-                  {uniqueProtectionLevels.map(level => (
-                    <label key={level} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedProtectionLevels.includes(level)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedProtectionLevels([...selectedProtectionLevels, level]);
-                          } else {
-                            setSelectedProtectionLevels(selectedProtectionLevels.filter(l => l !== level));
-                          }
-                        }}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span className="text-sm text-gray-700">{level}</span>
-                    </label>
-                  ))}
-                </div>
-                {selectedProtectionLevels.length > 0 && (
-                  <button
-                    onClick={() => setSelectedProtectionLevels([])}
-                    className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
-                  >
-                    Clear protection level filter
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              Velocity vs Back Face Deformation
-            </h2>
-            <p className="text-sm text-gray-600 mb-4">
-              Y-axis: Velocity (m/s)<br />
-              X-axis: Back Face Deformation (mm)
-            </p>
-            
-          {analyticsData && analyticsData.points.length > 0 ? (
-            <div className="h-[600px]">
-              <Plot
-                data={[
-                  {
-                    x: filteredPoints.map(p => p.bfd_mm),
-                    y: filteredPoints.map(p => p.velocity),
-                    mode: 'markers',
-                    type: 'scatter',
-                    marker: {
-                      size: 8,
-                      color: filteredPoints.map(p => p.velocity),
-                      colorscale: 'Viridis',
-                      showscale: true,
-                      colorbar: {
-                        title: 'Velocity (m/s)',
-                        x: 1.02,
-                      },
-                    },
-                    text: filteredPoints.map(p => 
-                      `Test Session: ${p.test_session_name || p.test_session_id || 'N/A'}<br>Shot: ${p.shot_number || 'N/A'}<br>Vest: ${p.vest_number || 'N/A'}<br>Side: ${p.side ? p.side.charAt(0).toUpperCase() + p.side.slice(1) : 'N/A'}${p.angle_degrees ? ` (${p.angle_degrees}°)` : ''}<br>Caliber: ${p.caliber || 'N/A'}<br>Protection Level: ${p.protection_level || 'N/A'}<br>Velocity: ${p.velocity?.toFixed(2) || 'N/A'} m/s<br>BFD: ${p.bfd_mm?.toFixed(2) || 'N/A'} mm`
-                    ),
-                    hoverinfo: 'text+x+y',
-                    name: 'Shots',
-                  },
-                ]}
-                layout={{
-                  autosize: true,
-                  margin: { t: 40, r: 40, b: 60, l: 80 },
-                  xaxis: {
-                    title: 'Back Face Deformation (mm)',
-                    gridcolor: '#e5e7eb',
-                    zerolinecolor: '#9ca3af',
-                  },
-                  yaxis: {
-                    title: 'Velocity (m/s)',
-                    gridcolor: '#e5e7eb',
-                    zerolinecolor: '#9ca3af',
-                  },
-                  hovermode: 'closest',
-                  plot_bgcolor: 'rgba(255, 255, 255, 0.8)',
-                  paper_bgcolor: 'white',
-                  font: {
-                    family: 'Inter, sans-serif',
-                  },
-                }}
-                config={{
-                  responsive: true,
-                  displayModeBar: true,
-                  modeBarButtonsToRemove: ['lasso2d', 'select2d'],
-                  displaylogo: false,
-                }}
-                style={{ width: '100%', height: '100%' }}
-              />
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-96">
-              <div className="text-gray-500">No data available</div>
-            </div>
-          )}
-
-          {isAdmin && (
-            <div className="bg-gray-50 rounded-lg shadow p-4 border border-gray-200 mt-4">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-sm font-semibold text-gray-700">Debug Info</h3>
-                <button
-                  onClick={() => {
-                    const data = JSON.stringify(analyticsData?.points || [], null, 2);
-                    navigator.clipboard.writeText(data);
-                  }}
-                  className="text-xs text-indigo-600 hover:text-indigo-800"
-                >
-                  Copy Raw Data
-                </button>
-              </div>
-              <div className="text-xs text-gray-600 space-y-1">
-                <p>Total points in dataset: {analyticsData?.points.length || 0}</p>
-                <p>Filtered points displayed: {filteredPoints.length}</p>
-                <p>Points with velocity: {analyticsData?.points.filter(p => p.velocity !== null).length || 0}</p>
-                <p>Points with BFD: {analyticsData?.points.filter(p => p.bfd_mm !== null).length || 0}</p>
-              </div>
-            </div>
-          )}
-        </div>
-        </div>
+        <VelocityVsBfdChart
+          filteredPoints={filteredPoints}
+          isAdmin={isAdmin}
+          analyticsData={analyticsData}
+          uniqueCalibers={uniqueCalibers}
+          uniqueProtectionLevels={uniqueProtectionLevels}
+          selectedCalibers={selectedCalibers}
+          selectedProtectionLevels={selectedProtectionLevels}
+          setSelectedCalibers={setSelectedCalibers}
+          setSelectedProtectionLevels={setSelectedProtectionLevels}
+        />
       )}
     </div>
   );

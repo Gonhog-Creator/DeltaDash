@@ -679,12 +679,15 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
     # Save metadata
     # Calculate training data statistics
     material_stats = {}
-    for col in df.columns:
-        if col.startswith('composition_count_'):
-            material_name = col.replace('composition_count_', '').replace('_', ' ').title()
+    for material_name, props in material_properties.items():
+        # Generate the column name for this material
+        prefix = material_name.lower().replace(" ", "_").replace("-", "_")
+        col_name = f'composition_count_{prefix}'
+        
+        if col_name in df.columns:
             try:
                 # Count test shots where material count > 0 (material is present)
-                count = (pd.to_numeric(df[col], errors='coerce') > 0).sum()
+                count = (pd.to_numeric(df[col_name], errors='coerce') > 0).sum()
                 if count > 0:
                     material_stats[material_name] = int(count)
             except:
