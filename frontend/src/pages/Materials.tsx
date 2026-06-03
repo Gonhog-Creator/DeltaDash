@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useMaterials, useCreateMaterial, useUpdateMaterial, useDeleteMaterial, useUploadMaterialFiles, useRemoveMaterialFile } from '../hooks/useMaterials';
-import { Material, MaterialCreate, MaterialUpdate } from '../api/materials';
+import { Material, MaterialCreate, MaterialUpdate, MaterialVestUsageResponse } from '../api/materials';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { normalizeString } from '../utils/string';
 import { useAuth } from '../hooks/useAuth';
 import { useViewerMode } from '../contexts/ViewerModeContext';
+import { materialsApi } from '../api/materials';
 
 export function Materials() {
   const { data: materials, isLoading, error, refetch } = useMaterials();
@@ -46,6 +47,10 @@ export function Materials() {
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
   const [activeFilterField, setActiveFilterField] = useState<'material_class' | 'manufacturer' | null>(null);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
+  const [vestUsage, setVestUsage] = useState<MaterialVestUsageResponse | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [loadingVestUsage, setLoadingVestUsage] = useState(false);
   const [formData, setFormData] = useState<MaterialCreate>({
     name: '',
     material_class: '',
@@ -380,6 +385,27 @@ export function Materials() {
     const evaluated = evaluateMathExpression(value);
     setFormData({ ...formData, [fieldName]: evaluated });
     setErrorInputValues({ ...errorInputValues, [fieldName]: evaluated !== null ? evaluated.toString() : '' });
+  };
+
+  const handleMaterialClick = async (material: Material) => {
+    setSelectedMaterial(material);
+    setShowDetailsModal(true);
+    setLoadingVestUsage(true);
+    try {
+      const usage = await materialsApi.getVestUsage(material.id);
+      setVestUsage(usage);
+    } catch (err) {
+      console.error('Failed to fetch vest usage:', err);
+      setVestUsage(null);
+    } finally {
+      setLoadingVestUsage(false);
+    }
+  };
+
+  const handleCloseDetailsModal = () => {
+    setSelectedMaterial(null);
+    setVestUsage(null);
+    setShowDetailsModal(false);
   };
 
   return (
@@ -885,7 +911,11 @@ export function Materials() {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {getFilteredAndSortedMaterials(materials)?.map((material) => (
-              <tr key={material.id} className="hover:bg-gray-50">
+              <tr 
+                key={material.id} 
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={() => handleMaterialClick(material)}
+              >
                 <td className="px-6 py-4 text-sm font-medium text-gray-900 break-words">{material.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {normalizeString(material.material_class) || '-'}
@@ -902,6 +932,7 @@ export function Materials() {
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-indigo-600 hover:text-indigo-900"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         MSS
                       </a>
@@ -912,6 +943,7 @@ export function Materials() {
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-indigo-600 hover:text-indigo-900"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         SDS
                       </a>
@@ -930,13 +962,19 @@ export function Materials() {
                   {role !== 'viewer' && (
                     <>
                       <button
-                        onClick={() => startEdit(material)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startEdit(material);
+                        }}
                         className="text-indigo-600 hover:text-indigo-900 mr-3"
                       >
                         Edit
                       </button>
                       <button
-                        onClick={() => setDeleteTarget(material)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget(material);
+                        }}
                         className="text-red-600 hover:text-red-900"
                       >
                         Delete
@@ -1023,6 +1061,143 @@ export function Materials() {
             setSelectedFilters([]);
           }}
         />
+      )}
+      {showDetailsModal && selectedMaterial && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={handleCloseDetailsModal} />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Material Details</h3>
+              <button
+                onClick={handleCloseDetailsModal}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+            
+            {/* Material Info */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-gray-700 mb-3">Material Information</h4>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-500">Name:</span>
+                  <span className="ml-2 font-medium">{selectedMaterial.name}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Class:</span>
+                  <span className="ml-2 font-medium">{normalizeString(selectedMaterial.material_class) || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Manufacturer:</span>
+                  <span className="ml-2 font-medium">{selectedMaterial.manufacturer || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Function:</span>
+                  <span className="ml-2 font-medium">{selectedMaterial.material_function || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Thickness:</span>
+                  <span className="ml-2 font-medium">{selectedMaterial.thickness_mm ? `${selectedMaterial.thickness_mm} mm` : '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Ply Count:</span>
+                  <span className="ml-2 font-medium">{selectedMaterial.ply_count ?? '-'}</span>
+                </div>
+                {selectedMaterial.ply_count && selectedMaterial.ply_count > 1 && (
+                  <div>
+                    <span className="text-gray-500">Ply Orientations:</span>
+                    <span className="ml-2 font-medium">{selectedMaterial.ply_orientations ? selectedMaterial.ply_orientations.join(', ') : '-'}</span>
+                  </div>
+                )}
+                <div className="md:col-start-3">
+                  <span className="text-gray-500">Areal Density:</span>
+                  <span className="ml-2 font-medium">
+                    {selectedMaterial.areal_density_g_m2 ? `${selectedMaterial.areal_density_g_m2} g/m² (${(selectedMaterial.areal_density_g_m2 * 0.00204816).toFixed(3)} lb/ft²)` : '-'}
+                  </span>
+                </div>
+              </div>
+              
+              {shouldShowElongationFields(selectedMaterial.material_class) && (
+                <div className="mt-4 pt-4 border-t">
+                  <h5 className="text-xs font-medium text-gray-600 mb-2">Elongation & Force Measurements</h5>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                    <div>
+                      <span className="text-gray-500">Longitudinal Force:</span>
+                      <span className="ml-1">{selectedMaterial.force_longitudinal_newtons ? `${selectedMaterial.force_longitudinal_newtons} N` : '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Longitudinal Force Error:</span>
+                      <span className="ml-1">{selectedMaterial.force_longitudinal_error_percent ? `${selectedMaterial.force_longitudinal_error_percent}%` : '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Longitudinal Elongation:</span>
+                      <span className="ml-1">{selectedMaterial.elongation_longitudinal_percent ? `${selectedMaterial.elongation_longitudinal_percent}%` : '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Longitudinal Error:</span>
+                      <span className="ml-1">{selectedMaterial.elongation_longitudinal_error_percent ? `${selectedMaterial.elongation_longitudinal_error_percent}%` : '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Transverse Force:</span>
+                      <span className="ml-1">{selectedMaterial.force_transverse_newtons ? `${selectedMaterial.force_transverse_newtons} N` : '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Transverse Force Error:</span>
+                      <span className="ml-1">{selectedMaterial.force_transverse_error_percent ? `${selectedMaterial.force_transverse_error_percent}%` : '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Transverse Elongation:</span>
+                      <span className="ml-1">{selectedMaterial.elongation_transverse_percent ? `${selectedMaterial.elongation_transverse_percent}%` : '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Transverse Error:</span>
+                      <span className="ml-1">{selectedMaterial.elongation_transverse_error_percent ? `${selectedMaterial.elongation_transverse_error_percent}%` : '-'}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Vest Usage */}
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 mb-3">Vest Usage</h4>
+              {loadingVestUsage ? (
+                <div className="text-sm text-gray-500">Loading vest usage...</div>
+              ) : vestUsage && vestUsage.total_vests > 0 ? (
+                <div>
+                  <div className="text-sm text-gray-600 mb-2">Used in {vestUsage.total_vests} vest(s)</div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full border border-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Vest Code</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Vest Name</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Type</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Threat Level</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Layers</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {vestUsage.vest_usage.map((vest) => (
+                          <tr key={vest.vest_id} className="border-b">
+                            <td className="px-4 py-2 text-sm">{vest.vest_code}</td>
+                            <td className="px-4 py-2 text-sm">{vest.vest_name || '-'}</td>
+                            <td className="px-4 py-2 text-sm">{vest.vest_type || '-'}</td>
+                            <td className="px-4 py-2 text-sm">{vest.threat_level || '-'}</td>
+                            <td className="px-4 py-2 text-sm font-medium">{vest.layer_count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500">This material is not used in any vests.</div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

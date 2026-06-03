@@ -57,6 +57,16 @@ def get_velocity_vs_bfd(
             return float(match.group(1))
         return None
     
+    # Normalize protection levels
+    def normalize_protection_level(level: str) -> str:
+        if not level:
+            return level
+        level_upper = level.upper().strip()
+        # Map ARG_RB4 to RB4
+        if level_upper == 'ARG_RB4':
+            return 'RB4'
+        return level
+    
     points = []
     for shot, test_session, parent_session in shot_data:
         # Intelligent caliber matching to find correct ammunition
@@ -120,8 +130,8 @@ def get_velocity_vs_bfd(
             velocity=float(shot.velocity_m_s) if shot.velocity_m_s else None,
             bullet_energy=bullet_energy,
             bfd_mm=float(shot.trauma_mm) if shot.trauma_mm else None,
-            caliber=standardized_caliber,
-            protection_level=shot.protection_level,
+            caliber=ammunition.name if ammunition and ammunition.name else standardized_caliber,
+            protection_level=normalize_protection_level(shot.protection_level),
             test_session_id=str(shot.test_session_id) if shot.test_session_id else None,
             test_session_name=test_session.name if test_session else None,
             parent_test_session_name=parent_session.name if parent_session else None,

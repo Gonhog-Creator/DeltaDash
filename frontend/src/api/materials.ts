@@ -103,6 +103,22 @@ export interface MaterialUpdate {
   source_confidence?: string | null;
 }
 
+export interface MaterialVestUsage {
+  vest_id: string;
+  vest_code: string;
+  vest_name: string;
+  vest_type: string;
+  threat_level: string;
+  layer_count: number;
+}
+
+export interface MaterialVestUsageResponse {
+  material_name: string;
+  material_class: string;
+  vest_usage: MaterialVestUsage[];
+  total_vests: number;
+}
+
 export const materialsApi = {
   list: (params?: { skip?: number; limit?: number; material_class?: string; manufacturer?: string }) => {
     const searchParams = new URLSearchParams();
@@ -146,4 +162,6 @@ export const materialsApi = {
   delete: (id: string) => apiClient.delete<void>(`/api/v1/materials/${id}`),
 
   removeFile: (id: string, fileType: 'mss' | 'sds') => apiClient.delete<void>(`/api/v1/materials/${id}/file/${fileType}`),
+
+  getVestUsage: (id: string) => apiClient.get<MaterialVestUsageResponse>(`/api/v1/materials/${id}/vest-usage`),
 };

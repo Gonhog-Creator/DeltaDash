@@ -5,9 +5,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+import os
+import json
 
 from app.db.session import get_db
-from app.services.ml.ballistic_ml import train_from_database, predict, load_metadata, fetch_material_properties, list_model_versions, load_model_version, predict_with_version, predict_with_version_multi_shot, delete_model_version, update_model_name
+from app.services.ml.ballistic_ml import train_from_database, predict, load_metadata, fetch_material_properties, list_model_versions, load_model_version, predict_with_version, predict_with_version_multi_shot, delete_model_version, update_model_name, VERSIONS_DIR
 
 
 router = APIRouter(prefix="/ballistic", tags=["ballistic"])
@@ -100,6 +102,7 @@ class HealthResponse(BaseModel):
     shot_count: int
     vest_count: int
     vest_layer_count: int
+    data_health: Optional[dict] = None
 
 
 # =============================================================================
@@ -147,6 +150,7 @@ def health(db: Session = Depends(get_db)):
             shot_count=shot_data_count,
             vest_count=vest_count,
             vest_layer_count=vest_layer_count,
+            data_health=None,
         )
     
     return HealthResponse(
@@ -160,6 +164,7 @@ def health(db: Session = Depends(get_db)):
         shot_count=shot_data_count,
         vest_count=vest_count,
         vest_layer_count=vest_layer_count,
+        data_health=metadata.get("data_health"),
     )
 
 
@@ -235,6 +240,70 @@ def predict_protocol_endpoint(data: ProtocolPredictionInput, db: Session = Depen
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+
+@router.get("/health/version/{version}", response_model=HealthResponse)
+def health_version(version: str, db: Session = Depends(get_db)):
+    """Check model status for a specific version."""
+    from app.db.models import ShotData, Vest, Material, VestLayer
+    
+    # Load the specific version metadata
+    version_dir = os.path.join(VERSIONS_DIR, version)
+    if not os.path.exists(version_dir):
+        return HealthResponse(
+            status="not_found",
+            trained_at=None,
+            version=None,
+            regression_targets=[],
+            classification_targets=[],
+            feature_count=0,
+            material_count=0,
+            shot_count=0,
+            vest_count=0,
+            vest_layer_count=0,
+            data_health=None,
+        )
+    
+    version_metadata_path = os.path.join(version_dir, "metadata.json")
+    if not os.path.exists(version_metadata_path):
+        return HealthResponse(
+            status="no_metadata",
+            trained_at=None,
+            version=version,
+            regression_targets=[],
+            classification_targets=[],
+            feature_count=0,
+            material_count=0,
+            shot_count=0,
+            vest_count=0,
+            vest_layer_count=0,
+            data_health=None,
+        )
+    
+    with open(version_metadata_path, "r") as f:
+        metadata = json.load(f)
+    
+    material_properties = fetch_material_properties(db)
+    
+    # Get database counts
+    shot_data_count = db.query(ShotData).count()
+    vest_count = db.query(Vest).count()
+    material_count = db.query(Material).count()
+    vest_layer_count = db.query(VestLayer).count()
+    
+    return HealthResponse(
+        status="trained",
+        trained_at=metadata.get("trained_at"),
+        version=metadata.get("version"),
+        regression_targets=metadata.get("regression_targets", []),
+        classification_targets=metadata.get("classification_targets", []),
+        feature_count=len(metadata.get("feature_columns", [])),
+        material_count=len(material_properties),
+        shot_count=shot_data_count,
+        vest_count=vest_count,
+        vest_layer_count=vest_layer_count,
+        data_health=metadata.get("data_health"),
+    )
 
 
 @router.get("/metrics")

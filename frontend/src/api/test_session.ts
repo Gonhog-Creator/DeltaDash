@@ -90,7 +90,10 @@ export const testSessionsApi = {
     return apiClient.post<TestSession[]>('/api/v1/test-sessions/from-excel', formData);
   },
 
-  update: (id: string, testSession: TestSessionUpdate) => apiClient.patch<TestSession>(`/api/v1/test-sessions/${id}`, testSession),
+  update: (id: string, testSession: TestSessionUpdate, cascade?: boolean) => {
+    const query = cascade !== undefined ? `?cascade=${cascade.toString()}` : '';
+    return apiClient.patch<TestSession>(`/api/v1/test-sessions/${id}${query}`, testSession);
+  },
 
   uploadExcel: (id: string, file: File) => {
     const formData = new FormData();

@@ -39,6 +39,16 @@ def fetch_training_data(db: Session, verbose: bool = True) -> tuple[pd.DataFrame
     - material_type: material class/type (aramid, UHMWPE, etc.) if available
     """
     warnings_list = []
+    
+    # Normalize protection levels
+    def normalize_protection_level(level: str) -> str:
+        if not level:
+            return level
+        level_upper = level.upper().strip()
+        # Map ARG_RB4 to RB4
+        if level_upper == 'ARG_RB4':
+            return 'RB4'
+        return level
 
     # Check material properties and warn about missing data
     materials = db.query(Material).all()
@@ -156,7 +166,7 @@ def fetch_training_data(db: Session, verbose: bool = True) -> tuple[pd.DataFrame
             'material_weight_g_m2': total_weight if total_weight > 0 else None,
             'number_of_layers': total_layers if total_layers > 0 else None,
             'ammunition_used': ammunition.name if ammunition else caliber,
-            'threat_level': shot_data_record.protection_level or (vest.threat_level if vest else None),
+            'threat_level': normalize_protection_level(shot_data_record.protection_level or (vest.threat_level if vest else None)),
             'shot_number': int(float(shot_data_record.shot_number)) if shot_data_record.shot_number else None,
             'impact_velocity_mps': float(shot_data_record.velocity_m_s) if shot_data_record.velocity_m_s else None,
             'impact_angle_deg': float(shot_data_record.angle_degrees) if shot_data_record.angle_degrees else None,
@@ -197,8 +207,6 @@ def fetch_training_data(db: Session, verbose: bool = True) -> tuple[pd.DataFrame
     
     # Add statistics to warnings
     warnings_list.append(f"Layer count range: {min(layer_counts) if layer_counts else 0} - {max(layer_counts) if layer_counts else 0} (mean: {sum(layer_counts) / len(layer_counts) if layer_counts else 0:.1f})")
-    warnings_list.append(f"Aramid layer range: {min(aramid_counts) if aramid_counts else 0} - {max(aramid_counts) if aramid_counts else 0} (mean: {sum(aramid_counts) / len(aramid_counts) if aramid_counts else 0:.1f})")
-    warnings_list.append(f"Records with >30 aramid layers: {sum(1 for c in aramid_counts if c > 30)}")
 
     return df, warnings_list
 

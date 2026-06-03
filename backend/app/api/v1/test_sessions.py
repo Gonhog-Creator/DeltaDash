@@ -335,6 +335,7 @@ def get_test_session(
 def update_test_session(
     test_session_id: str,
     test_session_update: TestSessionUpdate,
+    cascade: bool = False,
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(require_write_access)
 ):
@@ -346,8 +347,21 @@ def update_test_session(
     for field, value in update_data.items():
         setattr(test_session, field, value)
     
+    # Cascade protocol update to children if requested
+    if cascade and 'protocol' in update_data:
+        children = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == test_session_id).all()
+        for child in children:
+            child.protocol = update_data['protocol']
+    
     db.commit()
+    
+    # Force refresh for parent and all children
     db.refresh(test_session)
+    if cascade and 'protocol' in update_data:
+        children = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == test_session_id).all()
+        for child in children:
+            db.refresh(child)
+    
     return test_session
 
 

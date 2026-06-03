@@ -40,14 +40,14 @@ export function ModelTraining() {
     }
   };
 
-  const handleCheckHealth = async () => {
-    try {
-      const result = await apiClient.get<any>('/api/v1/ballistic/health');
-      setHealthStatus(result);
-    } catch (err: any) {
-      setError(err.detail || 'Health check failed');
-    }
-  };
+  const handleCheckHealthForVersion = async (version: string) => {
+  try {
+    const result = await apiClient.get<any>(`/api/v1/ballistic/health/version/${version}`);
+    setHealthStatus(result);
+  } catch (err: any) {
+    setError(err.detail || 'Health check failed');
+  }
+};
 
   const handleGetMetrics = async () => {
     try {
@@ -64,16 +64,6 @@ export function ModelTraining() {
       setModelVersions(result.versions || []);
     } catch (err: any) {
       setError(err.detail || 'Failed to fetch versions');
-    }
-  };
-
-  const handleLoadVersion = async (version: string) => {
-    try {
-      await apiClient.post<any>(`/api/v1/ballistic/load-version/${version}`);
-      alert(`Model version ${version} loaded successfully`);
-      handleCheckHealth(); // Refresh health to show current version
-    } catch (err: any) {
-      setError(err.detail || 'Failed to load version');
     }
   };
 
@@ -160,19 +150,7 @@ export function ModelTraining() {
             >
               {loading ? 'Training...' : 'Train Model (From Database)'}
             </button>
-            <button
-              onClick={handleCheckHealth}
-              className="w-full bg-gray-600 text-white py-2 px-4 rounded hover:bg-gray-700"
-            >
-              Check Model Health
-            </button>
-            <button
-              onClick={handleGetMetrics}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
-            >
-              Get Training Metrics
-            </button>
-          </div>
+                      </div>
         </div>
 
         {/* Health Status */}
@@ -193,6 +171,54 @@ export function ModelTraining() {
                 <div><strong>Vests:</strong> {healthStatus.vest_count}</div>
                 <div><strong>Vest Layers:</strong> {healthStatus.vest_layer_count}</div>
               </div>
+              {healthStatus.data_health && (
+                <div className="border-t pt-2 mt-2">
+                  <div className="font-semibold mb-2">Data Health Statistics:</div>
+                  <div className="text-sm space-y-1">
+                    <div><strong>Total Data Points:</strong> {healthStatus.data_health.total_data_points}</div>
+                    {healthStatus.data_health.ammunition_distribution && (
+                      <div>
+                        <strong>Ammunition Distribution:</strong>
+                        <div className="ml-4 text-xs">
+                          {Object.entries(healthStatus.data_health.ammunition_distribution).map(([ammo, count]) => (
+                            <div key={ammo}>{ammo}: {count}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {healthStatus.data_health.protection_level_distribution && (
+                      <div>
+                        <strong>Protection Level Distribution:</strong>
+                        <div className="ml-4 text-xs">
+                          {Object.entries(healthStatus.data_health.protection_level_distribution).map(([level, count]) => (
+                            <div key={level}>{level}: {count}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {healthStatus.data_health.velocity_stats && (
+                      <div>
+                        <strong>Velocity Stats:</strong>
+                        <div className="ml-4 text-xs">
+                          Min: {healthStatus.data_health.velocity_stats.min?.toFixed(1)} m/s, 
+                          Max: {healthStatus.data_health.velocity_stats.max?.toFixed(1)} m/s, 
+                          Mean: {healthStatus.data_health.velocity_stats.mean?.toFixed(1)} m/s
+                        </div>
+                      </div>
+                    )}
+                    {healthStatus.data_health.bfd_stats && (
+                      <div>
+                        <strong>BFD Stats:</strong>
+                        <div className="ml-4 text-xs">
+                          Min: {healthStatus.data_health.bfd_stats.min?.toFixed(1)} mm, 
+                          Max: {healthStatus.data_health.bfd_stats.max?.toFixed(1)} mm, 
+                          Mean: {healthStatus.data_health.bfd_stats.mean?.toFixed(1)} mm
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -212,10 +238,10 @@ export function ModelTraining() {
                   </div>
                   <div className="flex space-x-2">
                     <button
-                      onClick={() => handleLoadVersion(version.version)}
-                      className="px-3 py-1 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700"
+                      onClick={() => handleCheckHealthForVersion(version.version)}
+                      className="px-3 py-1 bg-gray-600 text-white text-sm rounded hover:bg-gray-700"
                     >
-                      Load
+                      Health
                     </button>
                     <button
                       onClick={() => handleEditClick(version.version, version.model_name || version.version)}

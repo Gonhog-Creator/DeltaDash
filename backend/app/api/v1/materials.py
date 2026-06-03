@@ -226,6 +226,55 @@ def upload_material_file(
     return material
 
 
+@router.get("/{material_id}/vest-usage")
+def get_material_vest_usage(
+    material_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user)
+):
+    """Get vests that use this material and layer counts."""
+    from app.db.models import Vest, VestLayer
+    from collections import defaultdict
+    
+    material = db.query(MaterialModel).filter(MaterialModel.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material not found")
+    
+    # Get all vest layers that use this material
+    vest_layers = db.query(VestLayer).filter(VestLayer.material_id == material_id).all()
+    
+    # Group by vest and sum layer counts
+    vest_layer_counts = defaultdict(int)
+    vest_info = {}
+    for vest_layer in vest_layers:
+        vest = db.query(Vest).filter(Vest.id == vest_layer.vest_id).first()
+        if vest:
+            vest_layer_counts[vest.id] += (vest_layer.layer_count or 1)
+            vest_info[vest.id] = {
+                "vest_id": vest.id,
+                "vest_code": vest.vest_code,
+                "vest_name": vest.vest_code,
+                "vest_type": vest.vest_type,
+                "threat_level": vest.threat_level,
+            }
+    
+    # Build final vest usage list with combined layer counts
+    vest_usage = []
+    for vest_id, total_layers in vest_layer_counts.items():
+        if vest_id in vest_info:
+            vest_usage.append({
+                **vest_info[vest_id],
+                "layer_count": total_layers
+            })
+    
+    return {
+        "material_name": material.name,
+        "material_class": material.material_class,
+        "vest_usage": vest_usage,
+        "total_vests": len(vest_usage)
+    }
+
+
 @router.get("/{material_id}/download/{file_type}")
 def download_material_file(
     material_id: str,

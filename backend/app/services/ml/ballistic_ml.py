@@ -677,6 +677,66 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
     display_name = model_name if model_name else version
 
     # Save metadata
+    # Calculate training data statistics
+    material_stats = {}
+    for col in df.columns:
+        if col.startswith('composition_count_'):
+            material_name = col.replace('composition_count_', '').replace('_', ' ').title()
+            try:
+                # Count test shots where material count > 0 (material is present)
+                count = (pd.to_numeric(df[col], errors='coerce') > 0).sum()
+                if count > 0:
+                    material_stats[material_name] = int(count)
+            except:
+                pass
+    
+    ammunition_stats = {}
+    if 'ammunition_used' in df.columns:
+        ammo_counts = df['ammunition_used'].value_counts()
+        for ammo, count in ammo_counts.items():
+            ammunition_stats[ammo] = int(count)
+    
+    velocity_stats = {}
+    if 'impact_velocity_mps' in df.columns:
+        try:
+            velocity_col = pd.to_numeric(df['impact_velocity_mps'], errors='coerce')
+            velocity_stats = {
+                'min': float(velocity_col.min()),
+                'max': float(velocity_col.max()),
+                'mean': float(velocity_col.mean()),
+                'std': float(velocity_col.std()),
+            }
+        except:
+            pass
+    
+    bfd_stats = {}
+    if 'backface_deformation_mm' in df.columns:
+        try:
+            bfd_col = pd.to_numeric(df['backface_deformation_mm'], errors='coerce')
+            bfd_stats = {
+                'min': float(bfd_col.min()),
+                'max': float(bfd_col.max()),
+                'mean': float(bfd_col.mean()),
+                'std': float(bfd_col.std()),
+            }
+        except:
+            pass
+    
+    protection_level_stats = {}
+    if 'threat_level' in df.columns:
+        level_counts = df['threat_level'].value_counts()
+        for level, count in level_counts.items():
+            protection_level_stats[level] = int(count)
+    
+    data_health = {
+        'material_distribution': material_stats,
+        'ammunition_distribution': ammunition_stats,
+        'velocity_stats': velocity_stats,
+        'bfd_stats': bfd_stats,
+        'protection_level_distribution': protection_level_stats,
+        'total_data_points': len(df),
+    }
+    
     metadata = {
         "trained_at": datetime.utcnow().isoformat(),
         "version": version,
@@ -693,6 +753,7 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
         "material_properties": material_properties,
         "warnings": warnings or [],
         "training_data_count": len(df),
+        "data_health": data_health,
     }
 
     # Save version metadata
