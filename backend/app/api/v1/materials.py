@@ -56,6 +56,7 @@ def create_material(
     force_transverse_newtons: Optional[float] = Form(None),
     force_transverse_error_percent: Optional[float] = Form(None),
     stretch_test_length: Optional[str] = Form(None),
+    fabric_composition_ids: Optional[str] = Form(None),
     mss_file: Optional[UploadFile] = File(None),
     sds_file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
@@ -86,6 +87,13 @@ def create_material(
         try:
             import json
             material_data['ply_orientations'] = json.loads(ply_orientations)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    if fabric_composition_ids:
+        try:
+            import json
+            material_data['fabric_composition_ids'] = json.loads(fabric_composition_ids)
         except (json.JSONDecodeError, TypeError):
             pass
 

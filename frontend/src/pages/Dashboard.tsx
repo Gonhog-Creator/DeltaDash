@@ -29,6 +29,11 @@ export function Dashboard() {
   const [restoreTaskId, setRestoreTaskId] = useState<string | null>(null);
   const [restoreProgress, setRestoreProgress] = useState<{status: string, progress: number, message: string} | null>(null);
   const [version, setVersion] = useState<string>('unknown');
+  const [showAlembicModal, setShowAlembicModal] = useState(false);
+  const [alembicStatus, setAlembicStatus] = useState<any>(null);
+  const [loadingAlembic, setLoadingAlembic] = useState(false);
+  const [targetVersion, setTargetVersion] = useState<string>('');
+  const [sqlQuery, setSqlQuery] = useState<string>('');
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -261,6 +266,80 @@ export function Dashboard() {
     }
   };
 
+  const handleFetchAlembicStatus = async () => {
+    setLoadingAlembic(true);
+    try {
+      const status = await apiClient.get('/api/v1/admin/alembic/status');
+      setAlembicStatus(status);
+      if (status.current_versions.length > 0) {
+        setTargetVersion(status.current_versions[0]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch alembic status:', error);
+      alert('Failed to fetch alembic status');
+    } finally {
+      setLoadingAlembic(false);
+    }
+  };
+
+  const handleFixAlembicHeads = async () => {
+    if (!targetVersion) {
+      alert('Please select a target version');
+      return;
+    }
+
+    if (!confirm(`This will set the alembic version to ${targetVersion}. Continue?`)) {
+      return;
+    }
+
+    try {
+      await apiClient.post('/api/v1/admin/alembic/fix-heads', { target_version: targetVersion });
+      alert('Alembic heads fixed successfully');
+      setShowAlembicModal(false);
+      setAlembicStatus(null);
+    } catch (error) {
+      console.error('Failed to fix alembic heads:', error);
+      alert('Failed to fix alembic heads');
+    }
+  };
+
+  const handleRunMigration = async () => {
+    if (!confirm('This will run all pending alembic migrations. Continue?')) {
+      return;
+    }
+
+    try {
+      const response = await apiClient.post('/api/v1/admin/alembic/upgrade');
+      alert(`Migration successful: ${response.message}`);
+      setShowAlembicModal(false);
+      setAlembicStatus(null);
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to run migration:', error);
+      alert('Failed to run migration');
+    }
+  };
+
+  const handleExecuteSql = async () => {
+    if (!sqlQuery.trim()) {
+      alert('Please enter a SQL query');
+      return;
+    }
+
+    if (!confirm('This will execute the SQL directly against the database. This can be dangerous. Continue?')) {
+      return;
+    }
+
+    try {
+      const response = await apiClient.post('/api/v1/admin/alembic/execute-sql', { sql: sqlQuery });
+      alert(`SQL executed: ${response.message}`);
+      setSqlQuery('');
+    } catch (error) {
+      console.error('Failed to execute SQL:', error);
+      alert('Failed to execute SQL');
+    }
+  };
+
   const dashboardStats = [
     { label: 'Total Vests', value: vests?.length || 0, color: 'bg-green-500' },
     { label: 'Total Materials', value: materials?.length || 0, color: 'bg-blue-500' },
@@ -292,6 +371,15 @@ export function Dashboard() {
               className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700"
             >
               Restore Backup
+            </button>
+            <button
+              onClick={() => {
+                setShowAlembicModal(true);
+                handleFetchAlembicStatus();
+              }}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+            >
+              Alembic Management
             </button>
           </div>
         )}
@@ -510,6 +598,98 @@ export function Dashboard() {
             }
           }}
           disabled={restoreConfirmText !== 'confirm' || !selectedBackup || isRestoring}
+        />
+      )}
+      {showAlembicModal && (
+        <ConfirmModal
+          title="Alembic Migration Management"
+          message={
+            <div className="space-y-4">
+              {loadingAlembic ? (
+                <p className="text-sm text-gray-600">Loading alembic status...</p>
+              ) : alembicStatus ? (
+                <div className="space-y-3">
+                  <div className={`p-3 rounded-md ${alembicStatus.multiple_heads ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}`}>
+                    <p className="text-sm font-medium mb-2">
+                      {alembicStatus.multiple_heads ? 'Multiple Heads Detected' : 'Single Head (OK)'}
+                    </p>
+                    <p className="text-xs text-gray-600 mb-1">Current Versions:</p>
+                    <ul className="text-xs text-gray-700 list-disc list-inside">
+                      {alembicStatus.current_versions.map((v: string) => <li key={v}>{v}</li>)}
+                    </ul>
+                  </div>
+                  {alembicStatus.multiple_heads && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 mb-2">Fix Multiple Heads</p>
+                      <p className="text-xs text-gray-500 mb-2">Select the target version to set as the single head:</p>
+                      <select
+                        value={targetVersion}
+                        onChange={(e) => setTargetVersion(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      >
+                        {alembicStatus.current_versions.map((v: string) => (
+                          <option key={v} value={v}>{v}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handleFixAlembicHeads}
+                        className="mt-3 w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
+                      >
+                        Fix Heads
+                      </button>
+                    </div>
+                  )}
+                  <div className="mt-4 pt-4 border-t">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Run Pending Migrations</p>
+                    <p className="text-xs text-gray-500 mb-2">This will run all pending alembic migrations to update the database schema:</p>
+                    <button
+                      onClick={handleRunMigration}
+                      className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                    >
+                      Run Migrations
+                    </button>
+                  </div>
+                  <div className="mt-4 pt-4 border-t">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Execute Custom SQL</p>
+                    <p className="text-xs text-gray-500 mb-2">For manual schema fixes (dangerous - use with caution):</p>
+                    <textarea
+                      value={sqlQuery}
+                      onChange={(e) => setSqlQuery(e.target.value)}
+                      placeholder="ALTER TABLE materials ADD COLUMN fabric_composition_ids JSONB;"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono"
+                      rows={3}
+                    />
+                    <button
+                      onClick={handleExecuteSql}
+                      className="mt-2 w-full px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm"
+                    >
+                      Execute SQL
+                    </button>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">Available Migration Files:</p>
+                    <ul className="text-xs text-gray-600 list-disc list-inside max-h-40 overflow-y-auto">
+                      {alembicStatus.migration_files.map((f: string) => <li key={f}>{f}</li>)}
+                    </ul>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600">No alembic status available</p>
+              )}
+            </div>
+          }
+          confirmLabel="Close"
+          variant="default"
+          onConfirm={() => {
+            setShowAlembicModal(false);
+            setAlembicStatus(null);
+            setTargetVersion('');
+          }}
+          onCancel={() => {
+            setShowAlembicModal(false);
+            setAlembicStatus(null);
+            setTargetVersion('');
+          }}
         />
       )}
     </div>

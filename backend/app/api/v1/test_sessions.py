@@ -606,3 +606,40 @@ def bulk_reupload_all_test_sessions(
         all_created_sessions.extend(created_sessions)
     
     return all_created_sessions
+
+
+@router.post("/update-child-protocols")
+def update_all_child_protocols(
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access)
+):
+    """Update all child test sessions to have the same protocol as their parent (admin only)."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Find all parent test sessions (those with parent_test_group_id = None)
+    parent_sessions = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id.is_(None)).all()
+    
+    updated_count = 0
+    skipped_count = 0
+    
+    for parent in parent_sessions:
+        if not parent.protocol:
+            skipped_count += 1
+            continue
+        
+        # Find all children of this parent
+        children = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == parent.id).all()
+        
+        for child in children:
+            if child.protocol != parent.protocol:
+                child.protocol = parent.protocol
+                updated_count += 1
+            else:
+                skipped_count += 1
+    
+    db.commit()
+    
+    return {
+        "message": f"Updated {updated_count} child sessions, skipped {skipped_count}"
+    }

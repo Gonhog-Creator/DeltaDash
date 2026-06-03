@@ -38,6 +38,7 @@ class MaterialBase(BaseModel):
     sds_file_path: Optional[str] = None
     notes: Optional[str] = None
     source_confidence: Optional[str] = None
+    fabric_composition_ids: Optional[List[str]] = None
 
 
 class MaterialCreate(MaterialBase):
@@ -77,6 +78,7 @@ class MaterialUpdate(BaseModel):
     sds_file_path: Optional[str] = None
     notes: Optional[str] = None
     source_confidence: Optional[str] = None
+    fabric_composition_ids: Optional[List[str]] = None
 
 
 class MaterialInDB(MaterialBase):
@@ -114,6 +116,7 @@ class MaterialListItem(BaseModel):
     created_by_username: Optional[str]
     mss_file_path: Optional[str]
     sds_file_path: Optional[str]
+    fabric_composition_ids: Optional[List[str]] = None
 
     class Config:
         from_attributes = True

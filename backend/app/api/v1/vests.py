@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session, joinedload
 from app.db.session import get_db
 from app.db.models import Vest as VestModel, VestLayer
 from app.db.models.material import Material
+from app.db.models.test_session import TestSession
+from app.db.models.shot_data import ShotData as ShotDataModel
 from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.vest import VestCreate, VestUpdate, Vest, VestListItem, VestLayerCreate
 from app.db.models.user import User as UserModel
@@ -11,6 +13,23 @@ from app.db.models.user import User as UserModel
 
 
 router = APIRouter(redirect_slashes=False)
+
+
+def calculate_vest_thickness(vest_id: str, db: Session) -> Optional[float]:
+    """Calculate total thickness from vest layers."""
+    vest_layers = db.query(VestLayer).filter(VestLayer.vest_id == vest_id).all()
+    if not vest_layers:
+        return None
+    
+    total_thickness = 0.0
+    for layer in vest_layers:
+        if layer.material_id:
+            material = db.query(Material).filter(Material.id == layer.material_id).first()
+            if material and material.thickness_mm:
+                layer_count = layer.layer_count or 1
+                total_thickness += float(material.thickness_mm) * layer_count
+    
+    return round(total_thickness, 3) if total_thickness > 0 else None
 
 
 @router.get("/", response_model=List[VestListItem])
@@ -86,6 +105,11 @@ def create_vest(
             **layer_data.model_dump()
         )
         db.add(layer)
+    
+    # Calculate total thickness from layers
+    calculated_thickness = calculate_vest_thickness(db_vest.id, db)
+    if calculated_thickness is not None:
+        db_vest.total_thickness_mm = calculated_thickness
     
     db.commit()
     db.refresh(db_vest)
@@ -178,6 +202,74 @@ def update_vest_layers(
         )
         db.add(layer)
     
+    # Calculate total thickness from layers
+    calculated_thickness = calculate_vest_thickness(vest_id, db)
+    if calculated_thickness is not None:
+        vest.total_thickness_mm = calculated_thickness
+    
     db.commit()
     
     return db.query(VestLayer).filter(VestLayer.vest_id == vest_id).order_by(VestLayer.layer_index).all()
+
+
+@router.post("/recalculate-thickness")
+def recalculate_all_thicknesses(
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access)
+):
+    """Recalculate total thickness for all vests based on their layers."""
+    vests = db.query(VestModel).all()
+    updated_count = 0
+    
+    for vest in vests:
+        calculated_thickness = calculate_vest_thickness(vest.id, db)
+        if calculated_thickness is not None and vest.total_thickness_mm != calculated_thickness:
+            vest.total_thickness_mm = calculated_thickness
+            updated_count += 1
+    
+    db.commit()
+    return {"message": f"Updated thickness for {updated_count} vests"}
+
+
+@router.get("/{vest_id}/test-sessions")
+def get_vest_test_sessions(
+    vest_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user)
+):
+    """Get all test sessions linked to a vest."""
+    from app.db.models.test_session import TestSession
+    
+    vest = db.query(VestModel).filter(VestModel.id == vest_id).first()
+    if not vest:
+        raise HTTPException(status_code=404, detail="Vest not found")
+    
+    test_sessions = db.query(TestSession).filter(TestSession.vest_id == vest_id, TestSession.parent_test_group_id.is_(None)).all()
+    
+    result = []
+    for session in test_sessions:
+        # Count shots from parent session
+        shot_count = db.query(ShotDataModel).filter(ShotDataModel.test_session_id == session.id).count()
+        
+        # Count shots from all child sessions
+        child_sessions = db.query(TestSession).filter(TestSession.parent_test_group_id == session.id).all()
+        for child in child_sessions:
+            shot_count += db.query(ShotDataModel).filter(ShotDataModel.test_session_id == child.id).count()
+        
+        session_dict = {
+            "id": session.id,
+            "name": session.name,
+            "test_date": session.test_date,
+            "lab_name": session.lab_name,
+            "protocol": session.protocol,
+            "is_official": session.is_official,
+            "certification_number": session.certification_number,
+            "shot_count": shot_count,
+            "created_at": session.created_at,
+        }
+        result.append(session_dict)
+    
+    return {
+        "vest_code": vest.vest_code,
+        "test_sessions": result
+    }

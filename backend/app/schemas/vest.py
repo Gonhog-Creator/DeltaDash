@@ -34,7 +34,6 @@ class VestBase(BaseModel):
     sizes: Optional[Dict[str, float]] = None
     construction_notes: Optional[str] = None
     stitch_pattern: Optional[str] = None
-    backing_material: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -52,7 +51,6 @@ class VestUpdate(BaseModel):
     sizes: Optional[Dict[str, float]] = None
     construction_notes: Optional[str] = None
     stitch_pattern: Optional[str] = None
-    backing_material: Optional[str] = None
     notes: Optional[str] = None
 
 

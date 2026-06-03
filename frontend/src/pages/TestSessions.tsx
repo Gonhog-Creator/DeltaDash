@@ -228,6 +228,20 @@ export function TestSessions() {
     }
   };
 
+  const handleUpdateChildProtocols = async () => {
+    if (!confirm('This will update all child test sessions to match their parent protocols. Continue?')) {
+      return;
+    }
+
+    try {
+      const response = await apiClient.post('/api/v1/test-sessions/update-child-protocols', {});
+      alert(response.message);
+    } catch (err: any) {
+      console.error('Failed to update child protocols:', err);
+      alert(err?.detail || 'Failed to update child protocols. Check console for details.');
+    }
+  };
+
   const toggleGroup = (groupId: string) => {
     setExpandedGroups(prev => {
       const newSet = new Set(prev);
@@ -273,6 +287,12 @@ export function TestSessions() {
                 className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700"
               >
                 Bulk Re-upload
+              </button>
+              <button
+                onClick={handleUpdateChildProtocols}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Update Child Protocols
               </button>
             </>
           )}

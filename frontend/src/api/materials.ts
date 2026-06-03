@@ -34,6 +34,7 @@ export interface Material {
   sds_file_path: string | null;
   notes: string | null;
   source_confidence: string | null;
+  fabric_composition_ids: string[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -68,6 +69,8 @@ export interface MaterialCreate {
   material_function?: string | null;
   notes?: string | null;
   source_confidence?: string | null;
+  fabric_composition_ids?: string[] | null;
+  created_by_username?: string | null;
 }
 
 export interface MaterialUpdate {
@@ -101,6 +104,7 @@ export interface MaterialUpdate {
   created_by_username?: string | null;
   notes?: string | null;
   source_confidence?: string | null;
+  fabric_composition_ids?: string[] | null;
 }
 
 export interface MaterialVestUsage {
@@ -137,7 +141,13 @@ export const materialsApi = {
       const formData = new FormData();
       Object.entries(material).forEach(([key, value]) => {
         if (value !== null && value !== undefined) {
-          formData.append(key, value.toString());
+          if (key === 'fabric_composition_ids' && Array.isArray(value)) {
+            formData.append(key, JSON.stringify(value));
+          } else if (key === 'ply_orientations' && Array.isArray(value)) {
+            formData.append(key, JSON.stringify(value));
+          } else {
+            formData.append(key, value.toString());
+          }
         }
       });
       if (files.mss) formData.append('mss_file', files.mss);

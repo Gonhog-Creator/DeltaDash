@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useVests, useCreateVest, useUpdateVest, useDeleteVest, useUpdateVestLayers } from '../hooks/useVests';
-import { Vest, VestCreate, VestUpdate, VestLayerCreate } from '../api/vests';
+import { Vest, VestCreate, VestUpdate, VestLayerCreate, VestTestSessionsResponse } from '../api/vests';
 import { vestsApi } from '../api/vests';
 import { useMaterials } from '../hooks/useMaterials';
 import { Material } from '../api/materials';
@@ -26,6 +26,10 @@ export function Vests() {
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
   const [activeFilterField, setActiveFilterField] = useState<'vest_type' | 'threat_level' | null>(null);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [selectedVest, setSelectedVest] = useState<Vest | null>(null);
+  const [testSessions, setTestSessions] = useState<VestTestSessionsResponse | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [loadingTestSessions, setLoadingTestSessions] = useState(false);
 
   // Refetch materials when form opens to get latest ply_count values
   useEffect(() => {
@@ -42,7 +46,6 @@ export function Vests() {
     sizes: {},
     construction_notes: '',
     stitch_pattern: '',
-    backing_material: '',
     notes: '',
     created_by_username: '',
     layers: [],
@@ -76,7 +79,6 @@ export function Vests() {
         sizes: {},
         construction_notes: '',
         stitch_pattern: '',
-        backing_material: '',
         notes: '',
         layers: [],
       });
@@ -116,7 +118,6 @@ export function Vests() {
         sizes: {},
         construction_notes: '',
         stitch_pattern: '',
-        backing_material: '',
         notes: '',
         layers: [],
       });
@@ -151,7 +152,6 @@ export function Vests() {
       sizes: fullVest.sizes || {},
       construction_notes: fullVest.construction_notes || '',
       stitch_pattern: fullVest.stitch_pattern || '',
-      backing_material: fullVest.backing_material || '',
       notes: fullVest.notes || '',
       created_by_username: fullVest.created_by_username || '',
       layers: [],
@@ -178,7 +178,6 @@ export function Vests() {
       sizes: {},
       construction_notes: '',
       stitch_pattern: '',
-      backing_material: '',
       notes: '',
       created_by_username: '',
       layers: [],
@@ -280,6 +279,27 @@ export function Vests() {
     return Array.from(new Set(values)).sort();
   };
 
+  const handleVestClick = async (vest: Vest) => {
+    setSelectedVest(vest);
+    setShowDetailsModal(true);
+    setLoadingTestSessions(true);
+    try {
+      const sessions = await vestsApi.getTestSessions(vest.id);
+      setTestSessions(sessions);
+    } catch (err) {
+      console.error('Failed to fetch test sessions:', err);
+      setTestSessions(null);
+    } finally {
+      setLoadingTestSessions(false);
+    }
+  };
+
+  const handleCloseDetailsModal = () => {
+    setSelectedVest(null);
+    setTestSessions(null);
+    setShowDetailsModal(false);
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -315,7 +335,10 @@ export function Vests() {
                 <label className="block text-sm font-medium text-gray-700">Vest Type *</label>
                 <select
                   value={formData.vest_type || ''}
-                  onChange={(e) => setFormData({ ...formData, vest_type: e.target.value })}
+                  onChange={(e) => {
+                    const newType = e.target.value;
+                    setFormData({ ...formData, vest_type: newType, stitch_pattern: newType.toLowerCase() === 'soft' ? formData.stitch_pattern : null });
+                  }}
                   required
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 >
@@ -374,24 +397,17 @@ export function Vests() {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Stitch Pattern</label>
-                <input
-                  type="text"
-                  value={formData.stitch_pattern || ''}
-                  onChange={(e) => setFormData({ ...formData, stitch_pattern: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Backing Material</label>
-                <input
-                  type="text"
-                  value={formData.backing_material || ''}
-                  onChange={(e) => setFormData({ ...formData, backing_material: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                />
-              </div>
+              {formData.vest_type?.toLowerCase() === 'soft' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Stitch Pattern</label>
+                  <input
+                    type="text"
+                    value={formData.stitch_pattern || ''}
+                    onChange={(e) => setFormData({ ...formData, stitch_pattern: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                  />
+                </div>
+              )}
               {editingVest && role === 'admin' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Created By</label>
@@ -632,7 +648,7 @@ export function Vests() {
               }
 
               return (
-                <tr key={vest.id} className="hover:bg-gray-50">
+                <tr key={vest.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => handleVestClick(vest)}>
                   <td className="px-6 py-4 text-sm font-medium text-gray-900 break-words">{vest.vest_code?.toUpperCase()}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.vest_type ? vest.vest_type.charAt(0).toUpperCase() + vest.vest_type.slice(1).toLowerCase() : '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.threat_level || '-'}</td>
@@ -643,13 +659,13 @@ export function Vests() {
                   {role !== 'viewer' && (
                     <>
                       <button
-                        onClick={() => startEdit(vest)}
+                        onClick={(e) => { e.stopPropagation(); startEdit(vest); }}
                         className="text-indigo-600 hover:text-indigo-900 mr-3"
                       >
                         Edit
                       </button>
                       <button
-                        onClick={() => setDeleteTarget(vest)}
+                        onClick={(e) => { e.stopPropagation(); setDeleteTarget(vest); }}
                         className="text-red-600 hover:text-red-900"
                       >
                         Delete
@@ -737,6 +753,96 @@ export function Vests() {
             setSelectedFilters([]);
           }}
         />
+      )}
+      {showDetailsModal && selectedVest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={handleCloseDetailsModal} />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Vest Details</h3>
+              <button
+                onClick={handleCloseDetailsModal}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+            
+            {/* Vest Info */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-gray-700 mb-3">Vest Information</h4>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-500">Vest Code:</span>
+                  <span className="ml-2 font-medium">{selectedVest.vest_code?.toUpperCase()}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Type:</span>
+                  <span className="ml-2 font-medium">{selectedVest.vest_type ? selectedVest.vest_type.charAt(0).toUpperCase() + selectedVest.vest_type.slice(1).toLowerCase() : '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Threat Level:</span>
+                  <span className="ml-2 font-medium">{selectedVest.threat_level || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Total Layers:</span>
+                  <span className="ml-2 font-medium">{selectedVest.total_layers || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Total Thickness:</span>
+                  <span className="ml-2 font-medium">{selectedVest.total_thickness_mm ? `${selectedVest.total_thickness_mm} mm` : '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Protection Class:</span>
+                  <span className="ml-2 font-medium">{selectedVest.protection_class || '-'}</span>
+                </div>
+                {selectedVest.vest_type?.toLowerCase() === 'soft' && (
+                  <div className="md:col-span-2">
+                    <span className="text-gray-500">Stitch Pattern:</span>
+                    <span className="ml-2 font-medium">{selectedVest.stitch_pattern || '-'}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Test Sessions */}
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 mb-3">Test Sessions ({testSessions?.test_sessions.length || 0})</h4>
+              {loadingTestSessions ? (
+                <div className="text-sm text-gray-500">Loading test sessions...</div>
+              ) : testSessions && testSessions.test_sessions.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Test Date</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Lab</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Protocol</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Official</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Shot Count</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {testSessions.test_sessions.map((session) => (
+                        <tr key={session.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 text-sm text-gray-900">{session.name}</td>
+                          <td className="px-4 py-2 text-sm text-gray-500">{session.test_date ? new Date(session.test_date).toLocaleDateString() : '-'}</td>
+                          <td className="px-4 py-2 text-sm text-gray-500">{session.lab_name || '-'}</td>
+                          <td className="px-4 py-2 text-sm text-gray-500">{session.protocol || '-'}</td>
+                          <td className="px-4 py-2 text-sm text-gray-500">{session.is_official ? 'Yes' : 'No'}</td>
+                          <td className="px-4 py-2 text-sm text-gray-500">{session.shot_count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500">No test sessions found for this vest.</div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

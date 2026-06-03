@@ -26,7 +26,6 @@ export interface Vest {
   sizes: Record<string, number> | null;
   construction_notes: string | null;
   stitch_pattern: string | null;
-  backing_material: string | null;
   notes: string | null;
   created_by_username: string | null;
   created_at: string;
@@ -43,7 +42,6 @@ export interface VestCreate {
   sizes?: Record<string, number> | null;
   construction_notes?: string | null;
   stitch_pattern?: string | null;
-  backing_material?: string | null;
   notes?: string | null;
   created_by_username?: string | null;
   layers?: VestLayerCreate[];
@@ -58,7 +56,6 @@ export interface VestUpdate {
   sizes?: Record<string, number> | null;
   construction_notes?: string | null;
   stitch_pattern?: string | null;
-  backing_material?: string | null;
   notes?: string | null;
   created_by_username?: string | null;
 }
@@ -73,6 +70,23 @@ export interface VestListItem {
   sizes: Record<string, number> | null;
   created_by_username: string | null;
   composition: string | null;
+}
+
+export interface VestTestSession {
+  id: string;
+  name: string;
+  test_date: string | null;
+  lab_name: string | null;
+  protocol: string | null;
+  is_official: boolean | null;
+  certification_number: string | null;
+  shot_count: number;
+  created_at: string;
+}
+
+export interface VestTestSessionsResponse {
+  vest_code: string;
+  test_sessions: VestTestSession[];
 }
 
 export const vestsApi = {
@@ -97,4 +111,6 @@ export const vestsApi = {
   getLayers: (id: string) => apiClient.get<VestLayer[]>(`/api/v1/vests/${id}/layers`),
 
   updateLayers: (id: string, layers: VestLayerCreate[]) => apiClient.put<VestLayer[]>(`/api/v1/vests/${id}/layers`, layers),
+
+  getTestSessions: (id: string) => apiClient.get<VestTestSessionsResponse>(`/api/v1/vests/${id}/test-sessions`),
 };

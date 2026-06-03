@@ -45,5 +45,6 @@ class Material(Base):
     sds_original_filename = Column(String)
     notes = Column(String)
     source_confidence = Column(String)
+    fabric_composition_ids = Column(JSONB, nullable=True)  # Array of material IDs for compressed plate fabrics
     created_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

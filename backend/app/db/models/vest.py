@@ -19,7 +19,6 @@ class Vest(Base):
     sizes = Column(JSON)
     construction_notes = Column(String)
     stitch_pattern = Column(String)
-    backing_material = Column(String)
     notes = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

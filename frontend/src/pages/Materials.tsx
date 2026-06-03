@@ -70,6 +70,7 @@ export function Materials() {
     force_transverse_newtons: null,
     force_transverse_error_percent: null,
     stretch_test_length: '5cm',
+    fabric_composition_ids: null,
   });
 
   if (isLoading) return <div>Loading...</div>;
@@ -83,7 +84,7 @@ export function Materials() {
       if (sdsFile) files.sds = sdsFile;
       await createMutation.mutateAsync({ material: formData, files });
       setShowCreateForm(false);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', created_by_username: '' });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null, created_by_username: '' });
       setErrorInputValues({});
       setMssFile(null);
       setSdsFile(null);
@@ -125,7 +126,7 @@ export function Materials() {
       refetch();
 
       setEditingMaterial(null);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm' });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null });
       setErrorInputValues({});
       setMssFile(null);
       setSdsFile(null);
@@ -226,6 +227,7 @@ export function Materials() {
       force_transverse_newtons: material.force_transverse_newtons,
       force_transverse_error_percent: material.force_transverse_error_percent,
       stretch_test_length: material.stretch_test_length || '5cm',
+      fabric_composition_ids: material.fabric_composition_ids,
       created_by_username: material.created_by_username,
     });
     setErrorInputValues({
@@ -238,7 +240,7 @@ export function Materials() {
 
   const cancelEdit = () => {
     setEditingMaterial(null);
-    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm' });
+    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null });
     setErrorInputValues({});
     setMssFile(null);
     setSdsFile(null);
@@ -456,6 +458,7 @@ export function Materials() {
                   <option value="steel">Steel</option>
                   <option value="foam">Foam</option>
                   <option value="rubber">Rubber</option>
+                  <option value="compressed_plate">Compressed Plate</option>
                   <option value="other">Other</option>
                 </select>
               </div>
@@ -697,6 +700,40 @@ export function Materials() {
                 </div>
               </div>
             )}
+              {formData.material_class === 'compressed_plate' && (
+                <div className="md:col-span-2">
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">Fabric Composition</h3>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Select Fabrics</label>
+                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto border rounded-md p-2">
+                      {materials?.filter(m => 
+                        m.material_class === 'fabric' || 
+                        m.material_class === 'aramid' || 
+                        m.material_class === 'UHMWPE'
+                      ).map(fabric => (
+                        <label key={fabric.id} className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={formData.fabric_composition_ids?.includes(fabric.id) || false}
+                            onChange={(e) => {
+                              const currentIds = formData.fabric_composition_ids || [];
+                              if (e.target.checked) {
+                                setFormData({ ...formData, fabric_composition_ids: [...currentIds, fabric.id] });
+                              } else {
+                                setFormData({ ...formData, fabric_composition_ids: currentIds.filter(id => id !== fabric.id) });
+                              }
+                            }}
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-sm text-gray-700">{fabric.name}</span>
+                          <span className="text-xs text-gray-500">({fabric.material_class})</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">Select the fabrics that make up this compressed plate</p>
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700">MSS (Material Specification Sheet)</label>
                 {editingMaterial && editingMaterial.mss_file_path && !pendingMssDelete && (

@@ -26,6 +26,7 @@ import threading
 from typing import Optional, Dict
 from datetime import datetime
 import uuid
+from sqlalchemy import text
 
 router = APIRouter()
 
@@ -884,3 +885,138 @@ def get_version(
     except Exception as e:
         # If git is not available or fails, return default version
         return {"version": "1.0.0"}
+
+
+@router.get("/alembic/status")
+def get_alembic_status(
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get the current alembic migration status."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        db: Session = SessionLocal()
+        try:
+            # Get current version from alembic_version table
+            result = db.execute(text("SELECT version_num FROM alembic_version"))
+            versions = [row[0] for row in result.fetchall()]
+            
+            # Get migration files - fix path calculation
+            # The migrations directory is at backend/migrations/versions
+            # admin.py is at backend/app/api/v1/admin.py
+            # So we need to go up 3 levels from __file__ to get to backend, then into migrations/versions
+            backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+            migrations_dir = os.path.join(backend_dir, 'migrations', 'versions')
+            
+            migration_files = []
+            if os.path.exists(migrations_dir):
+                migration_files = [f for f in os.listdir(migrations_dir) if f.endswith('.py') and not f.startswith('__')]
+            else:
+                # Try alternative path
+                migrations_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'migrations', 'versions'))
+                if os.path.exists(migrations_dir):
+                    migration_files = [f for f in os.listdir(migrations_dir) if f.endswith('.py') and not f.startswith('__')]
+            
+            return {
+                "current_versions": versions,
+                "migration_files": migration_files,
+                "multiple_heads": len(versions) > 1
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to get alembic status: {str(e)}")
+
+
+@router.post("/alembic/fix-heads")
+def fix_alembic_heads(
+    target_version: str = Body(..., embed=True),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Fix alembic migration heads by setting a single head."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        db: Session = SessionLocal()
+        try:
+            # Delete all rows from alembic_version
+            db.execute(text("DELETE FROM alembic_version"))
+            
+            # Insert the target version
+            db.execute(text("INSERT INTO alembic_version (version_num) VALUES (:version)"), {"version": target_version})
+            
+            db.commit()
+            return {"message": f"Alembic heads fixed. Set to version: {target_version}"}
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to fix alembic heads: {str(e)}")
+        finally:
+            db.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fix alembic heads: {str(e)}")
+
+
+@router.post("/alembic/upgrade")
+def run_alembic_upgrade(
+    current_user: User = Depends(get_current_active_user)
+):
+    """Manually run alembic upgrade to head."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        from alembic.config import Config
+        from alembic.command import upgrade
+        
+        # Create alembic config
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        config = Config(os.path.join(backend_dir, 'alembic.ini'))
+        config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL"))
+        config.set_main_option("script_location", os.path.join(backend_dir, 'migrations'))
+        
+        # Run the upgrade
+        upgrade(config, "head")
+        
+        return {"message": "Migration successful"}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")
+
+
+@router.post("/alembic/execute-sql")
+def execute_sql(
+    sql: str = Body(..., embed=True),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Execute a custom SQL statement against the database."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        db: Session = SessionLocal()
+        try:
+            result = db.execute(text(sql))
+            db.commit()
+            
+            # Get the results if it's a SELECT query
+            if sql.strip().upper().startswith('SELECT'):
+                rows = result.fetchall()
+                columns = result.keys()
+                return {
+                    "message": "Query executed successfully",
+                    "rows": [dict(zip(columns, row)) for row in rows]
+                }
+            else:
+                return {"message": f"SQL executed successfully. Rows affected: {result.rowcount}"}
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"SQL execution failed: {str(e)}")
+        finally:
+            db.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SQL execution failed: {str(e)}")
