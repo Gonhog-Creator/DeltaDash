@@ -36,6 +36,8 @@ class MaterialBase(BaseModel):
     created_by_username: Optional[str] = None
     mss_file_path: Optional[str] = None
     sds_file_path: Optional[str] = None
+    mss_original_filename: Optional[str] = None
+    sds_original_filename: Optional[str] = None
     notes: Optional[str] = None
     source_confidence: Optional[str] = None
     fabric_composition_ids: Optional[List[str]] = None
@@ -76,6 +78,8 @@ class MaterialUpdate(BaseModel):
     created_by_username: Optional[str] = None
     mss_file_path: Optional[str] = None
     sds_file_path: Optional[str] = None
+    mss_original_filename: Optional[str] = None
+    sds_original_filename: Optional[str] = None
     notes: Optional[str] = None
     source_confidence: Optional[str] = None
     fabric_composition_ids: Optional[List[str]] = None
@@ -116,6 +120,8 @@ class MaterialListItem(BaseModel):
     created_by_username: Optional[str]
     mss_file_path: Optional[str]
     sds_file_path: Optional[str]
+    mss_original_filename: Optional[str] = None
+    sds_original_filename: Optional[str] = None
     fabric_composition_ids: Optional[List[str]] = None
 
     class Config:

@@ -32,6 +32,8 @@ export interface Material {
   created_by_username: string | null;
   mss_file_path: string | null;
   sds_file_path: string | null;
+  mss_original_filename: string | null;
+  sds_original_filename: string | null;
   notes: string | null;
   source_confidence: string | null;
   fabric_composition_ids: string[] | null;
