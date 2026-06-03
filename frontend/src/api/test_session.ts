@@ -19,6 +19,7 @@ export interface TestSession {
   excel_file_path: string | null;
   notes: string | null;
   is_official: boolean;
+  certification_number: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -61,7 +62,7 @@ export const testSessionsApi = {
 
   create: (testSession: TestSessionCreate) => apiClient.post<TestSession>('/api/v1/test-sessions', testSession),
 
-  createFromExcel: (file: File, testName: string, locationId?: string, protocol?: string, vestId?: string, testDate?: string, dateFormat?: string, isOfficial?: boolean) => {
+  createFromExcel: (file: File, testName: string, locationId?: string, protocol?: string, vestId?: string, testDate?: string, dateFormat?: string, isOfficial?: boolean, certificationNumber?: string) => {
     const formData = new FormData();
     formData.append('excel_file', file);
     formData.append('test_name', testName);
@@ -82,6 +83,9 @@ export const testSessionsApi = {
     }
     if (isOfficial !== undefined) {
       formData.append('is_official', isOfficial.toString());
+    }
+    if (certificationNumber !== undefined) {
+      formData.append('certification_number', certificationNumber);
     }
     return apiClient.post<TestSession[]>('/api/v1/test-sessions/from-excel', formData);
   },

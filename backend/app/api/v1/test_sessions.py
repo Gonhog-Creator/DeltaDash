@@ -58,6 +58,7 @@ def list_test_sessions(
             "excel_file_path": session.excel_file_path,
             "notes": session.notes,
             "is_official": session.is_official,
+            "certification_number": session.certification_number,
             "created_at": session.created_at,
             "updated_at": session.updated_at,
         }
@@ -159,6 +160,7 @@ def create_test_session_from_excel(
     test_date: Optional[str] = Form(None),
     date_format: Optional[str] = Form(None),  # 'spanish' or 'english' for ambiguous dates
     is_official: Optional[bool] = Form(False),
+    certification_number: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(require_write_access)
 ):
@@ -207,6 +209,7 @@ def create_test_session_from_excel(
         humidity=None,    # Service will extract from parsed data
         is_full_path=True,
         is_official=is_official,
+        certification_number=certification_number,
     )
 
 
@@ -254,6 +257,8 @@ def update_session_vest(
         "vest_code": vest.vest_code if vest else None,
         "excel_file_path": session.excel_file_path,
         "notes": session.notes,
+        "is_official": session.is_official,
+        "certification_number": session.certification_number,
         "created_at": session.created_at,
         "updated_at": session.updated_at,
     }
@@ -318,6 +323,8 @@ def get_test_session(
         } if vest else None,
         "excel_file_path": session.excel_file_path,
         "notes": session.notes,
+        "is_official": session.is_official,
+        "certification_number": session.certification_number,
         "created_at": session.created_at,
         "updated_at": session.updated_at,
     }

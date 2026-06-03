@@ -31,8 +31,8 @@ export function useCreateFromExcel() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ file, testName, locationId, protocol, vestId, testDate, dateFormat, isOfficial }: { file: File; testName: string; locationId?: string; protocol?: string; vestId?: string; testDate?: string; dateFormat?: string; isOfficial?: boolean }) =>
-      testSessionsApi.createFromExcel(file, testName, locationId, protocol, vestId, testDate, dateFormat, isOfficial),
+    mutationFn: ({ file, testName, locationId, protocol, vestId, testDate, dateFormat, isOfficial, certificationNumber }: { file: File; testName: string; locationId?: string; protocol?: string; vestId?: string; testDate?: string; dateFormat?: string; isOfficial?: boolean; certificationNumber?: string }) =>
+      testSessionsApi.createFromExcel(file, testName, locationId, protocol, vestId, testDate, dateFormat, isOfficial, certificationNumber),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['testSessions'] });
     },

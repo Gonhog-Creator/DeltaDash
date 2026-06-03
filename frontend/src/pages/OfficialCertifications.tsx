@@ -50,6 +50,7 @@ export function OfficialCertifications() {
   const [protocol, setProtocol] = useState('');
   const [selectedVestId, setSelectedVestId] = useState('');
   const [testDate, setTestDate] = useState(new Date().toISOString().split('T')[0]);
+  const [certificationNumber, setCertificationNumber] = useState('');
   const [isOfficial, setIsOfficial] = useState(true);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [showAdminModal, setShowAdminModal] = useState(false);
@@ -174,10 +175,12 @@ export function OfficialCertifications() {
         testDate: testDate || undefined,
         dateFormat: dateFormat || undefined,
         isOfficial: isOfficial,
+        certificationNumber: certificationNumber || undefined,
       });
       setShowCreateFromExcel(false);
       setExcelFile(null);
       setTestName('');
+      setCertificationNumber('');
       setSelectedLocationId('');
       setProtocol('');
       setSelectedVestId('');
@@ -306,6 +309,7 @@ export function OfficialCertifications() {
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Protocol</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vest</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Cond.</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cert. #</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Excel</th>
                 <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
@@ -348,6 +352,7 @@ export function OfficialCertifications() {
                       {parent.vest_code ? (parent.vest_code.length > 15 ? parent.vest_code.substring(0, 15) + '...' : parent.vest_code) : '-'}
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={formatConditioning(parent.conditioning)}>{formatConditioning(parent.conditioning)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.certification_number || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
                       {role !== 'viewer' && (
                         parent.excel_file_path ? (
@@ -411,6 +416,7 @@ export function OfficialCertifications() {
                         {child.vest_code ? (child.vest_code.length > 15 ? child.vest_code.substring(0, 15) + '...' : child.vest_code) : '-'}
                       </td>
                       <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={formatConditioning(child.conditioning)}>{formatConditioning(child.conditioning)}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{child.certification_number || '-'}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
                         {role !== 'viewer' && (
                           child.excel_file_path ? (
@@ -464,7 +470,7 @@ export function OfficialCertifications() {
             })}
             {testSessions?.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={9} className="px-6 py-4 text-center text-sm text-gray-500">
                   No official certifications found. Click "Upload Excel" to create one.
                 </td>
               </tr>
@@ -510,7 +516,7 @@ export function OfficialCertifications() {
 
       {showCreateFromExcel && (
         <ConfirmModal
-          title="Create Test Session from Excel"
+          title="Create Official Certification"
           message={
             <div className="space-y-4">
               <div>
@@ -535,6 +541,16 @@ export function OfficialCertifications() {
                   onChange={(e) => setTestName(e.target.value)}
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
                   placeholder="Enter test name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Certification Number</label>
+                <input
+                  type="text"
+                  value={certificationNumber}
+                  onChange={(e) => setCertificationNumber(e.target.value)}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  placeholder="Enter certification number"
                 />
               </div>
               <div>
@@ -592,17 +608,6 @@ export function OfficialCertifications() {
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
                 />
               </div>
-              <div>
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={isOfficial}
-                    onChange={(e) => setIsOfficial(e.target.checked)}
-                    className="mr-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Official Certification</span>
-                </label>
-              </div>
             </div>
           }
           confirmLabel="Create"
@@ -612,6 +617,7 @@ export function OfficialCertifications() {
             setShowCreateFromExcel(false);
             setExcelFile(null);
             setTestName('');
+            setCertificationNumber('');
             setSelectedLocationId('');
             setProtocol('');
             setSelectedVestId('');
@@ -961,16 +967,7 @@ export function OfficialCertifications() {
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Operator</label>
-                    <input
-                      type="text"
-                      value={editTarget.operator || ''}
-                      onChange={(e) => setEditTarget({ ...editTarget, operator: e.target.value || null })}
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
-                    />
-                  </div>
-                  <div>
+                                    <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Protocol</label>
                     <select
                       value={editTarget.protocol || ''}
@@ -1018,6 +1015,15 @@ export function OfficialCertifications() {
                   </select>
                 </div>
               )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Certification Number</label>
+                <input
+                  type="text"
+                  value={editTarget.certification_number || ''}
+                  onChange={(e) => setEditTarget({ ...editTarget, certification_number: e.target.value || null })}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                />
+              </div>
               {editTarget.parent_test_group_id && (
                 <>
                   <div>
@@ -1063,13 +1069,13 @@ export function OfficialCertifications() {
                   name: editTarget.name,
                   test_date: editTarget.test_date,
                   lab_name: editTarget.lab_name,
-                  operator: editTarget.operator,
                   protocol: editTarget.protocol,
                   vest_id: editTarget.vest_id,
                   conditioning: editTarget.conditioning,
                   ambient_temperature_c: editTarget.ambient_temperature_c,
                   humidity_percent: editTarget.humidity_percent,
                   notes: editTarget.notes,
+                  certification_number: editTarget.certification_number,
                 }
               });
               setEditTarget(null);

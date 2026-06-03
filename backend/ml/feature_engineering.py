@@ -40,18 +40,21 @@ class FeatureEngineer:
         # Environmental features
         features.update(self._extract_environmental_features(shot))
         
+        # Panel side feature
+        features['panel_side'] = getattr(shot, 'panel_side', 'front')
+        
         return features
     
     def _extract_projectile_features(self, shot: ShotData) -> Dict:
         """Extract projectile-related features"""
         features = {}
         
-        # Caliber
-        features['caliber'] = shot.caliber or 'unknown'
+        # Caliber / ammunition used
+        features['ammunition_used'] = shot.caliber or 'unknown'
         
         # Velocity
         velocity_m_s = float(shot.velocity_m_s) if shot.velocity_m_s else 0
-        features['velocity_m_s'] = velocity_m_s
+        features['impact_velocity_mps'] = velocity_m_s
         
         # Get ammunition info from caliber
         ammo = self.db.query(Ammunition).filter(Ammunition.caliber == shot.caliber).first()
@@ -61,25 +64,19 @@ class FeatureEngineer:
             if ammo.projectile_mass_grains:
                 features['projectile_mass_grains'] = float(ammo.projectile_mass_grains)
             if ammo.projectile_mass_grams:
-                features['projectile_mass_grams'] = float(ammo.projectile_mass_grams)
+                features['bullet_mass_g'] = float(ammo.projectile_mass_grams)
             elif ammo.projectile_mass_grains:
-                features['projectile_mass_grams'] = float(ammo.projectile_mass_grains) / 15.432
+                features['bullet_mass_g'] = float(ammo.projectile_mass_grains) / 15.432
             # Use nominal velocity if measured not available
             if velocity_m_s == 0 and ammo.nominal_velocity_m_s:
                 velocity_m_s = float(ammo.nominal_velocity_m_s)
-                features['velocity_m_s'] = velocity_m_s
+                features['impact_velocity_mps'] = velocity_m_s
         else:
             features['projectile_mass_grains'] = 0
-            features['projectile_mass_grams'] = 0
-        
-        # Derived features
-        projectile_mass_g = features.get('projectile_mass_grams', 0) / 1000.0
-        features['kinetic_energy_joules'] = 0.5 * projectile_mass_g * (velocity_m_s ** 2) if projectile_mass_g > 0 else 0
-        features['momentum'] = projectile_mass_g * velocity_m_s if projectile_mass_g > 0 else 0
-        features['strain_rate_indicator'] = velocity_m_s
+            features['bullet_mass_g'] = 0
         
         # Impact angle
-        features['impact_angle_degrees'] = float(shot.angle_degrees) if shot.angle_degrees else 0
+        features['impact_angle_deg'] = float(shot.angle_degrees) if shot.angle_degrees else 0
         
         # Projectile type
         features['projectile_type'] = ammo.projectile_type if ammo and ammo.projectile_type else 'unknown'
@@ -90,12 +87,12 @@ class FeatureEngineer:
         """Extract vest-related features by vest number"""
         features = {}
         
-        # Try to find vest by number/name
-        vest = self.db.query(Vest).filter(Vest.name == vest_number).first()
+        # Try to find vest by vest_code
+        vest = self.db.query(Vest).filter(Vest.vest_code == vest_number).first()
         
         if vest:
             # Basic vest data
-            features['total_layers'] = vest.total_layers if vest.total_layers else 0
+            features['number_of_layers'] = vest.total_layers if vest.total_layers else 0
             features['total_thickness_mm'] = float(vest.total_thickness_mm) if vest.total_thickness_mm else 0
             features['vest_id'] = str(vest.id)
             
@@ -103,9 +100,13 @@ class FeatureEngineer:
             layers = self.db.query(VestLayer).filter(VestLayer.vest_id == vest.id).all()
             
             if layers:
-                # Calculate total areal density
+                # Calculate total areal density and extract material properties
                 total_areal_density = 0
                 fabric_types = []
+                material_types = []
+                material_thicknesses = []
+                material_elongations = []
+                vest_composition_parts = []
                 
                 for layer in layers:
                     if layer.material:
@@ -115,24 +116,58 @@ class FeatureEngineer:
                         
                         if material.fiber_type:
                             fabric_types.append(material.fiber_type)
+                        
+                        if material.material_class:
+                            material_types.append(material.material_class)
+                        
+                        if material.thickness_mm:
+                            material_thicknesses.append(float(material.thickness_mm))
+                        
+                        # Add elongation if available (use longitudinal as primary)
+                        if material.elongation_longitudinal_percent:
+                            material_elongations.append(float(material.elongation_longitudinal_percent))
+                        elif material.elongation_transverse_percent:
+                            material_elongations.append(float(material.elongation_transverse_percent))
+                        
+                        # Build vest composition string
+                        vest_composition_parts.append(f"{material.name}x{layer.layer_count}")
                 
                 features['total_areal_density_g_m2'] = total_areal_density
                 features['layer_count'] = len(layers)
                 features['primary_fabric_type'] = fabric_types[0] if fabric_types else 'unknown'
                 features['energy_absorption_capacity'] = total_areal_density
+                
+                # New material features
+                features['material_thickness_mm'] = sum(material_thicknesses) if material_thicknesses else 0
+                features['material_elongation_percent'] = sum(material_elongations) / len(material_elongations) if material_elongations else 0
+                features['material_type'] = material_types[0] if material_types else 'unknown'
+                features['vest_composition'] = ', '.join(vest_composition_parts) if vest_composition_parts else 'unknown'
+                
+                # Add composition-specific features for each material type
+                for material_type in set(material_types):
+                    type_count = material_types.count(material_type)
+                    features[f'composition_count_{material_type.lower().replace(" ", "_").replace("-", "_").replace("(", "").replace(")", "")}'] = type_count
             else:
                 features['total_areal_density_g_m2'] = 0
                 features['layer_count'] = 0
                 features['primary_fabric_type'] = 'unknown'
                 features['energy_absorption_capacity'] = 0
+                features['material_thickness_mm'] = 0
+                features['material_elongation_percent'] = 0
+                features['material_type'] = 'unknown'
+                features['vest_composition'] = 'unknown'
         else:
             # Default values if vest not found
-            features['total_layers'] = 0
+            features['number_of_layers'] = 0
             features['total_thickness_mm'] = 0
             features['total_areal_density_g_m2'] = 0
             features['layer_count'] = 0
             features['primary_fabric_type'] = 'unknown'
             features['energy_absorption_capacity'] = 0
+            features['material_thickness_mm'] = 0
+            features['material_elongation_percent'] = 0
+            features['material_type'] = 'unknown'
+            features['vest_composition'] = 'unknown'
             features['vest_id'] = vest_number  # Use vest_number as fallback
         
         return features
@@ -145,20 +180,20 @@ class FeatureEngineer:
             session = shot.test_session
             
             # Clay temperature
-            features['clay_temperature_c'] = float(session.ambient_temperature_c) if session.ambient_temperature_c else 20.0
+            features['temperature_c'] = float(session.ambient_temperature_c) if session.ambient_temperature_c else 20.0
             
             # Humidity
-            features['humidity_percent'] = float(session.humidity_percent) if session.humidity_percent else 50.0
+            features['humidity_pct'] = float(session.humidity_percent) if session.humidity_percent else 50.0
             
             # Conditioning state
-            features['conditioning'] = session.conditioning if session.conditioning else 'dry'
+            features['condition'] = session.conditioning if session.conditioning else 'dry'
             
             # Vest size
             features['vest_size'] = session.size if session.size else 'medium'
         else:
-            features['clay_temperature_c'] = 20.0
-            features['humidity_percent'] = 50.0
-            features['conditioning'] = 'dry'
+            features['temperature_c'] = 20.0
+            features['humidity_pct'] = 50.0
+            features['condition'] = 'dry'
             features['vest_size'] = 'medium'
         
         return features

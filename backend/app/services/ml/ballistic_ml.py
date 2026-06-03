@@ -155,6 +155,10 @@ def build_composition_features(composition: Any, material_properties: Dict[str, 
         features[f"composition_last_position_{prefix}"] = 0.0
         features[f"composition_ply_count_{prefix}"] = 0.0
         features[f"composition_material_class_{prefix}"] = "unknown"
+        features[f"composition_elongation_longitudinal_percent_{prefix}"] = 0.0
+        features[f"composition_elongation_longitudinal_error_percent_{prefix}"] = 0.0
+        features[f"composition_elongation_transverse_percent_{prefix}"] = 0.0
+        features[f"composition_elongation_transverse_error_percent_{prefix}"] = 0.0
 
     if not segments:
         features.update({
@@ -209,8 +213,10 @@ def build_composition_features(composition: Any, material_properties: Dict[str, 
                 weighted_tensile_strength += props["tensile_strength_mpa"] * weight
             if "modulus_gpa" in props:
                 weighted_modulus += props["modulus_gpa"] * weight
-            if "elongation_percent" in props:
-                weighted_elongation += props["elongation_percent"] * weight
+            if "force_longitudinal_n_per_cm" in props:
+                weighted_elongation += props["force_longitudinal_n_per_cm"] * weight
+            elif "force_transverse_n_per_cm" in props:
+                weighted_elongation += props["force_transverse_n_per_cm"] * weight
 
     if total_weight > 0:
         weighted_tensile_strength /= total_weight
@@ -236,6 +242,10 @@ def build_composition_features(composition: Any, material_properties: Dict[str, 
             features[f"composition_areal_density_kg_m2_{prefix}"] += segment["segment_areal_density_kg_m2"]
             features[f"composition_ply_count_{prefix}"] = material_properties[material].get("ply_count", 0) * segment["count"]
             features[f"composition_material_class_{prefix}"] = material_properties[material].get("material_class", "unknown")
+            features[f"composition_elongation_longitudinal_percent_{prefix}"] = material_properties[material].get("elongation_longitudinal_percent", 0.0)
+            features[f"composition_elongation_longitudinal_error_percent_{prefix}"] = material_properties[material].get("elongation_longitudinal_error_percent", 0.0)
+            features[f"composition_elongation_transverse_percent_{prefix}"] = material_properties[material].get("elongation_transverse_percent", 0.0)
+            features[f"composition_elongation_transverse_error_percent_{prefix}"] = material_properties[material].get("elongation_transverse_error_percent", 0.0)
 
             if segment["position"] == 1:
                 features[f"composition_first_position_{prefix}"] = 1.0

@@ -238,8 +238,37 @@ def fetch_material_properties(db: Session) -> Dict[str, Dict[str, float]]:
             props['tensile_strength_mpa'] = float(material.tensile_strength_mpa)
         if material.modulus_gpa:
             props['modulus_gpa'] = float(material.modulus_gpa)
-        if material.elongation_percent:
-            props['elongation_percent'] = float(material.elongation_percent)
+        
+        # Extract force values and convert to force per cm based on stretch test length
+        stretch_length_cm = 5.0  # default to 5cm
+        if material.stretch_test_length:
+            try:
+                # Parse stretch test length (e.g., "2.5cm" or "5cm")
+                if '2.5' in material.stretch_test_length or '2,5' in material.stretch_test_length:
+                    stretch_length_cm = 2.5
+                elif '5' in material.stretch_test_length:
+                    stretch_length_cm = 5.0
+            except:
+                pass
+        
+        # Longitudinal force per cm
+        if material.force_longitudinal_newtons:
+            props['force_longitudinal_n_per_cm'] = float(material.force_longitudinal_newtons) / stretch_length_cm
+        if material.force_longitudinal_error_percent:
+            props['force_longitudinal_error_percent'] = float(material.force_longitudinal_error_percent)
+        
+        # Transverse force per cm
+        if material.force_transverse_newtons:
+            props['force_transverse_n_per_cm'] = float(material.force_transverse_newtons) / stretch_length_cm
+        if material.force_transverse_error_percent:
+            props['force_transverse_error_percent'] = float(material.force_transverse_error_percent)
+        
+        # Keep elongation_percent for backward compatibility (use longitudinal as primary)
+        if material.elongation_longitudinal_percent:
+            props['elongation_percent'] = float(material.elongation_longitudinal_percent)
+        elif material.elongation_transverse_percent:
+            props['elongation_percent'] = float(material.elongation_transverse_percent)
+        
         if material.material_class:
             props['material_class'] = material.material_class
         if material.ply_count:

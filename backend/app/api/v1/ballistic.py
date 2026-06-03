@@ -65,6 +65,13 @@ class BallisticInput(BaseModel):
     fiber_orientation_deg: Optional[float] = None
 
 
+class ProtocolPredictionInput(BaseModel):
+    """Input for prediction using a protocol."""
+    vest_id: str = Field(..., examples=["uuid-of-vest"])
+    protocol_id: str = Field(..., examples=["uuid-of-protocol"])
+    level_index: Optional[int] = Field(None, examples=[0, 1, 2])
+
+
 class PredictionResponse(BaseModel):
     predicted_backface_deformation_mm: Optional[float]
     estimated_backface_absolute_error_mm: Optional[float]
@@ -208,6 +215,26 @@ def predict_endpoint(data: BallisticInput, db: Session = Depends(get_db), versio
     else:
         from app.services.ml.ballistic_ml import predict_multi_shot
         return predict_multi_shot(data.model_dump(), material_properties)
+
+
+@router.post("/predict-protocol")
+def predict_protocol_endpoint(data: ProtocolPredictionInput, db: Session = Depends(get_db), version: Optional[str] = None):
+    """
+    Make predictions using a protocol.
+    Returns predictions for all shots in the protocol level (front/back, dry/wet for each ammunition).
+    Optional version parameter to use a specific model version.
+    """
+    from ml.prediction_service import PredictionService
+
+    prediction_service = PredictionService(db)
+    
+    try:
+        result = prediction_service.predict_bfd_for_protocol(data.vest_id, data.protocol_id, data.level_index, version)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
 
 @router.get("/metrics")

@@ -42,6 +42,10 @@ export function Materials() {
   const [errorInputValues, setErrorInputValues] = useState<Record<string, string>>({});
   const [sortField, setSortField] = useState<keyof Material | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [filterField, setFilterField] = useState<'material_class' | 'manufacturer' | null>(null);
+  const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
+  const [activeFilterField, setActiveFilterField] = useState<'material_class' | 'manufacturer' | null>(null);
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [formData, setFormData] = useState<MaterialCreate>({
     name: '',
     material_class: '',
@@ -271,15 +275,50 @@ export function Materials() {
     }
   };
 
-  const getSortedMaterials = (materials: Material[] | undefined) => {
-    if (!materials || !sortField) return materials;
+  const getFilteredAndSortedMaterials = (materials: Material[] | undefined) => {
+    if (!materials) return materials;
     
-    return [...materials].sort((a, b) => {
+    let filtered = materials;
+    
+    // Apply filter
+    if (activeFilterField && activeFilters.length > 0) {
+      filtered = materials.filter(material => {
+        const value = material[activeFilterField];
+        if (!value) return false;
+        // Case-insensitive comparison
+        return activeFilters.some(selected => 
+          selected.toLowerCase() === value.toString().toLowerCase()
+        );
+      });
+    }
+    
+    // Apply sort
+    if (!sortField) return filtered;
+    
+    return [...filtered].sort((a, b) => {
       const aValue = a[sortField];
       const bValue = b[sortField];
       
       if (aValue === null || aValue === undefined) return 1;
       if (bValue === null || bValue === undefined) return -1;
+      
+      // For numeric fields, convert to numbers for proper comparison
+      const numericFields = ['areal_density_g_m2', 'thickness_mm', 'ply_count', 'density_g_cm3', 
+                            'tensile_strength_mpa', 'modulus_gpa', 'elongation_longitudinal_percent',
+                            'elongation_longitudinal_error_percent', 'force_longitudinal_newtons',
+                            'force_longitudinal_error_percent', 'elongation_transverse_percent',
+                            'elongation_transverse_error_percent', 'force_transverse_newtons',
+                            'force_transverse_error_percent'];
+      
+      if (numericFields.includes(sortField as string)) {
+        const aNum = typeof aValue === 'string' ? parseFloat(aValue) : aValue as number;
+        const bNum = typeof bValue === 'string' ? parseFloat(bValue) : bValue as number;
+        
+        if (isNaN(aNum)) return 1;
+        if (isNaN(bNum)) return -1;
+        
+        return sortDirection === 'asc' ? aNum - bNum : bNum - aNum;
+      }
       
       if (typeof aValue === 'string' && typeof bValue === 'string') {
         return sortDirection === 'asc' 
@@ -295,6 +334,21 @@ export function Materials() {
       
       return 0;
     });
+  };
+
+  const getUniqueValues = (field: 'material_class' | 'manufacturer') => {
+    if (!materials) return [];
+    const values = materials
+      .map(m => m[field])
+      .filter((v): v is string => v !== null && v !== undefined);
+    return Array.from(new Set(values)).sort();
+  };
+
+  const normalizeFilterValue = (value: string, field: 'material_class' | 'manufacturer') => {
+    if (field === 'material_class') {
+      return normalizeString(value);
+    }
+    return value;
   };
 
   const evaluateMathExpression = (value: string): number | null => {
@@ -773,13 +827,41 @@ export function Materials() {
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('material_class')}
               >
-                Class {sortField === 'material_class' && (sortDirection === 'asc' ? '↑' : '↓')}
+                <div className="flex items-center gap-1">
+                  <span>Class</span>
+                  <span>{sortField === 'material_class' && (sortDirection === 'asc' ? '↑' : '↓')}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFilterField('material_class');
+                      setSelectedFilters(activeFilterField === 'material_class' ? [...activeFilters] : []);
+                    }}
+                    className="text-gray-400 hover:text-gray-600 text-xs"
+                    title="Filter"
+                  >
+                    ⚙
+                  </button>
+                </div>
               </th>
               <th 
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('manufacturer')}
               >
-                Manufacturer {sortField === 'manufacturer' && (sortDirection === 'asc' ? '↑' : '↓')}
+                <div className="flex items-center gap-1">
+                  <span>Manufacturer</span>
+                  <span>{sortField === 'manufacturer' && (sortDirection === 'asc' ? '↑' : '↓')}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFilterField('manufacturer');
+                      setSelectedFilters(activeFilterField === 'manufacturer' ? [...activeFilters] : []);
+                    }}
+                    className="text-gray-400 hover:text-gray-600 text-xs"
+                    title="Filter"
+                  >
+                    ⚙
+                  </button>
+                </div>
               </th>
               <th 
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -802,7 +884,7 @@ export function Materials() {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {getSortedMaterials(materials)?.map((material) => (
+            {getFilteredAndSortedMaterials(materials)?.map((material) => (
               <tr key={material.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 text-sm font-medium text-gray-900 break-words">{material.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -895,6 +977,51 @@ export function Materials() {
           variant="danger"
           onConfirm={handleFileReplaceConfirm}
           onCancel={handleFileReplaceCancel}
+        />
+      )}
+      {filterField && (
+        <ConfirmModal
+          title={`Filter by ${filterField === 'material_class' ? 'Class' : 'Manufacturer'}`}
+          message={
+            <div className="max-h-96 overflow-y-auto">
+              {getUniqueValues(filterField).map((value) => (
+                <label key={value} className="flex items-center mb-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedFilters.includes(value)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedFilters([...selectedFilters, value]);
+                      } else {
+                        setSelectedFilters(selectedFilters.filter(f => f !== value));
+                      }
+                    }}
+                    className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                  />
+                  <span className="text-sm text-gray-700">{normalizeFilterValue(value, filterField)}</span>
+                </label>
+              ))}
+              {selectedFilters.length > 0 && (
+                <button
+                  onClick={() => setSelectedFilters([])}
+                  className="mt-3 text-sm text-red-600 hover:text-red-900"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+          }
+          confirmLabel="Apply"
+          variant="default"
+          onConfirm={() => {
+            setActiveFilterField(filterField);
+            setActiveFilters([...selectedFilters]);
+            setFilterField(null);
+          }}
+          onCancel={() => {
+            setFilterField(null);
+            setSelectedFilters([]);
+          }}
         />
       )}
     </div>

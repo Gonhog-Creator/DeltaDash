@@ -10,6 +10,8 @@ from app.db.models.shot_data import ShotData
 from app.db.models.ammunition import Ammunition
 from app.db.models.model_run import ModelRun
 from app.db.models.prediction import Prediction
+from app.db.models.protocol import Protocol
+from app.db.models.location import Location
 from app.api.v1.auth import get_current_active_user, get_current_user
 from app.db.models.user import User
 from app.core.config import settings
@@ -236,6 +238,48 @@ def sync_database(
             local_db.commit()
             print("Predictions synced successfully")
             
+            # Sync protocols
+            remote_cursor.execute("SELECT * FROM protocols")
+            columns = [desc[0] for desc in remote_cursor.description]
+            protocols_data = remote_cursor.fetchall()
+            print(f"Found {len(protocols_data)} protocol records")
+            
+            for row in protocols_data:
+                protocol_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in protocol_dict.items() if hasattr(Protocol, key)}
+                existing = local_db.query(Protocol).filter(Protocol.id == valid_columns['id']).first()
+                if not existing:
+                    new_protocol = Protocol(**valid_columns)
+                    local_db.add(new_protocol)
+                else:
+                    for key, value in valid_columns.items():
+                        if key != 'id' and hasattr(existing, key):
+                            setattr(existing, key, value)
+            
+            local_db.commit()
+            print("Protocols synced successfully")
+            
+            # Sync locations (labs)
+            remote_cursor.execute("SELECT * FROM locations")
+            columns = [desc[0] for desc in remote_cursor.description]
+            locations_data = remote_cursor.fetchall()
+            print(f"Found {len(locations_data)} location records")
+            
+            for row in locations_data:
+                location_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in location_dict.items() if hasattr(Location, key)}
+                existing = local_db.query(Location).filter(Location.id == valid_columns['id']).first()
+                if not existing:
+                    new_location = Location(**valid_columns)
+                    local_db.add(new_location)
+                else:
+                    for key, value in valid_columns.items():
+                        if key != 'id' and hasattr(existing, key):
+                            setattr(existing, key, value)
+            
+            local_db.commit()
+            print("Locations synced successfully")
+            
             return {"message": "Database sync completed successfully", "synced_records": {
                 "ammunition": len(ammunition_data),
                 "materials": len(materials_data),
@@ -244,7 +288,9 @@ def sync_database(
                 "test_sessions": len(test_sessions_data),
                 "shot_data": len(shot_data),
                 "model_runs": len(model_runs_data),
-                "predictions": len(predictions_data)
+                "predictions": len(predictions_data),
+                "protocols": len(protocols_data),
+                "locations": len(locations_data)
             }}
             
         except Exception as e:

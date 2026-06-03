@@ -21,6 +21,7 @@ class TestSessionBase(BaseModel):
     excel_file_path: Optional[str] = None
     notes: Optional[str] = None
     is_official: Optional[bool] = False
+    certification_number: Optional[str] = None
 
 
 class TestSessionCreate(TestSessionBase):
@@ -43,6 +44,7 @@ class TestSessionUpdate(BaseModel):
     excel_file_path: Optional[str] = None
     notes: Optional[str] = None
     is_official: Optional[bool] = None
+    certification_number: Optional[str] = None
 
 
 class TestSessionInDB(TestSessionBase):

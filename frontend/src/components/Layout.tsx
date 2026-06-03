@@ -37,7 +37,7 @@ export function Layout({ children }: LayoutProps) {
     { path: '/ammunition', label: 'Ammunition' },
     { path: '/analytics', label: 'Analytics' },
     { path: '/predictions', label: 'Predictions' },
-    ...(effectiveIsAdmin ? [{ path: '/model-training', label: 'Model Training' }] : []),
+    ...(effectiveIsAdmin ? [{ path: '/protocols', label: 'Protocols' }, { path: '/model-training', label: 'Model Training' }] : []),
   ];
 
   const isActive = (path: string) => location.pathname === path;

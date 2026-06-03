@@ -20,6 +20,12 @@ export function Vests() {
   const [editingVest, setEditingVest] = useState<Vest | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Vest | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<keyof Vest>('vest_code');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [filterField, setFilterField] = useState<'vest_type' | 'threat_level' | null>(null);
+  const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
+  const [activeFilterField, setActiveFilterField] = useState<'vest_type' | 'threat_level' | null>(null);
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
 
   // Refetch materials when form opens to get latest ply_count values
   useEffect(() => {
@@ -199,6 +205,79 @@ export function Vests() {
   const removeLayer = (index: number) => {
     const updatedLayers = layers.filter((_, i) => i !== index).map((layer, i) => ({ ...layer, layer_index: i }));
     setLayers(updatedLayers);
+  };
+
+  const handleSort = (field: keyof Vest) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const getFilteredAndSortedVests = (vests: Vest[] | undefined) => {
+    if (!vests) return vests;
+    
+    let filtered = vests;
+    
+    // Apply filter
+    if (activeFilterField && activeFilters.length > 0) {
+      filtered = vests.filter(vest => {
+        const value = vest[activeFilterField];
+        if (!value) return false;
+        // Case-insensitive comparison
+        return activeFilters.some(selected => 
+          selected.toLowerCase() === value.toString().toLowerCase()
+        );
+      });
+    }
+    
+    // Apply sort
+    if (!sortField) return filtered;
+    
+    return [...filtered].sort((a, b) => {
+      const aValue = a[sortField];
+      const bValue = b[sortField];
+      
+      if (aValue === null || aValue === undefined) return 1;
+      if (bValue === null || bValue === undefined) return -1;
+      
+      // For numeric fields, convert to numbers for proper comparison
+      const numericFields = ['total_layers', 'total_thickness_mm'];
+      
+      if (numericFields.includes(sortField as string)) {
+        const aNum = typeof aValue === 'string' ? parseFloat(aValue) : aValue as number;
+        const bNum = typeof bValue === 'string' ? parseFloat(bValue) : bValue as number;
+        
+        if (isNaN(aNum)) return 1;
+        if (isNaN(bNum)) return -1;
+        
+        return sortDirection === 'asc' ? aNum - bNum : bNum - aNum;
+      }
+      
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return sortDirection === 'asc' 
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue);
+      }
+      
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortDirection === 'asc' 
+          ? aValue - bValue
+          : bValue - aValue;
+      }
+      
+      return 0;
+    });
+  };
+
+  const getUniqueValues = (field: 'vest_type' | 'threat_level') => {
+    if (!vests) return [];
+    const values = vests
+      .map(v => v[field])
+      .filter((v): v is string => v !== null && v !== undefined);
+    return Array.from(new Set(values)).sort();
   };
 
   return (
@@ -478,17 +557,65 @@ export function Vests() {
           <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vest Code</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Threat Level</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Layers</th>
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('vest_code')}
+              >
+                Vest Code {sortField === 'vest_code' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('vest_type')}
+              >
+                <div className="flex items-center gap-1">
+                  <span>Type</span>
+                  <span>{sortField === 'vest_type' && (sortDirection === 'asc' ? '↑' : '↓')}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFilterField('vest_type');
+                      setSelectedFilters(activeFilterField === 'vest_type' ? [...activeFilters] : []);
+                    }}
+                    className="text-gray-400 hover:text-gray-600 text-xs"
+                    title="Filter"
+                  >
+                    ⚙
+                  </button>
+                </div>
+              </th>
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('threat_level')}
+              >
+                <div className="flex items-center gap-1">
+                  <span>Threat Level</span>
+                  <span>{sortField === 'threat_level' && (sortDirection === 'asc' ? '↑' : '↓')}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFilterField('threat_level');
+                      setSelectedFilters(activeFilterField === 'threat_level' ? [...activeFilters] : []);
+                    }}
+                    className="text-gray-400 hover:text-gray-600 text-xs"
+                    title="Filter"
+                  >
+                    ⚙
+                  </button>
+                </div>
+              </th>
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('total_layers')}
+              >
+                Total Layers {sortField === 'total_layers' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Composition</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thickness</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {vests?.map((vest) => {
+            {getFilteredAndSortedVests(vests)?.map((vest) => {
               // Calculate estimated thickness from layers if not provided
               let thicknessDisplay = vest.total_thickness_mm ? `${vest.total_thickness_mm} mm` : '-';
               if (!vest.total_thickness_mm && vest.layers && vest.layers.length > 0) {
@@ -564,6 +691,51 @@ export function Vests() {
           variant="info"
           onConfirm={() => setValidationError(null)}
           onCancel={() => setValidationError(null)}
+        />
+      )}
+      {filterField && (
+        <ConfirmModal
+          title={`Filter by ${filterField === 'vest_type' ? 'Type' : 'Threat Level'}`}
+          message={
+            <div className="max-h-96 overflow-y-auto">
+              {getUniqueValues(filterField).map((value) => (
+                <label key={value} className="flex items-center mb-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedFilters.includes(value)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedFilters([...selectedFilters, value]);
+                      } else {
+                        setSelectedFilters(selectedFilters.filter(f => f !== value));
+                      }
+                    }}
+                    className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                  />
+                  <span className="text-sm text-gray-700">{value}</span>
+                </label>
+              ))}
+              {selectedFilters.length > 0 && (
+                <button
+                  onClick={() => setSelectedFilters([])}
+                  className="mt-3 text-sm text-red-600 hover:text-red-900"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+          }
+          confirmLabel="Apply"
+          variant="default"
+          onConfirm={() => {
+            setActiveFilterField(filterField);
+            setActiveFilters([...selectedFilters]);
+            setFilterField(null);
+          }}
+          onCancel={() => {
+            setFilterField(null);
+            setSelectedFilters([]);
+          }}
         />
       )}
     </div>

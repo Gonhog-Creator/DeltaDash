@@ -163,6 +163,16 @@ def delete_material(
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
     
+    # Check if material is referenced by any vest layers
+    from app.db.models.vest_layer import VestLayer as VestLayerModel
+    vest_layers = db.query(VestLayerModel).filter(VestLayerModel.material_id == material_id).all()
+    
+    if vest_layers:
+        # Clear the material_id from all vest layers that reference this material
+        for layer in vest_layers:
+            layer.material_id = None
+        db.commit()
+    
     db.delete(material)
     db.commit()
 

@@ -961,16 +961,7 @@ export function TestSessions() {
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Operator</label>
-                    <input
-                      type="text"
-                      value={editTarget.operator || ''}
-                      onChange={(e) => setEditTarget({ ...editTarget, operator: e.target.value || null })}
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
-                    />
-                  </div>
-                  <div>
+                                    <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Protocol</label>
                     <select
                       value={editTarget.protocol || ''}
@@ -1018,6 +1009,17 @@ export function TestSessions() {
                   </select>
                 </div>
               )}
+              {editTarget.is_official && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Certification Number</label>
+                  <input
+                    type="text"
+                    value={editTarget.certification_number || ''}
+                    onChange={(e) => setEditTarget({ ...editTarget, certification_number: e.target.value || null })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  />
+                </div>
+              )}
               {editTarget.parent_test_group_id && (
                 <>
                   <div>
@@ -1063,13 +1065,13 @@ export function TestSessions() {
                   name: editTarget.name,
                   test_date: editTarget.test_date,
                   lab_name: editTarget.lab_name,
-                  operator: editTarget.operator,
                   protocol: editTarget.protocol,
                   vest_id: editTarget.vest_id,
                   conditioning: editTarget.conditioning,
                   ambient_temperature_c: editTarget.ambient_temperature_c,
                   humidity_percent: editTarget.humidity_percent,
                   notes: editTarget.notes,
+                  certification_number: editTarget.certification_number,
                 }
               });
               setEditTarget(null);
