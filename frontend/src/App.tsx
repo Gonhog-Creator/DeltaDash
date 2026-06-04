@@ -14,6 +14,7 @@ import { BallisticTesting } from './pages/BallisticTesting'
 import { ModelTraining } from './pages/ModelTraining'
 import { OfficialCertifications } from './pages/OfficialCertifications'
 import { Protocols } from './pages/Protocols'
+import { Comparison } from './pages/Comparison'
 import { ViewerModeProvider } from './contexts/ViewerModeContext'
 
 const queryClient = new QueryClient({
@@ -47,6 +48,7 @@ function App() {
                       <Route path="/vests" element={<Vests />} />
                       <Route path="/protocols" element={<Protocols />} />
                       <Route path="/analytics" element={<Analytics />} />
+                      <Route path="/comparison" element={<Comparison />} />
                       <Route path="/predictions" element={<BallisticTesting />} />
                       <Route path="/model-training" element={<ModelTraining />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
