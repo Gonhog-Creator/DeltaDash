@@ -27,7 +27,11 @@ class ModelTrainer:
     def __init__(self, db: Optional[Session] = None):
         self.db = db or SessionLocal()
         self.feature_engineer = FeatureEngineer(self.db)
-        self.model_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models')
+        # Use Railway persistent storage if enabled
+        if os.getenv('USE_RAILWAY_STORAGE') == 'true':
+            self.model_dir = '/app/storage/model_artifacts'
+        else:
+            self.model_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models')
         os.makedirs(self.model_dir, exist_ok=True)
     
     def prepare_training_data(self) -> Tuple[pd.DataFrame, pd.Series]:

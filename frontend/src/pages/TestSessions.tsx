@@ -596,7 +596,7 @@ export function TestSessions() {
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
                 >
                   <option value="">Select vest...</option>
-                  {vests?.map((vest) => (
+                  {vests?.sort((a, b) => a.vest_code.localeCompare(b.vest_code)).map((vest) => (
                     <option key={vest.id} value={vest.id}>
                       {vest.vest_code} - {vest.vest_type || 'N/A'} - {vest.threat_level || 'N/A'}
                     </option>

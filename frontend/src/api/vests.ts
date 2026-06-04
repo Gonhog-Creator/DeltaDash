@@ -113,4 +113,6 @@ export const vestsApi = {
   updateLayers: (id: string, layers: VestLayerCreate[]) => apiClient.put<VestLayer[]>(`/api/v1/vests/${id}/layers`, layers),
 
   getTestSessions: (id: string) => apiClient.get<VestTestSessionsResponse>(`/api/v1/vests/${id}/test-sessions`),
+
+  recalculateThickness: () => apiClient.post<{ message: string }>('/api/v1/vests/recalculate-thickness'),
 };

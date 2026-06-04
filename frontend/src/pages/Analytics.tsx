@@ -21,6 +21,7 @@ interface AnalyticsPoint {
   angle_degrees: number | null;
   trauma_qualitative: string | null;
   is_official: boolean | null;
+  material_type: string | null;
 }
 
 interface AnalyticsData {
@@ -28,7 +29,7 @@ interface AnalyticsData {
 }
 
 type AxisOption = 'velocity' | 'bullet_energy' | 'bfd_mm' | 'ballistic_limit';
-type ColorGroupingOption = 'test_session' | 'side' | 'shot_number' | 'result' | 'protection_level' | 'vest';
+type ColorGroupingOption = 'test_session' | 'side' | 'shot_number' | 'result' | 'protection_level' | 'vest' | 'material';
 
 const AXIS_OPTIONS: { value: AxisOption; label: string }[] = [
   { value: 'velocity', label: 'Velocity (m/s)' },
@@ -44,6 +45,7 @@ const COLOR_GROUPING_OPTIONS: { value: ColorGroupingOption; label: string; type:
   { value: 'result', label: 'Test Result (OK/Punctured)', type: 'category' },
   { value: 'protection_level', label: 'Protection Level', type: 'category' },
   { value: 'vest', label: 'Vest', type: 'category' },
+  { value: 'material', label: 'Material', type: 'category' },
   { value: 'angle', label: 'Angle (Front/Back + Angle)', type: 'category' },
 ];
 
@@ -146,6 +148,8 @@ export function Analytics() {
         return point.protection_level || 'Unknown';
       case 'vest':
         return point.vest_number || 'Unknown';
+      case 'material':
+        return point.material_name || 'Unknown';
       default:
         return null;
     }

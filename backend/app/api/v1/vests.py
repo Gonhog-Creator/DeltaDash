@@ -217,16 +217,19 @@ def recalculate_all_thicknesses(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(require_write_access)
 ):
-    """Recalculate total thickness for all vests based on their layers."""
+    """Recalculate total thickness for all vests based on their layers.
+    Only updates vests that don't have a thickness value."""
     vests = db.query(VestModel).all()
     updated_count = 0
-    
+
     for vest in vests:
-        calculated_thickness = calculate_vest_thickness(vest.id, db)
-        if calculated_thickness is not None and vest.total_thickness_mm != calculated_thickness:
-            vest.total_thickness_mm = calculated_thickness
-            updated_count += 1
-    
+        # Only calculate if thickness is not set
+        if vest.total_thickness_mm is None:
+            calculated_thickness = calculate_vest_thickness(vest.id, db)
+            if calculated_thickness is not None:
+                vest.total_thickness_mm = calculated_thickness
+                updated_count += 1
+
     db.commit()
     return {"message": f"Updated thickness for {updated_count} vests"}
 

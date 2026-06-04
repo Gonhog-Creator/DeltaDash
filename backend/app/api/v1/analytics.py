@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.db.session import get_db
-from app.db.models import ShotData as ShotDataModel, TestSession as TestSessionModel, Ammunition as AmmunitionModel
+from app.db.models import ShotData as ShotDataModel, TestSession as TestSessionModel, Ammunition as AmmunitionModel, Vest as VestModel, VestLayer as VestLayerModel, Material as MaterialModel
 from app.api.v1.auth import get_current_active_user
 from app.schemas.analytics import AnalyticsData, AnalyticsPoint
 from app.db.models.user import User as UserModel
@@ -29,11 +29,13 @@ def get_velocity_vs_bfd(
     
     Queries ShotData table where test session library data is stored.
     """
-    # Query shot data with test session names (do ammunition matching in Python for intelligent fuzzy matching)
-    shot_data = db.query(ShotDataModel, TestSessionModel, ParentTestSession).outerjoin(
+    # Query shot data with test session names and vest information
+    shot_data = db.query(ShotDataModel, TestSessionModel, ParentTestSession, VestModel).outerjoin(
         TestSessionModel, ShotDataModel.test_session_id == TestSessionModel.id
     ).outerjoin(
         ParentTestSession, TestSessionModel.parent_test_group_id == ParentTestSession.id
+    ).outerjoin(
+        VestModel, TestSessionModel.vest_id == VestModel.id
     ).all()
     
     # Get all ammunition data for intelligent matching
@@ -68,7 +70,7 @@ def get_velocity_vs_bfd(
         return level
     
     points = []
-    for shot, test_session, parent_session in shot_data:
+    for shot, test_session, parent_session, vest in shot_data:
         # Intelligent caliber matching to find correct ammunition
         ammunition = None
         standardized_caliber = None
@@ -126,6 +128,43 @@ def get_velocity_vs_bfd(
         
         angle_degrees_value = float(shot.angle_degrees) if shot.angle_degrees is not None else None
         
+        # Get majority material name from vest layers
+        material_name = None
+        if vest:
+            vest_layers = db.query(VestLayerModel, MaterialModel).outerjoin(
+                MaterialModel, VestLayerModel.material_id == MaterialModel.id
+            ).filter(VestLayerModel.vest_id == vest.id).all()
+            
+            if vest_layers:
+                # Count material names
+                material_name_counts = {}
+                for layer, material in vest_layers:
+                    if material and material.name:
+                        mat_name = material.name
+                        material_name_counts[mat_name] = material_name_counts.get(mat_name, 0) + 1
+                
+                # Get the majority material name
+                if material_name_counts:
+                    material_name = max(material_name_counts, key=material_name_counts.get)
+        else:
+            # Fallback: try to find vest by vest_number if vest not linked via vest_id
+            if shot.vest_number:
+                matching_vest = db.query(VestModel).filter(VestModel.vest_code == shot.vest_number).first()
+                if matching_vest:
+                    vest_layers = db.query(VestLayerModel, MaterialModel).outerjoin(
+                        MaterialModel, VestLayerModel.material_id == MaterialModel.id
+                    ).filter(VestLayerModel.vest_id == matching_vest.id).all()
+                    
+                    if vest_layers:
+                        material_name_counts = {}
+                        for layer, material in vest_layers:
+                            if material and material.name:
+                                mat_name = material.name
+                                material_name_counts[mat_name] = material_name_counts.get(mat_name, 0) + 1
+                        
+                        if material_name_counts:
+                            material_name = max(material_name_counts, key=material_name_counts.get)
+        
         point = AnalyticsPoint(
             velocity=float(shot.velocity_m_s) if shot.velocity_m_s else None,
             bullet_energy=bullet_energy,
@@ -141,6 +180,7 @@ def get_velocity_vs_bfd(
             angle_degrees=angle_degrees_value,
             trauma_qualitative=shot.trauma_qualitative,
             is_official=test_session.is_official if test_session else None,
+            material_name=material_name,
         )
         points.append(point)
     

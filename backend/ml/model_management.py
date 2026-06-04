@@ -17,7 +17,11 @@ class ModelManager:
     
     def __init__(self, db: Optional[Session] = None):
         self.db = db or SessionLocal()
-        self.model_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models')
+        # Use Railway persistent storage if enabled
+        if os.getenv('USE_RAILWAY_STORAGE') == 'true':
+            self.model_dir = '/app/storage/model_artifacts'
+        else:
+            self.model_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models')
         os.makedirs(self.model_dir, exist_ok=True)
     
     def get_model_versions(self, model_name: str = 'bfd_predictor') -> List[Dict]:

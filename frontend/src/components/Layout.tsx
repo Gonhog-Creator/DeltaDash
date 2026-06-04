@@ -38,7 +38,7 @@ export function Layout({ children }: LayoutProps) {
     { path: '/analytics', label: 'Analytics' },
     { path: '/comparison', label: 'Comparison' },
     { path: '/predictions', label: 'Predictions' },
-    ...(effectiveIsAdmin ? [{ path: '/protocols', label: 'Protocols' }, { path: '/model-training', label: 'Model Training' }] : []),
+    ...(effectiveIsAdmin ? [{ path: '/protocols', label: 'Protocols', isAdmin: true }, { path: '/model-training', label: 'Model Training', isAdmin: true }] : []),
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -110,19 +110,26 @@ export function Layout({ children }: LayoutProps) {
           )}
         </div>
         <nav className="flex-1 py-4 overflow-y-auto">
-          {navItems.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`flex items-center px-4 py-2.5 text-sm font-medium transition-colors ${
-                isActive(item.path)
-                  ? 'bg-indigo-50 text-indigo-700 border-r-2 border-indigo-500'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              {item.label}
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const isAdminTab = (item as any).isAdmin;
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`flex items-center px-4 py-2.5 text-sm font-medium transition-colors ${
+                  isActive(item.path)
+                    ? isAdminTab
+                      ? 'bg-red-200 text-gray-900 border-r-2 border-red-500'
+                      : 'bg-indigo-50 text-indigo-700 border-r-2 border-indigo-500'
+                    : isAdminTab
+                      ? 'bg-red-50 text-gray-600 hover:bg-red-100'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
         <div className="px-4 py-3 border-t border-gray-200">
           <p className="text-xs text-gray-400">v{version}</p>
