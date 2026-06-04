@@ -312,31 +312,31 @@ export function TestSessionDetail() {
             <div className="bg-white shadow rounded-lg p-6 mb-4">
               <h3 className="text-md font-semibold text-gray-900 mb-4">{title}</h3>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
+                <table className="min-w-full table-fixed divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Shot #</th>
+                      <th className="w-1/5 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Shot #</th>
                       {hasAngle && (
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Angle (°)</th>
+                        <th className="w-1/5 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Angle (°)</th>
                       )}
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Velocity (m/s)</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{hasQualitativeTrauma ? 'Result' : 'Trauma (mm)'}</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      <th className="w-1/5 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Velocity (m/s)</th>
+                      <th className="w-1/5 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{hasQualitativeTrauma ? 'Result' : 'Trauma (mm)'}</th>
+                      <th className="w-1/5 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {shots.map((shot) => (
                       <tr key={shot.id}>
-                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{shot.shot_number}</td>
+                        <td className="w-1/5 px-4 py-2 whitespace-nowrap text-sm text-gray-900">{Math.round(parseFloat(shot.shot_number))}</td>
                         {hasAngle && (
-                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
-                            {shot.angle_degrees ? `${shot.angle_degrees}°` : '-'}
+                          <td className="w-1/5 px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                            {shot.angle_degrees ? `${Math.round(parseFloat(shot.angle_degrees))}°` : '-'}
                           </td>
                         )}
-                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
-                          {shot.velocity_m_s || shot.measured_velocity_m_s || '-'}
+                        <td className="w-1/5 px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                          {shot.velocity_m_s || shot.measured_velocity_m_s ? Math.round(parseFloat(shot.velocity_m_s || shot.measured_velocity_m_s)) : '-'}
                         </td>
-                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="w-1/5 px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                           {shot.trauma_qualitative ? (
                             shot.trauma_qualitative === 'PERFORO' ? 'Punctured' : shot.trauma_qualitative
                           ) : (
@@ -345,7 +345,7 @@ export function TestSessionDetail() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="w-1/5 px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                           <button
                             onClick={() => handleShotEdit(shot)}
                             className="text-indigo-600 hover:text-indigo-900"
@@ -356,17 +356,17 @@ export function TestSessionDetail() {
                       </tr>
                     ))}
                     <tr className="bg-gray-100 font-semibold">
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">Average of first three</td>
+                      <td className="w-1/5 px-4 py-2 whitespace-nowrap text-sm text-gray-900">Average of first three</td>
                       {hasAngle && (
-                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900"></td>
+                        <td className="w-1/5 px-4 py-2 whitespace-nowrap text-sm text-gray-900"></td>
                       )}
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
-                        {avgVelocity.toFixed(2)}
+                      <td className="w-1/5 px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                        {Math.round(avgVelocity)}
                       </td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                      <td className="w-1/5 px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                         {avgTrauma.toFixed(2)}
                       </td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900"></td>
+                      <td className="w-1/5 px-4 py-2 whitespace-nowrap text-sm text-gray-900"></td>
                     </tr>
                   </tbody>
                 </table>

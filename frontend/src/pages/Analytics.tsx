@@ -44,6 +44,7 @@ const COLOR_GROUPING_OPTIONS: { value: ColorGroupingOption; label: string; type:
   { value: 'result', label: 'Test Result (OK/Punctured)', type: 'category' },
   { value: 'protection_level', label: 'Protection Level', type: 'category' },
   { value: 'vest', label: 'Vest', type: 'category' },
+  { value: 'angle', label: 'Angle (Front/Back + Angle)', type: 'category' },
 ];
 
 export function Analytics() {
@@ -112,14 +113,18 @@ export function Analytics() {
         // Remove " - Vest X" pattern to avoid splitting by vest
         return sessionName.replace(/\s*-\s*Vest\s*\d+/i, '').trim();
       case 'side':
-        // Include angle in side grouping if present
-        if (point.side && point.angle_degrees && point.angle_degrees > 0) {
-          // Normalize side name
-          const sideName = point.side.charAt(0).toUpperCase() + point.side.slice(1);
-          return `${sideName} (${point.angle_degrees}°)`;
-        }
-        // Normalize side name
+        // Normalize side name without angle
         return point.side ? point.side.charAt(0).toUpperCase() + point.side.slice(1) : 'Unknown';
+      case 'angle':
+        // Include both side and angle
+        if (point.side) {
+          const sideName = point.side.charAt(0).toUpperCase() + point.side.slice(1);
+          if (point.angle_degrees && point.angle_degrees > 0) {
+            return `${sideName} (${point.angle_degrees}°)`;
+          }
+          return sideName;
+        }
+        return 'Unknown';
       case 'shot_number':
         return point.shot_number || 'Unknown';
       case 'result':
