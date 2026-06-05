@@ -12,7 +12,13 @@ def normalize_caliber(caliber: str) -> str:
     
     normalized = str(caliber).strip().lower()
     
-    # Remove common suffixes from ammunition names
+    # Check for M855/M193 designators in 5.56x45 ammunition before removing suffixes
+    # Preserve these specific designators as they distinguish ammunition types
+    has_m855 = 'm855' in normalized or '855' in normalized
+    has_m193 = 'm193' in normalized or '193' in normalized
+    is_556 = '5.56' in normalized or '556' in normalized
+    
+    # Remove common suffixes from ammunition names, but preserve M855/M193 for 5.56x45
     suffixes_to_remove = ['fmj standard', 'standard', 'fmj', 'winchester', 'remington', 'magnum', 'mag']
     for suffix in suffixes_to_remove:
         if normalized.endswith(suffix):
@@ -42,9 +48,25 @@ def normalize_caliber(caliber: str) -> str:
         '308win': '308winchester',
         '223': '223rem',
         '762x51mm': '7.62x51mm',
-        '556x45mm': '5.56x45mm',
-        '556nato': '5.56x45mm',
     }
+    
+    # For 5.56x45, preserve M855/M193 designators
+    if is_556:
+        if has_m855:
+            caliber_aliases['556x45mm'] = '5.56x45mm m855'
+            caliber_aliases['556x45'] = '5.56x45mm m855'
+            caliber_aliases['5.56x45mm'] = '5.56x45mm m855'
+            caliber_aliases['556nato'] = '5.56x45mm m855'
+        elif has_m193:
+            caliber_aliases['556x45mm'] = '5.56x45mm m193'
+            caliber_aliases['556x45'] = '5.56x45mm m193'
+            caliber_aliases['5.56x45mm'] = '5.56x45mm m193'
+            caliber_aliases['556nato'] = '5.56x45mm m193'
+        else:
+            # Generic 5.56x45 without specific designator
+            caliber_aliases['556x45mm'] = '5.56x45mm'
+            caliber_aliases['556x45'] = '5.56x45mm'
+            caliber_aliases['556nato'] = '5.56x45mm'
     
     # For decimal-only calibers (like .357, .44), also try without the dot (357, 44)
     # This handles cases where database has "357" but Excel has ".357" or "0.357"

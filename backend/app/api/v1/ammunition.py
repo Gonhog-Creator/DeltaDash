@@ -29,7 +29,7 @@ def list_ammunition(
     if caliber:
         query = query.filter(AmmunitionModel.caliber == caliber)
     
-    ammunition = query.offset(skip).limit(limit).all()
+    ammunition = query.order_by(AmmunitionModel.name).offset(skip).limit(limit).all()
     return ammunition
 
 
