@@ -78,3 +78,34 @@ def delete_protocol(
     
     db.delete(protocol)
     db.commit()
+
+
+@router.get("/threat-levels/grouped")
+def get_threat_levels_grouped(
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user)
+):
+    """
+    Get all threat levels grouped by protocol.
+    Returns a list of protocols with their threat levels.
+    Threat levels are prefixed with protocol name for uniqueness.
+    """
+    protocols = db.query(ProtocolModel).all()
+    
+    result = []
+    for protocol in protocols:
+        levels = []
+        if protocol.levels_config:
+            for level in protocol.levels_config:
+                # Create protocol-prefixed level name for uniqueness
+                level_name = level.get("level_name", "")
+                prefixed_name = f"{protocol.name} - {level_name}"
+                levels.append(prefixed_name)
+        
+        result.append({
+            "protocol_id": str(protocol.id),
+            "protocol_name": protocol.name,
+            "threat_levels": levels
+        })
+    
+    return result

@@ -353,6 +353,7 @@ def list_versions_with_metrics(db: Session = Depends(get_db)):
     """List all available model versions with training metrics from database."""
     # Get versions from file registry
     file_versions = list_model_versions()
+    file_version_set = {v["version"] for v in file_versions}
     
     # Get metrics from database
     model_runs = db.query(ModelRun).filter(ModelRun.model_type == "ballistic").all()
@@ -370,7 +371,25 @@ def list_versions_with_metrics(db: Session = Depends(get_db)):
             **version,
             "training_row_count": model_run.training_row_count if model_run else None,
             "training_avg_error": model_run.training_avg_error if model_run else None,
+            "has_files": True,
+            "created_at": model_run.created_at.isoformat() if model_run else version.get("trained_at"),
         })
+    
+    # Also include models from database that aren't in file registry
+    for model_run in model_runs:
+        if model_run.version not in file_version_set:
+            versions_with_metrics.append({
+                "version": model_run.version,
+                "model_name": model_run.model_name or model_run.version,
+                "trained_at": model_run.training_completed_at.isoformat() if model_run.training_completed_at else model_run.created_at.isoformat(),
+                "training_row_count": model_run.training_row_count,
+                "training_avg_error": model_run.training_avg_error,
+                "has_files": False,
+                "created_at": model_run.created_at.isoformat(),
+            })
+    
+    # Sort by created_at (newest first)
+    versions_with_metrics.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     
     return {"versions": versions_with_metrics}
 
@@ -494,6 +513,7 @@ def upload_model(
                     training_row_count=metadata.get("training_data_count"),
                     metrics_json=metadata.get("metrics"),
                     artifact_path=f"ballistic/versions/{version}",
+                    created_at=datetime.now(),
                 )
                 db.add(model_run)
             
@@ -702,79 +722,64 @@ def recalculate_metrics_for_version(version: str, db: Session = Depends(get_db))
     import os
     
     try:
-        # Load version metadata to get training data count
+        # Check if model exists in database
+        model_run = db.query(ModelRun).filter(
+            ModelRun.version == version,
+            ModelRun.model_type == "ballistic"
+        ).first()
+        
+        if not model_run:
+            raise HTTPException(status_code=404, detail=f"Version {version} not found in database")
+        
+        # Try to load version metadata from filesystem
+        training_row_count = None
+        has_files = False
+        
         version_metadata_path = os.path.join(VERSIONS_DIR, version, "metadata.json")
-        if not os.path.exists(version_metadata_path):
-            raise HTTPException(status_code=404, detail=f"Version {version} not found")
-        
-        with open(version_metadata_path, "r") as f:
-            metadata = json.load(f)
-        
-        # Get training data count from metadata (training points, not test points)
-        training_row_count = metadata.get("training_data_count")
-        if training_row_count is None:
-            raise HTTPException(status_code=400, detail=f"Version {version} is missing training_data_count in metadata")
-        
-        # Run model health evaluation to get actual test error
-        bfd_mae = None
-        try:
-            health_result = evaluate_model_on_test_sessions(db, version=version)
-            overall_avg_error = health_result.get("overall_average_error")
+        if os.path.exists(version_metadata_path):
+            has_files = True
+            with open(version_metadata_path, "r") as f:
+                metadata = json.load(f)
             
-            # Use health evaluation results for error
-            if overall_avg_error is not None:
-                bfd_mae = overall_avg_error
-            else:
-                # Fallback to metadata MAE if health evaluation fails
+            # Get training data count from metadata (training points, not test points)
+            training_row_count = metadata.get("training_data_count")
+            
+            # Run model health evaluation to get actual test error
+            bfd_mae = None
+            try:
+                health_result = evaluate_model_on_test_sessions(db, version=version)
+                overall_avg_error = health_result.get("overall_average_error")
+                
+                # Use health evaluation results for error
+                if overall_avg_error is not None:
+                    bfd_mae = overall_avg_error
+                else:
+                    # Fallback to metadata MAE if health evaluation fails
+                    if "metrics" in metadata:
+                        metrics = metadata["metrics"]
+                        if "backface_deformation_mm_regression" in metrics:
+                            bfd_metrics = metrics["backface_deformation_mm_regression"]
+                            bfd_mae = bfd_metrics.get("mae")
+            except Exception as e:
+                print(f"WARNING: Failed to run health evaluation for {version}: {e}")
+                # Fallback to metadata MAE
+                bfd_mae = None
                 if "metrics" in metadata:
                     metrics = metadata["metrics"]
                     if "backface_deformation_mm_regression" in metrics:
                         bfd_metrics = metrics["backface_deformation_mm_regression"]
                         bfd_mae = bfd_metrics.get("mae")
-        except Exception as e:
-            print(f"WARNING: Failed to run health evaluation for {version}: {e}")
-            # Fallback to metadata MAE
-            bfd_mae = None
-            if "metrics" in metadata:
-                metrics = metadata["metrics"]
-                if "backface_deformation_mm_regression" in metrics:
-                    bfd_metrics = metrics["backface_deformation_mm_regression"]
-                    bfd_mae = bfd_metrics.get("mae")
-        
-        # Parse trained_at datetime
-        trained_at = None
-        if "trained_at" in metadata:
-            try:
-                trained_at = datetime.fromisoformat(metadata["trained_at"].replace('Z', '+00:00'))
-            except:
-                pass
-        
-        # Create or update ModelRun record
-        existing_run = db.query(ModelRun).filter(
-            ModelRun.version == version,
-            ModelRun.model_type == "ballistic"
-        ).first()
-        
-        if existing_run:
-            # Update existing record
-            existing_run.training_row_count = training_row_count
-            existing_run.training_avg_error = bfd_mae
-            if trained_at:
-                existing_run.training_completed_at = trained_at
         else:
-            # Create new record
-            model_run = ModelRun(
-                model_name=metadata.get("model_name", version),
-                model_type="ballistic",
-                version=version,
-                training_started_at=trained_at,
-                training_completed_at=trained_at,
-                training_row_count=training_row_count,
-                training_avg_error=bfd_mae,
-                metrics_json=metadata.get("metrics"),
-                artifact_path=f"ballistic/versions/{version}",
-            )
-            db.add(model_run)
+            # Files don't exist, use database values
+            training_row_count = model_run.training_row_count
+            bfd_mae = model_run.training_avg_error
+        
+        if training_row_count is None:
+            raise HTTPException(status_code=400, detail=f"Version {version} has no training data count available")
+        
+        # Update ModelRun record
+        model_run.training_row_count = training_row_count
+        model_run.training_avg_error = bfd_mae
         
         db.commit()
         
@@ -782,6 +787,7 @@ def recalculate_metrics_for_version(version: str, db: Session = Depends(get_db))
             "status": "success",
             "message": f"Recalculated metrics for version {version}",
             "version": version,
+            "has_files": has_files,
             "training_row_count": training_row_count,
             "training_avg_error": bfd_mae
         }
@@ -789,7 +795,7 @@ def recalculate_metrics_for_version(version: str, db: Session = Depends(get_db))
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to recalculate metrics for version {version}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to recalculate metrics: {str(e)}")
 
 
 @router.get("/versions/{version}/download")

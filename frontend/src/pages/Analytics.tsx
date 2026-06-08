@@ -1,10 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import Plot from 'react-plotly.js';
 import { apiClient } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { VelocityVsBfdChart, EnergyVsVelocityChart, EnergyVsBfdChart } from '../components/AnalyticsCharts';
+
+interface ProtocolThreatLevel {
+  protocol_id: string;
+  protocol_name: string;
+  threat_levels: string[];
+}
 
 interface AnalyticsPoint {
   velocity: number | null;
@@ -75,6 +81,20 @@ export function Analytics() {
   const [selectedCalibers, setSelectedCalibers] = useState<string[]>([]);
   const [selectedProtectionLevels, setSelectedProtectionLevels] = useState<string[]>([]);
   const [selectedIsOfficial, setSelectedIsOfficial] = useState<boolean | null>(null);
+  const [protocolThreatLevels, setProtocolThreatLevels] = useState<ProtocolThreatLevel[]>([]);
+
+  // Fetch protocol threat levels on mount
+  useEffect(() => {
+    const fetchProtocolThreatLevels = async () => {
+      try {
+        const data = await apiClient.get<ProtocolThreatLevel[]>('/api/v1/protocols/threat-levels/grouped');
+        setProtocolThreatLevels(data);
+      } catch (err) {
+        console.error('Failed to fetch protocol threat levels:', err);
+      }
+    };
+    fetchProtocolThreatLevels();
+  }, []);
 
   if (isLoading) {
     return (
@@ -175,6 +195,7 @@ export function Analytics() {
 
   // Get unique filter options from data
   const uniqueCalibers = Array.from(new Set(analyticsData?.points.map(p => p.caliber).filter(Boolean) || []));
+  // Get protection levels from data (show all that exist)
   const uniqueProtectionLevels = Array.from(new Set(analyticsData?.points.map(p => p.protection_level).filter(Boolean) || []));
 
   // Apply filters

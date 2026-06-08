@@ -904,6 +904,7 @@ def train_from_database(db_session, model_name: Optional[str] = None) -> Dict[st
                 training_avg_error=bfd_mae,
                 metrics_json=metadata["metrics"],
                 artifact_path=f"ballistic/versions/{metadata['version']}",
+                created_at=datetime.now(),
             )
             db_session.add(model_run)
         
@@ -1513,7 +1514,10 @@ def evaluate_model_on_test_sessions(
                 "predicted_bfd": predicted_bfd,
                 "percent_error": percent_error,
                 "shot_number": shot_data.shot_number,
-                "protection_level": getattr(shot_data, 'protection_level', 'Unknown') if getattr(shot_data, 'protection_level', None) else "Unknown",
+                "protection_level": (getattr(shot_data, 'protection_level', None) or 
+                                   (test_session.threat_level if test_session else None) or 
+                                   (vest.threat_level if vest else None) or 
+                                   "Unknown"),
                 "caliber": getattr(shot_data, 'caliber', 'Unknown') if getattr(shot_data, 'caliber', None) else "Unknown",
             })
             

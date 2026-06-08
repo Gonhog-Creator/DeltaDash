@@ -6,6 +6,13 @@ import { useMaterials } from '../hooks/useMaterials';
 import { Material } from '../api/materials';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useAuth } from '../hooks/useAuth';
+import { apiClient } from '../api/client';
+
+interface ProtocolThreatLevel {
+  protocol_id: string;
+  protocol_name: string;
+  threat_levels: string[];
+}
 
 export function Vests() {
   const { data: vests, isLoading, error } = useVests();
@@ -46,6 +53,7 @@ export function Vests() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [loadingTestSessions, setLoadingTestSessions] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
+  const [protocolThreatLevels, setProtocolThreatLevels] = useState<ProtocolThreatLevel[]>([]);
 
   // Refetch materials when form opens to get latest ply_count values
   useEffect(() => {
@@ -53,6 +61,19 @@ export function Vests() {
       refetchMaterials();
     }
   }, [showCreateForm, editingVest, refetchMaterials]);
+
+  // Fetch protocol threat levels on mount
+  useEffect(() => {
+    const fetchProtocolThreatLevels = async () => {
+      try {
+        const data = await apiClient.get<ProtocolThreatLevel[]>('/api/v1/protocols/threat-levels/grouped');
+        setProtocolThreatLevels(data);
+      } catch (err) {
+        console.error('Failed to fetch protocol threat levels:', err);
+      }
+    };
+    fetchProtocolThreatLevels();
+  }, []);
   const [formData, setFormData] = useState<VestCreate>({
     vest_code: '',
     vest_type: '',
@@ -441,23 +462,15 @@ export function Vests() {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 >
                   <option value="">Select level...</option>
-                  <option value="NIJ_0101.07_HG1">NIJ 0101.07 HG1</option>
-                  <option value="NIJ_0101.07_HG2">NIJ 0101.07 HG2</option>
-                  <option value="NIJ_0101.07_RF1">NIJ 0101.07 RF1</option>
-                  <option value="NIJ_0101.07_RF2">NIJ 0101.07 RF2</option>
-                  <option value="NIJ_0101.07_RF3">NIJ 0101.07 RF3</option>
-                  <option value="NIJ_IIA">NIJ IIA (Legacy)</option>
-                  <option value="NIJ_II">NIJ II (Legacy)</option>
-                  <option value="NIJ_IIIA">NIJ IIIA (Legacy)</option>
-                  <option value="NIJ_III">NIJ III (Legacy)</option>
-                  <option value="NIJ_IV">NIJ IV (Legacy)</option>
-                  <option value="STANAG_4569_Level_1">STANAG 4569 Level 1</option>
-                  <option value="STANAG_4569_Level_2">STANAG 4569 Level 2</option>
-                  <option value="ARG_RB1">Argentina RB1</option>
-                  <option value="ARG_RB2">Argentina RB2</option>
-                  <option value="ARG_RB3">Argentina RB3</option>
-                  <option value="ARG_RB4">Argentina RB4</option>
-                  <option value="ARG_RB5">Argentina RB5</option>
+                  {protocolThreatLevels.map((protocol) => (
+                    <optgroup key={protocol.protocol_id} label={protocol.protocol_name}>
+                      {protocol.threat_levels.map((level) => (
+                        <option key={level} value={level}>
+                          {level}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
                   <option value="other">Other</option>
                 </select>
               </div>

@@ -6,6 +6,16 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { AnchorPointsTab } from '../components/AnchorPointsTab';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, LineChart, Line, Legend } from 'recharts';
 
+const API_BASE_URL = import.meta.env.DEV
+  ? 'http://localhost:8000'
+  : 'https://deltadash-backend-production.up.railway.app';
+
+interface ProtocolThreatLevel {
+  protocol_id: string;
+  protocol_name: string;
+  threat_levels: string[];
+}
+
 export function ModelTraining() {
   const { role } = useAuth();
   const navigate = useNavigate();
@@ -45,6 +55,20 @@ export function ModelTraining() {
   const [calculatingMetrics, setCalculatingMetrics] = useState(false);
   const [calculatingVersion, setCalculatingVersion] = useState<string | null>(null);
   const [showAnchorPointDetails, setShowAnchorPointDetails] = useState(false);
+  const [protocolThreatLevels, setProtocolThreatLevels] = useState<ProtocolThreatLevel[]>([]);
+
+  // Fetch protocol threat levels on mount
+  useEffect(() => {
+    const fetchProtocolThreatLevels = async () => {
+      try {
+        const data = await apiClient.get<ProtocolThreatLevel[]>('/api/v1/protocols/threat-levels/grouped');
+        setProtocolThreatLevels(data);
+      } catch (err) {
+        console.error('Failed to fetch protocol threat levels:', err);
+      }
+    };
+    fetchProtocolThreatLevels();
+  }, []);
 
   const handleTrain = async () => {
     setLoading(true);
@@ -59,6 +83,8 @@ export function ModelTraining() {
       setTrainingWarnings(result.warnings || []);
       setShowSuccessModal(true);
       setModelName(''); // Clear model name after training
+      // Wait a moment for database transaction to commit before refreshing
+      await new Promise(resolve => setTimeout(resolve, 500));
       handleListVersions(); // Refresh versions after training
     } catch (err: any) {
       setError(err.detail || 'Training failed');
@@ -172,7 +198,7 @@ export function ModelTraining() {
     if (!editVersion) return;
 
     try {
-      const response = await fetch(`/api/v1/ballistic/versions/${editVersion}/download`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/ballistic/versions/${editVersion}/download`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -214,7 +240,7 @@ export function ModelTraining() {
       const formData = new FormData();
       formData.append('file', uploadFile);
 
-      const response = await fetch('/api/v1/ballistic/versions/upload', {
+      const response = await fetch(`${API_BASE_URL}/api/v1/ballistic/versions/upload`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -564,10 +590,9 @@ export function ModelTraining() {
 
   const renderHealthTab = (showAnchorPointDetails: boolean, setShowAnchorPointDetails: (value: boolean) => void) => {
     // Get unique vests from health data
-    // Get unique vests from health data
     const uniqueVests = healthData?.vest_averages?.map((v: any) => v.vest_code) || [];
     
-    // Get unique protection levels and calibers from point data
+    // Get protection levels and calibers from point data (show all that exist)
     const uniqueProtectionLevels = Array.from(new Set(healthData?.point_data?.map((p: any) => p.protection_level).filter((v: any) => v) || []));
     const uniqueCalibers = Array.from(new Set(healthData?.point_data?.map((p: any) => p.caliber).filter((v: any) => v) || []));
     
