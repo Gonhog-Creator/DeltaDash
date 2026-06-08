@@ -82,6 +82,10 @@ class ApiClient {
       return [] as T;
     }
 
+    if (endpoint.includes('/anchor-points')) {
+      return [] as T;
+    }
+
     // Default empty response
     return {} as T;
   }

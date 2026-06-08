@@ -290,6 +290,23 @@ def get_stats(
     }
 
 
+@router.get("/protocols")
+def get_protocols(
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user)
+):
+    """Get all unique protocols from test sessions."""
+    protocols = db.query(TestSessionModel.protocol).filter(
+        TestSessionModel.protocol.isnot(None),
+        TestSessionModel.protocol != ''
+    ).distinct().all()
+    
+    protocol_list = [p[0] for p in protocols if p[0]]
+    protocol_list.sort()
+    
+    return {"protocols": protocol_list}
+
+
 @router.get("/{test_session_id}")
 def get_test_session(
     test_session_id: str,

@@ -185,7 +185,7 @@ export function BallisticTesting() {
                 className="w-full border rounded p-2"
               >
                 <option value="">Select vest...</option>
-                {vests?.map((vest) => (
+                {vests?.sort((a, b) => (a.vest_code || a.name).localeCompare(b.vest_code || b.name)).map((vest) => (
                   <option key={vest.id} value={vest.id}>
                     {vest.vest_code || vest.name} - {vest.vest_type || 'N/A'} - {vest.threat_level || 'N/A'}
                   </option>

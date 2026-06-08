@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, func
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Float, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import uuid
 
@@ -15,6 +15,7 @@ class ModelRun(Base):
     training_started_at = Column(DateTime(timezone=True))
     training_completed_at = Column(DateTime(timezone=True))
     training_row_count = Column(Integer)
+    training_avg_error = Column(Float, nullable=True)
     formula = Column(String)
     metrics_json = Column(JSONB)
     artifact_path = Column(String)

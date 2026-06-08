@@ -5,6 +5,7 @@ Uses database-driven material properties instead of hardcoded values.
 import os
 import re
 import json
+import warnings
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
@@ -21,6 +22,10 @@ from fastapi import HTTPException
 
 from app.db.session import get_db
 from app.services.ml.data_fetcher import fetch_training_data, fetch_material_properties
+from app.db.models import VestLayer, Material
+
+# Suppress sklearn warnings about features with no observed values
+warnings.filterwarnings('ignore', message='Skipping features without any observed values')
 
 
 # =============================================================================
@@ -518,7 +523,7 @@ def fill_missing_features(X: pd.DataFrame) -> pd.DataFrame:
 # Training logic
 # =============================================================================
 
-def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[str, float]], model_name: Optional[str] = None, warnings: list = None) -> Dict[str, Any]:
+def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[str, float]], model_name: Optional[str] = None, warnings: list = None, data_metadata: dict = None) -> Dict[str, Any]:
     print(f"DEBUG: Initial training data shape: {df.shape}")
     print(f"DEBUG: Columns in initial data: {df.columns.tolist()}")
 
@@ -645,6 +650,12 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
             if len(X_valid) == 0:
                 continue
 
+            # Check if there are at least 2 classes for classification
+            unique_classes = y_valid.unique()
+            if len(unique_classes) < 2:
+                print(f"DEBUG: Skipping classification target {target} - only {len(unique_classes)} unique class(es)")
+                continue
+
             X_processed = preprocessor.transform(X_valid)
             model = build_classifier()
             model.fit(X_processed, y_valid)
@@ -757,6 +768,8 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
         "warnings": warnings or [],
         "training_data_count": len(df),
         "data_health": data_health,
+        "anchor_point_count": data_metadata.get("anchor_point_count", 0) if data_metadata else 0,
+        "anchor_point_training_rows": data_metadata.get("anchor_point_training_rows", 0) if data_metadata else 0,
     }
 
     # Save version metadata
@@ -791,9 +804,10 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
 
 def train_from_database(db_session, model_name: Optional[str] = None) -> Dict[str, Any]:
     """Train model using data from database."""
-    # Check what data exists in database
-    from app.db.models import ShotData, Vest, Material, VestLayer
+    from app.db.models import ShotData, Vest, Material, VestLayer, ModelRun
+    from app.db.models.user import User
     
+    # Check what data exists in database
     shot_data_count = db_session.query(ShotData).count()
     vest_count = db_session.query(Vest).count()
     material_count = db_session.query(Material).count()
@@ -818,7 +832,7 @@ def train_from_database(db_session, model_name: Optional[str] = None) -> Dict[st
         )
     
     # Fetch training data
-    df, warnings = fetch_training_data(db_session)
+    df, warnings, data_metadata = fetch_training_data(db_session)
     
     if df.empty:
         raise ValueError(
@@ -837,7 +851,69 @@ def train_from_database(db_session, model_name: Optional[str] = None) -> Dict[st
         )
     
     # Train
-    return train_from_dataframe(df, material_properties, model_name=model_name, warnings=warnings)
+    metadata = train_from_dataframe(df, material_properties, model_name=model_name, warnings=warnings, data_metadata=data_metadata)
+    
+    # Run model health evaluation automatically after training
+    print("Starting health evaluation...")
+    health_result = None
+    try:
+        health_result = evaluate_model_on_test_sessions(db_session, version=metadata["version"])
+        overall_avg_error = health_result.get("overall_average_error")
+        print("Health evaluation completed successfully")
+    except Exception as e:
+        print(f"WARNING: Failed to run health evaluation after training: {e}")
+        overall_avg_error = None
+    
+    # Save ModelRun record to database
+    try:
+        training_started_at = datetime.fromisoformat(metadata["trained_at"].replace('Z', '+00:00'))
+        
+        # Use health evaluation error if available, otherwise use training MAE
+        bfd_mae = overall_avg_error
+        if bfd_mae is None:
+            if "backface_deformation_mm_regression" in metadata["metrics"]:
+                bfd_metrics = metadata["metrics"]["backface_deformation_mm_regression"]
+                bfd_mae = bfd_metrics.get("mae")
+        
+        # Use training data count from metadata (training points, not test points)
+        training_row_count = metadata.get("training_data_count")
+        if training_row_count is None:
+            print("WARNING: Model metadata is missing training_data_count, using len(df)")
+            training_row_count = len(df)
+        
+        # Create or update ModelRun record
+        model_run = db_session.query(ModelRun).filter(
+            ModelRun.version == metadata["version"]
+        ).first()
+        
+        if model_run:
+            # Update existing record
+            model_run.training_completed_at = training_started_at
+            model_run.training_row_count = training_row_count
+            model_run.training_avg_error = bfd_mae
+            model_run.metrics_json = metadata["metrics"]
+        else:
+            # Create new record
+            model_run = ModelRun(
+                model_name=metadata["model_name"],
+                model_type="ballistic",
+                version=metadata["version"],
+                training_started_at=training_started_at,
+                training_completed_at=training_started_at,
+                training_row_count=training_row_count,
+                training_avg_error=bfd_mae,
+                metrics_json=metadata["metrics"],
+                artifact_path=f"ballistic/versions/{metadata['version']}",
+            )
+            db_session.add(model_run)
+        
+        db_session.commit()
+    except Exception as e:
+        db_session.rollback()
+        print(f"WARNING: Failed to save ModelRun record: {e}")
+        # Don't fail the training if ModelRun save fails
+    
+    return metadata
 
 
 def list_model_versions() -> List[Dict[str, Any]]:
@@ -1299,4 +1375,263 @@ def predict(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float
         "fail_probability_estimated_error": fail_error,
         "recommendation": recommendation,
         "confidence_note": confidence_note,
+    }
+
+
+def evaluate_model_on_test_sessions(
+    db_session,
+    version: Optional[str] = None,
+    protocol_filter: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Evaluate model performance on test session data.
+    
+    Args:
+        db_session: Database session
+        version: Model version to use (uses current if None)
+        protocol_filter: Protocol level to filter by (None for all)
+    
+    Returns:
+        Dictionary with vest-level averages and point-level data for graphing
+    """
+    from app.db.models import ShotData, TestSession, Vest, Protocol, Ammunition
+    from app.services.ml.data_fetcher import fetch_material_properties
+    
+    # Load the specified version if provided
+    if version:
+        load_model_version(version)
+    
+    # Load model metadata
+    metadata = load_metadata()
+    if not metadata:
+        raise ValueError("No trained model found. Run training first.")
+    
+    # Load preprocessor and model
+    preprocessor = load_preprocessor()
+    if preprocessor is None:
+        raise ValueError("Preprocessor not found. Please retrain the model.")
+    
+    bfd_model = load_model("backface_deformation_mm")
+    if bfd_model is None:
+        raise ValueError("BFD model not found.")
+    
+    # Fetch material properties
+    material_properties = fetch_material_properties(db_session)
+    
+    # Build query for shot data with test sessions and vests
+    query = (
+        db_session.query(ShotData, TestSession, Vest)
+        .join(TestSession, ShotData.test_session_id == TestSession.id)
+        .outerjoin(Vest, TestSession.vest_id == Vest.id)
+    )
+    
+    # Filter by protocol if specified
+    if protocol_filter and protocol_filter != "all":
+        query = query.filter(TestSession.protocol == protocol_filter)
+    
+    # Only include shots with trauma data
+    query = query.filter(ShotData.trauma_mm.isnot(None))
+    
+    results = query.all()
+    
+    if not results:
+        return {
+            "vest_averages": [],
+            "point_data": [],
+            "total_points": 0,
+            "message": "No test data found matching criteria"
+        }
+    
+    # Process each shot
+    vest_errors = {}  # vest_code -> list of percentage errors
+    point_data = []  # list of individual point data for graphing
+    
+    for shot_data, test_session, vest in results:
+        # Build vest composition from vest layers
+        composition_parts = []
+        total_layers = 0
+        if vest:
+            vest_layers = db_session.query(VestLayer).filter(VestLayer.vest_id == vest.id).all()
+            for vl in sorted(vest_layers, key=lambda x: x.layer_index or 0):
+                material = db_session.query(Material).filter(Material.id == vl.material_id).first()
+                if material:
+                    count = vl.layer_count or 1
+                    total_layers += count
+                    composition_parts.append(f"{count} {material.name}")
+        
+        vest_composition = " + ".join(composition_parts) if composition_parts else ""
+        
+        # Get ammunition info
+        caliber = shot_data.caliber
+        ammunition = db_session.query(Ammunition).filter(Ammunition.caliber == caliber).first()
+        
+        # Build prediction input
+        prediction_input = {
+            "vest_composition": vest_composition,
+            "number_of_layers": total_layers,
+            "ammunition_used": ammunition.name if ammunition else caliber,
+            "threat_level": shot_data.protection_level,
+            "shot_number": int(float(shot_data.shot_number)) if shot_data.shot_number else 1,
+            "impact_velocity_mps": float(shot_data.velocity_m_s) if shot_data.velocity_m_s else None,
+            "impact_angle_deg": float(shot_data.angle_degrees) if shot_data.angle_degrees else 0.0,
+            "bullet_mass_g": float(ammunition.projectile_mass_grams) if ammunition and ammunition.projectile_mass_grams else None,
+            "temperature_c": float(shot_data.temperature_c) if shot_data.temperature_c else 20.0,
+            "humidity_pct": float(shot_data.humidity_percent) if shot_data.humidity_percent else 50.0,
+            "condition": test_session.conditioning if test_session else "dry",
+            "panel_side": shot_data.side,
+        }
+        
+        # Prepare input and predict
+        try:
+            X = prepare_single_input(prediction_input, material_properties, validate=False)
+            X_processed = preprocessor.transform(X)
+            predicted_bfd = float(bfd_model.predict(X_processed)[0])
+            
+            # Get actual BFD
+            actual_bfd = float(shot_data.trauma_mm)
+            
+            # Calculate percentage error
+            if actual_bfd != 0:
+                percent_error = abs(predicted_bfd - actual_bfd) / actual_bfd * 100
+            else:
+                percent_error = abs(predicted_bfd - actual_bfd)  # Absolute error if actual is 0
+            
+            # Get vest identifier
+            vest_identifier = vest.vest_code if vest else f"Unknown-{shot_data.test_session_id}"
+            
+            # Aggregate by vest
+            if vest_identifier not in vest_errors:
+                vest_errors[vest_identifier] = []
+            vest_errors[vest_identifier].append(percent_error)
+            
+            # Add to point data for graphing
+            point_data.append({
+                "vest_code": vest_identifier,
+                "vest_name": vest.vest_code if vest else "Unknown",
+                "protocol": test_session.protocol if test_session else "Unknown",
+                "actual_bfd": actual_bfd,
+                "predicted_bfd": predicted_bfd,
+                "percent_error": percent_error,
+                "shot_number": shot_data.shot_number,
+                "protection_level": getattr(shot_data, 'protection_level', 'Unknown') if getattr(shot_data, 'protection_level', None) else "Unknown",
+                "caliber": getattr(shot_data, 'caliber', 'Unknown') if getattr(shot_data, 'caliber', None) else "Unknown",
+            })
+            
+            # Debug: print first few records to see what data we're getting
+            if len(point_data) <= 3:
+                print(f"DEBUG shot_data object: {dir(shot_data)}")
+                print(f"DEBUG point_data {len(point_data)}: protection_level={getattr(shot_data, 'protection_level', 'MISSING')}, caliber={getattr(shot_data, 'caliber', 'MISSING')}")
+            
+        except Exception as e:
+            print(f"ERROR: Failed to predict for shot {shot_data.id}: {e}")
+            continue
+    
+    # Calculate vest averages
+    vest_averages = []
+    for vest_code, errors in vest_errors.items():
+        avg_error = sum(errors) / len(errors) if errors else 0
+        vest_averages.append({
+            "vest_code": vest_code,
+            "average_percent_error": round(avg_error, 2),
+            "num_points": len(errors),
+        })
+    
+    # Calculate overall average error
+    all_errors = []
+    for errors in vest_errors.values():
+        all_errors.extend(errors)
+    overall_average_error = round(sum(all_errors) / len(all_errors), 2) if all_errors else 0
+    
+    # Sort by average error
+    vest_averages.sort(key=lambda x: x["average_percent_error"])
+    
+    # Evaluate on anchor points
+    anchor_point_errors = []
+    anchor_point_material_errors = {}  # Track errors by material composition
+    try:
+        from app.db.models import AnchorPoint, AnchorPointLayer
+        from app.services.ml.data_fetcher import fetch_anchor_points_as_training_data
+        
+        anchor_df, anchor_metadata = fetch_anchor_points_as_training_data(db_session)
+        if not anchor_df.empty:
+            print(f"DEBUG: Evaluating {len(anchor_df)} anchor points")
+            
+            for _, row in anchor_df.iterrows():
+                vest_composition = row.get('vest_composition', '')
+                prediction_input = {
+                    "vest_composition": vest_composition,
+                    "number_of_layers": row.get('number_of_layers'),
+                    "ammunition_used": row.get('ammunition_used'),
+                    "threat_level": row.get('threat_level'),
+                    "shot_number": row.get('shot_number', 1),
+                    "impact_velocity_mps": row.get('impact_velocity_mps'),
+                    "impact_angle_deg": row.get('impact_angle_deg', 0.0),
+                    "bullet_mass_g": row.get('bullet_mass_g'),
+                    "temperature_c": row.get('temperature_c', 20.0),
+                    "humidity_pct": row.get('humidity_pct', 50.0),
+                    "condition": row.get('condition'),
+                    "panel_side": row.get('panel_side'),
+                }
+                
+                try:
+                    X = prepare_single_input(prediction_input, material_properties, validate=False)
+                    X_processed = preprocessor.transform(X)
+                    predicted_bfd = float(bfd_model.predict(X_processed)[0])
+                    
+                    actual_bfd = row.get('backface_deformation_mm')
+                    if actual_bfd is not None:
+                        actual_bfd = float(actual_bfd)
+                        
+                        # Calculate percentage error
+                        if actual_bfd != 0:
+                            percent_error = abs(predicted_bfd - actual_bfd) / actual_bfd * 100
+                        else:
+                            percent_error = abs(predicted_bfd - actual_bfd)  # Absolute error if actual is 0
+                        
+                        anchor_point_errors.append(percent_error)
+                        
+                        # Track by material composition
+                        if vest_composition not in anchor_point_material_errors:
+                            anchor_point_material_errors[vest_composition] = []
+                        anchor_point_material_errors[vest_composition].append(percent_error)
+                except Exception as e:
+                    print(f"ERROR: Failed to predict for anchor point: {e}")
+                    continue
+            
+            # Filter out NaN values and calculate average
+            valid_errors = [e for e in anchor_point_errors if not (e != e)]  # Filter NaN
+            anchor_avg_error = round(sum(valid_errors) / len(valid_errors), 2) if valid_errors else 0
+            print(f"DEBUG: Anchor point average error: {anchor_avg_error}%")
+            
+            # Calculate per-material averages
+            anchor_point_material_averages = []
+            for composition, errors in anchor_point_material_errors.items():
+                valid_material_errors = [e for e in errors if not (e != e)]
+                if valid_material_errors:
+                    avg_error = round(sum(valid_material_errors) / len(valid_material_errors), 2)
+                    anchor_point_material_averages.append({
+                        "composition": composition,
+                        "average_error": avg_error,
+                        "count": len(valid_material_errors)
+                    })
+            # Sort by average error
+            anchor_point_material_averages.sort(key=lambda x: x["average_error"])
+        else:
+            anchor_avg_error = 0
+            anchor_point_material_averages = []
+    except Exception as e:
+        print(f"ERROR: Failed to evaluate anchor points: {e}")
+        anchor_avg_error = 0
+        anchor_point_material_averages = []
+    
+    return {
+        "vest_averages": vest_averages,
+        "point_data": point_data,
+        "total_points": len(point_data),
+        "model_version": metadata.get("version"),
+        "model_name": metadata.get("model_name"),
+        "overall_average_error": overall_average_error,
+        "anchor_point_average_error": anchor_avg_error,
+        "anchor_point_count": len(anchor_point_errors),
+        "anchor_point_material_errors": anchor_point_material_averages,
     }

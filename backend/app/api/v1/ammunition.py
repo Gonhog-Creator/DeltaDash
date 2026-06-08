@@ -92,12 +92,27 @@ def update_ammunition(
     if not ammunition:
         raise HTTPException(status_code=404, detail="Ammunition not found")
     
+    old_caliber = ammunition.caliber
     update_data = ammunition_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(ammunition, field, value)
     
     db.commit()
     db.refresh(ammunition)
+    
+    # If caliber changed, update anchor points with "all" scope
+    if 'caliber' in update_data and old_caliber != ammunition.caliber:
+        all_scope_anchors = db.query(AnchorPoint).filter(AnchorPoint.ammunition_scope == 'all').all()
+        for anchor in all_scope_anchors:
+            if anchor.caliber_ids is None:
+                anchor.caliber_ids = []
+            # Remove old caliber
+            anchor.caliber_ids = [c for c in anchor.caliber_ids if c != old_caliber]
+            # Add new caliber
+            if ammunition.caliber not in anchor.caliber_ids:
+                anchor.caliber_ids.append(ammunition.caliber)
+        db.commit()
+    
     return ammunition
 
 
@@ -111,5 +126,18 @@ def delete_ammunition(
     if not ammunition:
         raise HTTPException(status_code=404, detail="Ammunition not found")
     
+    caliber = ammunition.caliber
+    
     db.delete(ammunition)
     db.commit()
+    
+    # Check if any other ammunition has this caliber
+    remaining_ammo = db.query(AmmunitionModel).filter(AmmunitionModel.caliber == caliber).first()
+    
+    # If no other ammunition has this caliber, remove it from "all" scope anchor points
+    if not remaining_ammo:
+        all_scope_anchors = db.query(AnchorPoint).filter(AnchorPoint.ammunition_scope == 'all').all()
+        for anchor in all_scope_anchors:
+            if anchor.caliber_ids and caliber in anchor.caliber_ids:
+                anchor.caliber_ids = [c for c in anchor.caliber_ids if c != caliber]
+        db.commit()

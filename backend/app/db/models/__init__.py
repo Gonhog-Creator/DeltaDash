@@ -16,6 +16,7 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.shot_data import ShotData
 from app.db.models.location import Location
 from app.db.models.protocol import Protocol
+from app.db.models.anchor_point import AnchorPoint, AnchorPointLayer
 
 __all__ = [
     "User",
@@ -36,4 +37,6 @@ __all__ = [
     "ShotData",
     "Location",
     "Protocol",
+    "AnchorPoint",
+    "AnchorPointLayer",
 ]

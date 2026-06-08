@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 import pandas as pd
 
-from app.db.models import ShotData, Vest, VestLayer, Material, TestSession, Ammunition
+from app.db.models import ShotData, Vest, VestLayer, Material, TestSession, Ammunition, AnchorPoint, AnchorPointLayer
 
 
 def fetch_training_data(db: Session, verbose: bool = True) -> tuple[pd.DataFrame, list[str]]:
@@ -175,7 +175,7 @@ def fetch_training_data(db: Session, verbose: bool = True) -> tuple[pd.DataFrame
             'humidity_pct': float(shot_data_record.humidity_percent) if shot_data_record.humidity_percent else None,
             'condition': test_session.conditioning if test_session else None,
             'panel_side': shot_data_record.side,
-            'backface_deformation_mm': float(shot_data_record.trauma_mm) if shot_data_record.trauma_mm else None,
+            'backface_deformation_mm': float(shot_data_record.trauma_mm) if shot_data_record.trauma_mm is not None else None,
             'perforated': perforated,
             'pass_fail': None,  # Not available in ShotData
             'material_type': material_type_str,
@@ -208,7 +208,125 @@ def fetch_training_data(db: Session, verbose: bool = True) -> tuple[pd.DataFrame
     # Add statistics to warnings
     warnings_list.append(f"Layer count range: {min(layer_counts) if layer_counts else 0} - {max(layer_counts) if layer_counts else 0} (mean: {sum(layer_counts) / len(layer_counts) if layer_counts else 0:.1f})")
 
-    return df, warnings_list
+    # Fetch and merge anchor points
+    anchor_df, anchor_metadata = fetch_anchor_points_as_training_data(db)
+    if not anchor_df.empty:
+        if verbose:
+            print(f"DEBUG: Adding {len(anchor_df)} anchor points to training data")
+            warnings_list.append(f"Added {len(anchor_df)} anchor points to training data")
+        df = pd.concat([df, anchor_df], ignore_index=True)
+
+    # Build metadata
+    metadata = {
+        "shot_data_count": len(rows),
+        "anchor_point_count": anchor_metadata.get("anchor_point_count", 0),
+        "anchor_point_training_rows": len(anchor_df) if not anchor_df.empty else 0,
+        "total_training_rows": len(df),
+    }
+
+    return df, warnings_list, metadata
+
+
+def fetch_anchor_points_as_training_data(db: Session) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """
+    Fetch anchor points and convert them to training data format.
+    
+    Anchor points are synthetic data points used for model training
+    that represent known boundary conditions (e.g., 10,000 layers will stop any bullet).
+    
+    Returns a DataFrame with the same columns as fetch_training_data,
+    plus metadata about the anchor points.
+    """
+    anchor_points = db.query(AnchorPoint).all()
+    
+    if not anchor_points:
+        return pd.DataFrame(), {"anchor_point_count": 0, "anchor_point_training_rows": 0}
+    
+    rows = []
+    
+    for ap in anchor_points:
+        # Get anchor point layers
+        ap_layers = db.query(AnchorPointLayer, Material).join(
+            Material, AnchorPointLayer.material_id == Material.id
+        ).filter(AnchorPointLayer.anchor_point_id == ap.id).order_by(AnchorPointLayer.layer_index).all()
+        
+        # Build composition string and calculate totals
+        composition_parts = []
+        total_thickness = 0.0
+        total_weight = 0.0
+        total_layers = 0
+        material_types = set()
+        
+        for apl, material in ap_layers:
+            count = apl.layer_count or 1
+            total_layers += count
+            
+            thickness = float(material.thickness_mm) if material.thickness_mm else 0.0
+            weight = float(material.areal_density_g_m2) if material.areal_density_g_m2 else 0.0
+            
+            total_thickness += thickness * count
+            total_weight += weight * count
+            
+            composition_parts.append(f"{count} {material.name}")
+            
+            if material.material_class:
+                material_types.add(material.material_class)
+        
+        vest_composition = " + ".join(composition_parts) if composition_parts else ""
+        material_type_str = ", ".join(sorted(material_types)) if material_types else None
+        
+        # Determine which ammunition to use
+        ammunition_list = []
+        
+        if ap.ammunition_scope == 'all':
+            # Use all ammunition
+            ammunition_list = db.query(Ammunition).all()
+        elif ap.ammunition_scope == 'calibers' and ap.caliber_ids:
+            # Use all ammunition matching the caliber list
+            ammos = db.query(Ammunition).filter(Ammunition.caliber.in_(ap.caliber_ids)).all()
+            ammunition_list = ammos
+        
+        # Generate a row for each ammunition
+        for ammo in ammunition_list:
+            # Use custom velocity if provided, else use nominal velocity
+            velocity = ap.custom_velocity_mps if ap.custom_velocity_mps else ammo.nominal_velocity_m_s
+            if velocity is None:
+                velocity = 0.0
+            else:
+                velocity = float(velocity)
+            
+            # Convert perforated to integer
+            perforated_int = 1 if ap.expected_perforated else 0
+            
+            row = {
+                'vest_composition': vest_composition if vest_composition else None,
+                'material_thickness_mm': total_thickness if total_thickness > 0 else None,
+                'material_weight_g_m2': total_weight if total_weight > 0 else None,
+                'number_of_layers': total_layers if total_layers > 0 else None,
+                'ammunition_used': ammo.name,
+                'threat_level': None,  # Anchor points don't have threat levels
+                'shot_number': 1,  # Default to first shot
+                'impact_velocity_mps': velocity,
+                'impact_angle_deg': 0.0,  # Default to 0 degrees
+                'bullet_mass_g': float(ammo.projectile_mass_grams) if ammo.projectile_mass_grams else None,
+                'temperature_c': 22.0,  # Default to standard conditions
+                'humidity_pct': 50.0,  # Default to standard conditions
+                'condition': None,
+                'panel_side': None,
+                'backface_deformation_mm': float(ap.expected_bfd_mm) if ap.expected_bfd_mm is not None else None,
+                'perforated': perforated_int,
+                'pass_fail': 'fail' if ap.expected_perforated else 'pass',
+                'material_type': material_type_str,
+            }
+            
+            rows.append(row)
+    
+    metadata = {
+        "anchor_point_count": len(anchor_points),
+        "anchor_point_training_rows": len(rows),
+    }
+    
+    return pd.DataFrame(rows), metadata
 
 
 def fetch_material_properties(db: Session) -> Dict[str, Dict[str, float]]:

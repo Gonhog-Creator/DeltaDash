@@ -12,6 +12,7 @@ from app.db.models.model_run import ModelRun
 from app.db.models.prediction import Prediction
 from app.db.models.protocol import Protocol
 from app.db.models.location import Location
+from app.db.models.anchor_point import AnchorPoint, AnchorPointLayer
 from app.api.v1.auth import get_current_active_user, get_current_user
 from app.db.models.user import User
 from app.core.config import settings
@@ -281,6 +282,48 @@ def sync_database(
             local_db.commit()
             print("Locations synced successfully")
             
+            # Sync anchor points
+            remote_cursor.execute("SELECT * FROM anchor_points")
+            columns = [desc[0] for desc in remote_cursor.description]
+            anchor_points_data = remote_cursor.fetchall()
+            print(f"Found {len(anchor_points_data)} anchor point records")
+            
+            for row in anchor_points_data:
+                anchor_point_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in anchor_point_dict.items() if hasattr(AnchorPoint, key)}
+                existing = local_db.query(AnchorPoint).filter(AnchorPoint.id == valid_columns['id']).first()
+                if not existing:
+                    new_anchor_point = AnchorPoint(**valid_columns)
+                    local_db.add(new_anchor_point)
+                else:
+                    for key, value in valid_columns.items():
+                        if key != 'id' and hasattr(existing, key):
+                            setattr(existing, key, value)
+            
+            local_db.commit()
+            print("Anchor points synced successfully")
+            
+            # Sync anchor point layers
+            remote_cursor.execute("SELECT * FROM anchor_point_layers")
+            columns = [desc[0] for desc in remote_cursor.description]
+            anchor_point_layers_data = remote_cursor.fetchall()
+            print(f"Found {len(anchor_point_layers_data)} anchor point layer records")
+            
+            for row in anchor_point_layers_data:
+                anchor_point_layer_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in anchor_point_layer_dict.items() if hasattr(AnchorPointLayer, key)}
+                existing = local_db.query(AnchorPointLayer).filter(AnchorPointLayer.id == valid_columns['id']).first()
+                if not existing:
+                    new_anchor_point_layer = AnchorPointLayer(**valid_columns)
+                    local_db.add(new_anchor_point_layer)
+                else:
+                    for key, value in valid_columns.items():
+                        if key != 'id' and hasattr(existing, key):
+                            setattr(existing, key, value)
+            
+            local_db.commit()
+            print("Anchor point layers synced successfully")
+            
             return {"message": "Database sync completed successfully", "synced_records": {
                 "ammunition": len(ammunition_data),
                 "materials": len(materials_data),
@@ -291,7 +334,9 @@ def sync_database(
                 "model_runs": len(model_runs_data),
                 "predictions": len(predictions_data),
                 "protocols": len(protocols_data),
-                "locations": len(locations_data)
+                "locations": len(locations_data),
+                "anchor_points": len(anchor_points_data),
+                "anchor_point_layers": len(anchor_point_layers_data)
             }}
             
         except Exception as e:
