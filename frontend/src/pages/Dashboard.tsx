@@ -15,8 +15,10 @@ export function Dashboard() {
   const { isAdmin, role } = useAuth();
   const [stats, setStats] = useState({ test_session_count: 0, total_shots: 0 });
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [showSyncSuccessModal, setShowSyncSuccessModal] = useState(false);
   const [syncResults, setSyncResults] = useState<any>(null);
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [backupConfirmText, setBackupConfirmText] = useState('');
@@ -78,6 +80,24 @@ export function Dashboard() {
       alert('Failed to sync database. Check console for details.');
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setIsResetting(true);
+    setShowResetConfirmModal(false);
+    try {
+      const result = await apiClient.post('/api/v1/admin/reset-database');
+      setSyncResults(result);
+      setShowSyncSuccessModal(true);
+      // Refresh stats after reset
+      const data = await apiClient.get<{ test_session_count: number; total_shots: number }>('/api/v1/test-sessions/stats');
+      setStats({ test_session_count: data.test_session_count, total_shots: data.total_shots });
+    } catch (error) {
+      console.error('Failed to reset database:', error);
+      alert('Failed to reset database. Check console for details.');
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -361,6 +381,13 @@ export function Dashboard() {
               {isSyncing ? 'Syncing...' : 'Sync Database (Pull)'}
             </button>
             <button
+              onClick={() => setShowResetConfirmModal(true)}
+              disabled={isResetting}
+              className="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isResetting ? 'Resetting...' : 'Reset Database'}
+            </button>
+            <button
               onClick={() => setShowBackupModal(true)}
               className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
             >
@@ -465,6 +492,22 @@ export function Dashboard() {
           variant="default"
           onConfirm={() => setShowSyncSuccessModal(false)}
           onCancel={() => setShowSyncSuccessModal(false)}
+        />
+      )}
+      {showResetConfirmModal && (
+        <ConfirmModal
+          title="Reset Database"
+          message={
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600 font-medium text-red-700">WARNING: This will delete ALL local data and replace it with data from the remote database.</p>
+              <p className="text-sm text-gray-600">This action cannot be undone. All local changes will be lost.</p>
+              <p className="text-sm text-gray-600">Are you sure you want to continue?</p>
+            </div>
+          }
+          confirmLabel="Reset Database"
+          variant="danger"
+          onConfirm={handleReset}
+          onCancel={() => setShowResetConfirmModal(false)}
         />
       )}
       {showBackupModal && (

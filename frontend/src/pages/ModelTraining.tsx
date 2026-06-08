@@ -174,6 +174,9 @@ export function ModelTraining() {
     try {
       const response = await fetch(`/api/v1/ballistic/versions/${editVersion}/download`, {
         method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
       });
       if (!response.ok) throw new Error('Download failed');
       
@@ -213,6 +216,9 @@ export function ModelTraining() {
 
       const response = await fetch('/api/v1/ballistic/versions/upload', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
         body: formData,
       });
 

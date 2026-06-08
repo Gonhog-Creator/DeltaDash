@@ -16,6 +16,8 @@ import shutil
 from app.db.session import get_db
 from app.services.ml.ballistic_ml import train_from_database, predict, load_metadata, fetch_material_properties, list_model_versions, load_model_version, predict_with_version, predict_with_version_multi_shot, delete_model_version, update_model_name, evaluate_model_on_test_sessions, VERSIONS_DIR
 from app.db.models.model_run import ModelRun
+from app.api.v1.auth import get_current_active_user
+from app.db.models.user import User
 
 
 router = APIRouter(prefix="/ballistic", tags=["ballistic"])
@@ -389,6 +391,129 @@ def load_version(version: str):
         raise HTTPException(status_code=500, detail=f"Failed to load model version: {str(e)}")
 
 
+@router.post("/versions/upload")
+def upload_model(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Upload a model version from a zip file.
+    """
+    # Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    if not file.filename.endswith('.zip'):
+        raise HTTPException(status_code=400, detail="Only .zip files are allowed")
+    
+    temp_dir = tempfile.mkdtemp()
+    temp_zip = os.path.join(temp_dir, file.filename)
+    
+    try:
+        # Save uploaded file
+        with open(temp_zip, 'wb') as f:
+            content = file.file.read()
+            f.write(content)
+        
+        # Extract zip file
+        with zipfile.ZipFile(temp_zip, 'r') as zipf:
+            zipf.extractall(temp_dir)
+
+        # Find the version directory
+        # Supports two formats:
+        # 1. ballistic/versions/{version}/... (download format)
+        # 2. {version}/... (simple format)
+        extracted_dirs = os.listdir(temp_dir)
+        if not extracted_dirs:
+            raise HTTPException(status_code=400, detail="Zip file is empty")
+
+        source_version_dir = None
+        version = None
+
+        # Try to find ballistic/versions/{version} structure
+        for item in extracted_dirs:
+            item_path = os.path.join(temp_dir, item)
+            if os.path.isdir(item_path):
+                # Check if this is the ballistic directory
+                versions_path = os.path.join(item_path, 'versions')
+                if os.path.exists(versions_path):
+                    # Look for version directory inside versions
+                    version_subdirs = [d for d in os.listdir(versions_path) if os.path.isdir(os.path.join(versions_path, d))]
+                    if version_subdirs:
+                        version = version_subdirs[0]
+                        source_version_dir = os.path.join(versions_path, version)
+                        break
+
+        # If not found, try simple {version} format
+        if not source_version_dir:
+            version_dirs = [d for d in extracted_dirs if os.path.isdir(os.path.join(temp_dir, d))]
+            if version_dirs:
+                version = version_dirs[0]
+                source_version_dir = os.path.join(temp_dir, version)
+
+        if not source_version_dir:
+            raise HTTPException(status_code=400, detail="No version directory found in zip file")
+        
+        # Check if version already exists
+        target_version_dir = os.path.join(VERSIONS_DIR, version)
+        if os.path.exists(target_version_dir):
+            raise HTTPException(status_code=400, detail=f"Version {version} already exists")
+        
+        # Copy version directory to the correct location
+        shutil.copytree(source_version_dir, target_version_dir)
+        
+        # Update or create ModelRun record
+        metadata_path = os.path.join(target_version_dir, "metadata.json")
+        if os.path.exists(metadata_path):
+            with open(metadata_path, "r") as f:
+                metadata = json.load(f)
+            
+            trained_at = None
+            if "trained_at" in metadata:
+                try:
+                    trained_at = datetime.fromisoformat(metadata["trained_at"].replace('Z', '+00:00'))
+                except:
+                    pass
+            
+            model_run = db.query(ModelRun).filter(
+                ModelRun.version == version,
+                ModelRun.model_type == "ballistic"
+            ).first()
+            
+            if model_run:
+                model_run.training_completed_at = trained_at
+                model_run.training_row_count = metadata.get("training_data_count")
+                model_run.metrics_json = metadata.get("metrics")
+            else:
+                model_run = ModelRun(
+                    model_name=metadata.get("model_name", version),
+                    model_type="ballistic",
+                    version=version,
+                    training_started_at=trained_at,
+                    training_completed_at=trained_at,
+                    training_row_count=metadata.get("training_data_count"),
+                    metrics_json=metadata.get("metrics"),
+                    artifact_path=f"ballistic/versions/{version}",
+                )
+                db.add(model_run)
+            
+            db.commit()
+        
+        return {
+            "status": "success",
+            "message": f"Model version {version} uploaded successfully",
+            "version": version
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to upload model: {str(e)}")
+    finally:
+        # Clean up temp directory
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 @router.delete("/versions/{version}")
 def delete_version(version: str):
     """Delete a specific model version."""
@@ -717,110 +842,3 @@ def download_model(version: str, background_tasks: BackgroundTasks):
         # Clean up on error
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Failed to create zip file: {str(e)}")
-
-
-@router.post("/versions/upload")
-async def upload_model(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """
-    Upload a model version from a zip file.
-    """
-    if not file.filename.endswith('.zip'):
-        raise HTTPException(status_code=400, detail="Only .zip files are allowed")
-    
-    temp_dir = tempfile.mkdtemp()
-    temp_zip = os.path.join(temp_dir, file.filename)
-    
-    try:
-        # Save uploaded file
-        with open(temp_zip, 'wb') as f:
-            content = await file.read()
-            f.write(content)
-        
-        # Extract zip file
-        with zipfile.ZipFile(temp_zip, 'r') as zipf:
-            zipf.extractall(temp_dir)
-        
-        # Find the version directory (should be in the format ballistic/versions/{version})
-        extracted_dirs = os.listdir(temp_dir)
-        if not extracted_dirs:
-            raise HTTPException(status_code=400, detail="Zip file is empty")
-        
-        # Look for the versions directory
-        versions_dir = None
-        for item in extracted_dirs:
-            if os.path.isdir(os.path.join(temp_dir, item)):
-                versions_dir = os.path.join(temp_dir, item)
-                # Check if this is the ballistic directory
-                if os.path.exists(os.path.join(versions_dir, 'versions')):
-                    versions_dir = os.path.join(versions_dir, 'versions')
-                    break
-        
-        if not versions_dir:
-            raise HTTPException(status_code=400, detail="Invalid model zip file structure")
-        
-        # Get the version directory
-        version_dirs = [d for d in os.listdir(versions_dir) if os.path.isdir(os.path.join(versions_dir, d))]
-        if not version_dirs:
-            raise HTTPException(status_code=400, detail="No version directory found in zip file")
-        
-        version = version_dirs[0]
-        source_version_dir = os.path.join(versions_dir, version)
-        
-        # Check if version already exists
-        target_version_dir = os.path.join(VERSIONS_DIR, version)
-        if os.path.exists(target_version_dir):
-            raise HTTPException(status_code=400, detail=f"Version {version} already exists")
-        
-        # Copy version directory to the correct location
-        shutil.copytree(source_version_dir, target_version_dir)
-        
-        # Update or create ModelRun record
-        metadata_path = os.path.join(target_version_dir, "metadata.json")
-        if os.path.exists(metadata_path):
-            with open(metadata_path, "r") as f:
-                metadata = json.load(f)
-            
-            trained_at = None
-            if "trained_at" in metadata:
-                try:
-                    trained_at = datetime.fromisoformat(metadata["trained_at"].replace('Z', '+00:00'))
-                except:
-                    pass
-            
-            model_run = db.query(ModelRun).filter(
-                ModelRun.version == version,
-                ModelRun.model_type == "ballistic"
-            ).first()
-            
-            if model_run:
-                model_run.training_completed_at = trained_at
-                model_run.training_row_count = metadata.get("training_data_count")
-                model_run.metrics_json = metadata.get("metrics")
-            else:
-                model_run = ModelRun(
-                    model_name=metadata.get("model_name", version),
-                    model_type="ballistic",
-                    version=version,
-                    training_started_at=trained_at,
-                    training_completed_at=trained_at,
-                    training_row_count=metadata.get("training_data_count"),
-                    metrics_json=metadata.get("metrics"),
-                    artifact_path=f"ballistic/versions/{version}",
-                )
-                db.add(model_run)
-            
-            db.commit()
-        
-        return {
-            "status": "success",
-            "message": f"Model version {version} uploaded successfully",
-            "version": version
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to upload model: {str(e)}")
-    finally:
-        # Clean up temp directory
-        shutil.rmtree(temp_dir, ignore_errors=True)

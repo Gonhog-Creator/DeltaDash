@@ -354,6 +354,248 @@ def sync_database(
         raise HTTPException(status_code=500, detail=f"Failed to connect to remote database: {str(e)}")
 
 
+@router.post("/reset-database")
+def reset_database(
+    current_user: User = Depends(get_current_active_user)
+):
+    """Reset local database to match remote database (delete local data + sync fresh)."""
+    # Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Remote database connection details
+    remote_db_url = os.getenv("REMOTE_DATABASE_URL")
+    if not remote_db_url:
+        raise HTTPException(status_code=500, detail="REMOTE_DATABASE_URL not configured")
+    
+    local_db: Session = SessionLocal()
+    
+    try:
+        # Delete all local data
+        print("Deleting local database data...")
+        local_db.query(AnchorPointLayer).delete()
+        local_db.query(AnchorPoint).delete()
+        local_db.query(Location).delete()
+        local_db.query(Protocol).delete()
+        local_db.query(Prediction).delete()
+        local_db.query(ModelRun).delete()
+        local_db.query(ShotData).delete()
+        local_db.query(VestLayer).delete()
+        local_db.query(Vest).delete()
+        local_db.query(TestSession).delete()
+        local_db.query(Material).delete()
+        local_db.query(Ammunition).delete()
+        local_db.commit()
+        print("Local data deleted successfully")
+        
+        # Connect to remote database
+        print(f"Attempting to connect to remote database: {remote_db_url}")
+        remote_conn = psycopg2.connect(remote_db_url, connect_timeout=10)
+        remote_cursor = remote_conn.cursor()
+        print("Successfully connected to remote database")
+        
+        try:
+            # Sync ammunition
+            print("Syncing ammunition...")
+            remote_cursor.execute("SELECT * FROM ammunition")
+            columns = [desc[0] for desc in remote_cursor.description]
+            ammunition_data = remote_cursor.fetchall()
+            print(f"Found {len(ammunition_data)} ammunition records")
+            
+            for row in ammunition_data:
+                ammo_dict = dict(zip(columns, row))
+                new_ammo = Ammunition(**ammo_dict)
+                local_db.add(new_ammo)
+            
+            local_db.commit()
+            print("Ammunition synced successfully")
+            
+            # Sync materials
+            remote_cursor.execute("SELECT * FROM materials")
+            columns = [desc[0] for desc in remote_cursor.description]
+            materials_data = remote_cursor.fetchall()
+            
+            for row in materials_data:
+                material_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in material_dict.items() if hasattr(Material, key)}
+                new_material = Material(**valid_columns)
+                local_db.add(new_material)
+            
+            local_db.commit()
+            print("Materials synced successfully")
+            
+            # Sync vests
+            remote_cursor.execute("SELECT * FROM vests")
+            columns = [desc[0] for desc in remote_cursor.description]
+            vests_data = remote_cursor.fetchall()
+            
+            for row in vests_data:
+                vest_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in vest_dict.items() if hasattr(Vest, key)}
+                new_vest = Vest(**valid_columns)
+                local_db.add(new_vest)
+            
+            local_db.commit()
+            print("Vests synced successfully")
+            
+            # Sync vest layers
+            remote_cursor.execute("SELECT * FROM vest_layers")
+            columns = [desc[0] for desc in remote_cursor.description]
+            vest_layers_data = remote_cursor.fetchall()
+            
+            for row in vest_layers_data:
+                vest_layer_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in vest_layer_dict.items() if hasattr(VestLayer, key)}
+                new_vest_layer = VestLayer(**valid_columns)
+                local_db.add(new_vest_layer)
+            
+            local_db.commit()
+            print("Vest layers synced successfully")
+            
+            # Sync test sessions
+            remote_cursor.execute("SELECT * FROM test_sessions")
+            columns = [desc[0] for desc in remote_cursor.description]
+            test_sessions_data = remote_cursor.fetchall()
+            
+            for row in test_sessions_data:
+                test_session_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in test_session_dict.items() if hasattr(TestSession, key)}
+                new_test_session = TestSession(**valid_columns)
+                local_db.add(new_test_session)
+            
+            local_db.commit()
+            print("Test sessions synced successfully")
+            
+            # Sync shot data
+            remote_cursor.execute("SELECT * FROM shot_data")
+            columns = [desc[0] for desc in remote_cursor.description]
+            shot_data = remote_cursor.fetchall()
+            
+            for row in shot_data:
+                shot_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in shot_dict.items() if hasattr(ShotData, key)}
+                new_shot = ShotData(**valid_columns)
+                local_db.add(new_shot)
+            
+            local_db.commit()
+            print("Shot data synced successfully")
+            
+            # Sync model runs
+            remote_cursor.execute("SELECT * FROM model_runs")
+            columns = [desc[0] for desc in remote_cursor.description]
+            model_runs_data = remote_cursor.fetchall()
+            
+            for row in model_runs_data:
+                model_run_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in model_run_dict.items() if hasattr(ModelRun, key)}
+                new_model_run = ModelRun(**valid_columns)
+                local_db.add(new_model_run)
+            
+            local_db.commit()
+            print("Model runs synced successfully")
+            
+            # Sync predictions
+            remote_cursor.execute("SELECT * FROM predictions")
+            columns = [desc[0] for desc in remote_cursor.description]
+            predictions_data = remote_cursor.fetchall()
+            
+            for row in predictions_data:
+                prediction_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in prediction_dict.items() if hasattr(Prediction, key)}
+                new_prediction = Prediction(**valid_columns)
+                local_db.add(new_prediction)
+            
+            local_db.commit()
+            print("Predictions synced successfully")
+            
+            # Sync protocols
+            remote_cursor.execute("SELECT * FROM protocols")
+            columns = [desc[0] for desc in remote_cursor.description]
+            protocols_data = remote_cursor.fetchall()
+            
+            for row in protocols_data:
+                protocol_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in protocol_dict.items() if hasattr(Protocol, key)}
+                new_protocol = Protocol(**valid_columns)
+                local_db.add(new_protocol)
+            
+            local_db.commit()
+            print("Protocols synced successfully")
+            
+            # Sync locations
+            remote_cursor.execute("SELECT * FROM locations")
+            columns = [desc[0] for desc in remote_cursor.description]
+            locations_data = remote_cursor.fetchall()
+            
+            for row in locations_data:
+                location_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in location_dict.items() if hasattr(Location, key)}
+                new_location = Location(**valid_columns)
+                local_db.add(new_location)
+            
+            local_db.commit()
+            print("Locations synced successfully")
+            
+            # Sync anchor points
+            remote_cursor.execute("SELECT * FROM anchor_points")
+            columns = [desc[0] for desc in remote_cursor.description]
+            anchor_points_data = remote_cursor.fetchall()
+            print(f"Found {len(anchor_points_data)} anchor point records")
+            
+            for row in anchor_points_data:
+                anchor_point_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in anchor_point_dict.items() if hasattr(AnchorPoint, key)}
+                new_anchor_point = AnchorPoint(**valid_columns)
+                local_db.add(new_anchor_point)
+            
+            local_db.commit()
+            print("Anchor points synced successfully")
+            
+            # Sync anchor point layers
+            remote_cursor.execute("SELECT * FROM anchor_point_layers")
+            columns = [desc[0] for desc in remote_cursor.description]
+            anchor_point_layers_data = remote_cursor.fetchall()
+            print(f"Found {len(anchor_point_layers_data)} anchor point layer records")
+            
+            for row in anchor_point_layers_data:
+                anchor_point_layer_dict = dict(zip(columns, row))
+                valid_columns = {key: value for key, value in anchor_point_layer_dict.items() if hasattr(AnchorPointLayer, key)}
+                new_anchor_point_layer = AnchorPointLayer(**valid_columns)
+                local_db.add(new_anchor_point_layer)
+            
+            local_db.commit()
+            print("Anchor point layers synced successfully")
+            
+            return {"message": "Database reset completed successfully", "synced_records": {
+                "ammunition": len(ammunition_data),
+                "materials": len(materials_data),
+                "vests": len(vests_data),
+                "vest_layers": len(vest_layers_data),
+                "test_sessions": len(test_sessions_data),
+                "shot_data": len(shot_data),
+                "model_runs": len(model_runs_data),
+                "predictions": len(predictions_data),
+                "protocols": len(protocols_data),
+                "locations": len(locations_data),
+                "anchor_points": len(anchor_points_data),
+                "anchor_point_layers": len(anchor_point_layers_data)
+            }}
+            
+        except Exception as e:
+            local_db.rollback()
+            print(f"Sync error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Reset failed: {str(e)}")
+        finally:
+            local_db.close()
+            remote_cursor.close()
+            remote_conn.close()
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reset database: {str(e)}")
+
+
 @router.post("/backup")
 def create_backup(
     current_user: User = Depends(get_current_active_user)
