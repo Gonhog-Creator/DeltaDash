@@ -18,7 +18,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from app.db.session import SessionLocal
 from app.db.models.model_run import ModelRun
 from app.db.models.shot import Shot
-from ml.feature_engineering import FeatureEngineer
+from app.services.ml.ballistic_ml import fetch_training_data, add_engineered_features
 
 
 class ModelTrainer:
@@ -26,48 +26,72 @@ class ModelTrainer:
     
     def __init__(self, db: Optional[Session] = None):
         self.db = db or SessionLocal()
-        self.feature_engineer = FeatureEngineer(self.db)
         # Use Railway persistent storage if enabled
         if os.getenv('USE_RAILWAY_STORAGE') == 'true':
-            self.model_dir = '/app/storage/model_artifacts'
+            self.model_dir = '/app/storage/model_artifacts/ballistic'
         else:
-            self.model_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models')
+            backend_dir = os.path.dirname(os.path.dirname(__file__))
+            self.model_dir = os.path.join(backend_dir, 'storage', 'model_artifacts', 'ballistic')
         os.makedirs(self.model_dir, exist_ok=True)
     
     def prepare_training_data(self) -> Tuple[pd.DataFrame, pd.Series]:
         """
-        Prepare training data from database
+        Prepare training data from database using existing feature engineering
         
         Returns:
             Tuple of (X features, y targets)
         """
-        features_list, targets_list = self.feature_engineer.extract_training_data()
+        # Use existing fetch_training_data from ballistic_ml
+        from app.services.ml.data_fetcher import fetch_material_properties
         
-        if not features_list:
+        df = fetch_training_data(self.db)
+        
+        if df is None or df.empty:
             raise ValueError("No training data found in database")
         
-        # Convert to DataFrame
-        df = pd.DataFrame(features_list)
+        # Get material properties for feature engineering
+        material_properties = fetch_material_properties(self.db)
+        
+        # Add engineered features using existing system
+        df = add_engineered_features(df, material_properties, validate=False)
+        
+        # Separate features and target
+        target_col = 'backface_deformation_mm'
+        if target_col not in df.columns:
+            raise ValueError(f"Target column '{target_col}' not found in training data")
+        
+        # Remove rows with missing target
+        df = df.dropna(subset=[target_col])
+        
+        # Separate features and target
+        y = df[target_col]
+        X = df.drop(columns=[target_col])
         
         # Encode categorical features
-        categorical_cols = df.select_dtypes(include=['object']).columns
+        categorical_cols = X.select_dtypes(include=['object']).columns
         label_encoders = {}
         
         for col in categorical_cols:
             le = LabelEncoder()
-            df[col] = le.fit_transform(df[col].astype(str))
+            X[col] = le.fit_transform(X[col].astype(str))
             label_encoders[col] = le
         
-        # Convert targets to Series
-        y = pd.Series(targets_list)
+        # Fill missing values with 0
+        X = X.fillna(0)
         
-        return df, y
+        return X, y
     
-    def train_model(self, 
-                   n_estimators: int = 100,
+    def train_model(self,
+                   n_estimators: int = 300,
                    max_depth: int = 6,
-                   learning_rate: float = 0.1,
-                   test_size: float = 0.2) -> Dict:
+                   learning_rate: float = 0.05,
+                   test_size: float = 0.2,
+                   subsample: float = 0.8,
+                   colsample_bytree: float = 0.8,
+                   min_child_weight: int = 3,
+                   gamma: float = 0,
+                   reg_alpha: float = 0,
+                   reg_lambda: float = 1) -> Dict:
         """
         Train XGBoost model for BFD prediction
         
@@ -76,6 +100,12 @@ class ModelTrainer:
             max_depth: Maximum depth of trees
             learning_rate: Learning rate for XGBoost
             test_size: Proportion of data for testing
+            subsample: Subsample ratio of training instances
+            colsample_bytree: Subsample ratio of columns when constructing each tree
+            min_child_weight: Minimum sum of instance weight needed in a child
+            gamma: Minimum loss reduction required to make a split
+            reg_alpha: L1 regularization term on weights
+            reg_lambda: L2 regularization term on weights
             
         Returns:
             Dictionary of training results
@@ -99,12 +129,21 @@ class ModelTrainer:
             max_depth=max_depth,
             learning_rate=learning_rate,
             random_state=42,
-            objective='reg:squarederror'
+            objective='reg:squarederror',
+            subsample=subsample,
+            colsample_bytree=colsample_bytree,
+            min_child_weight=min_child_weight,
+            gamma=gamma,
+            reg_alpha=reg_alpha,
+            reg_lambda=reg_lambda,
+            n_jobs=-1,  # Use all available CPU cores
+            tree_method='hist',  # Faster histogram-based algorithm
+            enable_categorical=False,  # Disable categorical optimization for speed
         )
         
         model.fit(X_train_scaled, y_train)
         
-        # Evaluate
+        # Evaluate on test split
         y_pred = model.predict(X_test_scaled)
         
         metrics = {
@@ -128,20 +167,111 @@ class ModelTrainer:
         
         # Save model
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        model_filename = f'bfd_predictor_{timestamp}.pkl'
-        model_path = os.path.join(self.model_dir, model_filename)
         
-        # Save model and scaler
-        joblib.dump({
-            'model': model,
-            'scaler': scaler,
+        # Create version directory
+        version_dir = os.path.join(self.model_dir, 'versions', timestamp)
+        os.makedirs(version_dir, exist_ok=True)
+        
+        # Save model, scaler, and metadata separately (matching prediction_service format)
+        joblib.dump(model, os.path.join(version_dir, 'backface_deformation_mm.pkl'))
+        joblib.dump(scaler, os.path.join(version_dir, 'preprocessor.pkl'))
+        
+        # Save metadata
+        metadata = {
+            'version': timestamp,
             'feature_columns': X.columns.tolist(),
             'feature_importance': feature_importance,
             'metrics': metrics,
-            'training_date': timestamp
-        }, model_path)
+            'training_date': timestamp,
+            'model_type': 'XGBoostRegressor',
+            'model_name': 'bfd_predictor'
+        }
+        
+        with open(os.path.join(version_dir, 'metadata.json'), 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        # Also save as current model (copy to main directory)
+        joblib.dump(model, os.path.join(self.model_dir, 'backface_deformation_mm.pkl'))
+        joblib.dump(scaler, os.path.join(self.model_dir, 'preprocessor.pkl'))
+        with open(os.path.join(self.model_dir, 'metadata.json'), 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        model_path = version_dir
+        
+        # Now evaluate on test session data (same as manual health check)
+        try:
+            from app.services.ml.ballistic_ml import evaluate_model_on_test_sessions
+            health_check_results = evaluate_model_on_test_sessions(self.db, version=None, protocol_filter=None)
+            
+            if health_check_results.get('total_points', 0) > 0:
+                # Calculate average error from health check results
+                point_data = health_check_results.get('point_data', [])
+                if point_data:
+                    errors = [abs(point.get('predicted', 0) - point.get('actual', 0)) 
+                             for point in point_data if point.get('actual') is not None]
+                    if errors:
+                        metrics['health_check_mae'] = np.mean(errors)
+                        metrics['health_check_rmse'] = np.sqrt(np.mean([e**2 for e in errors]))
+                        metrics['health_check_points'] = len(errors)
+        except Exception as e:
+            # If health check fails, continue with training metrics
+            print(f"Warning: Could not run health check evaluation: {str(e)}")
+        
+        # Cross-validation
+        cv_scores = cross_val_score(
+            model, X_train_scaled, y_train, cv=5, scoring='neg_mean_squared_error'
+        )
+        metrics['cv_rmse'] = np.sqrt(-cv_scores.mean())
+        metrics['cv_rmse_std'] = np.sqrt(-cv_scores).std()
+        
+        # Feature importance
+        feature_importance = dict(zip(X.columns, model.feature_importances_))
+        metrics['feature_importance'] = feature_importance
+        
+        # Save model
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Create version directory
+        version_dir = os.path.join(self.model_dir, 'versions', timestamp)
+        os.makedirs(version_dir, exist_ok=True)
+        
+        # Save model, scaler, and metadata separately (matching prediction_service format)
+        joblib.dump(model, os.path.join(version_dir, 'backface_deformation_mm.pkl'))
+        joblib.dump(scaler, os.path.join(version_dir, 'preprocessor.pkl'))
+        
+        # Save metadata
+        metadata = {
+            'version': timestamp,
+            'feature_columns': X.columns.tolist(),
+            'feature_importance': feature_importance,
+            'metrics': metrics,
+            'training_date': timestamp,
+            'model_type': 'XGBoostRegressor',
+            'model_name': 'bfd_predictor'
+        }
+        
+        with open(os.path.join(version_dir, 'metadata.json'), 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        # Also save as current model (copy to main directory)
+        joblib.dump(model, os.path.join(self.model_dir, 'backface_deformation_mm.pkl'))
+        joblib.dump(scaler, os.path.join(self.model_dir, 'preprocessor.pkl'))
+        with open(os.path.join(self.model_dir, 'metadata.json'), 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        model_path = version_dir
         
         # Log to database
+        # Save model and preprocessor as binary data for Railway persistence
+        import io
+        model_buffer = io.BytesIO()
+        joblib.dump(model, model_buffer)
+        model_buffer.seek(0)
+        
+        preprocessor_buffer = io.BytesIO()
+        joblib.dump(scaler, preprocessor_buffer)
+        preprocessor_buffer.seek(0)
+        
         model_run = ModelRun(
             model_name='bfd_predictor',
             model_type='XGBoostRegressor',
@@ -150,7 +280,9 @@ class ModelTrainer:
             training_completed_at=datetime.now(),
             training_row_count=len(X),
             metrics_json=metrics,
-            artifact_path=model_path
+            artifact_path=model_path,
+            model_file=model_buffer.read(),
+            preprocessor_file=preprocessor_buffer.read()
         )
         
         self.db.add(model_run)

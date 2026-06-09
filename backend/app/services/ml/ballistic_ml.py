@@ -203,7 +203,9 @@ def build_composition_features(composition: Any, material_properties: Dict[str, 
     # Calculate weighted average material properties
     weighted_tensile_strength = 0.0
     weighted_modulus = 0.0
-    weighted_elongation = 0.0
+    weighted_elongation_percent = 0.0
+    weighted_force_longitudinal = 0.0
+    weighted_force_transverse = 0.0
     total_weight = 0.0
 
     for segment in segments:
@@ -218,15 +220,21 @@ def build_composition_features(composition: Any, material_properties: Dict[str, 
                 weighted_tensile_strength += props["tensile_strength_mpa"] * weight
             if "modulus_gpa" in props:
                 weighted_modulus += props["modulus_gpa"] * weight
+            if "elongation_longitudinal_percent" in props:
+                weighted_elongation_percent += props["elongation_longitudinal_percent"] * weight
+            elif "elongation_transverse_percent" in props:
+                weighted_elongation_percent += props["elongation_transverse_percent"] * weight
             if "force_longitudinal_n_per_cm" in props:
-                weighted_elongation += props["force_longitudinal_n_per_cm"] * weight
-            elif "force_transverse_n_per_cm" in props:
-                weighted_elongation += props["force_transverse_n_per_cm"] * weight
+                weighted_force_longitudinal += props["force_longitudinal_n_per_cm"] * weight
+            if "force_transverse_n_per_cm" in props:
+                weighted_force_transverse += props["force_transverse_n_per_cm"] * weight
 
     if total_weight > 0:
         weighted_tensile_strength /= total_weight
         weighted_modulus /= total_weight
-        weighted_elongation /= total_weight
+        weighted_elongation_percent /= total_weight
+        weighted_force_longitudinal /= total_weight
+        weighted_force_transverse /= total_weight
 
     sequence = [segment["material"] for segment in segments]
     transitions = sum(1 for left, right in zip(sequence, sequence[1:]) if left != right)
@@ -284,7 +292,9 @@ def build_composition_features(composition: Any, material_properties: Dict[str, 
         "composition_material_transition_count": transitions,
         "composition_weighted_tensile_strength_mpa": weighted_tensile_strength,
         "composition_weighted_modulus_gpa": weighted_modulus,
-        "composition_weighted_elongation_percent": weighted_elongation,
+        "composition_weighted_elongation_percent": weighted_elongation_percent,
+        "composition_weighted_force_longitudinal_n_per_cm": weighted_force_longitudinal,
+        "composition_weighted_force_transverse_n_per_cm": weighted_force_transverse,
         "composition_unique_material_count": len(set(sequence)),
         "composition_sequence": ">".join(sequence),
         "composition_first_material": sequence[0],
@@ -326,28 +336,93 @@ def add_engineered_features(df: pd.DataFrame, material_properties: Dict[str, Dic
         "bullet_mass_g",
         "temperature_c",
         "humidity_pct",
-        "panel_width_mm",
-        "panel_height_mm",
-        "plate_curvature_mm",
-        "shot_x_position_mm",
-        "shot_y_position_mm",
-        "edge_distance_mm",
-        "previous_shot_distance_mm",
         "fabric_elongation_pct",
         "fabric_strain_pct",
         "max_tensile_strength_mpa",
         "fiber_thickness_um",
         "epoxy_percentage",
         "fiber_orientation_deg",
+        "caliber_diameter_mm",
+        "caliber_length_mm",
     ]
 
     for col in numeric_candidates:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
+    # Add material_thickness_mm and material_weight_g_m2 if they don't exist (for prediction)
+    # These are calculated from composition features for prediction compatibility
+    if "material_thickness_mm" not in df.columns and "composition_calculated_thickness_mm" in df.columns:
+        df["material_thickness_mm"] = df["composition_calculated_thickness_mm"]
+    if "material_weight_g_m2" not in df.columns and "composition_calculated_areal_density_kg_m2" in df.columns:
+        df["material_weight_g_m2"] = df["composition_calculated_areal_density_kg_m2"] * 1000  # Convert kg/m2 to g/m2
+
+    # Add material_type if it doesn't exist (for prediction)
+    # Calculate from composition material classes
+    if "material_type" not in df.columns:
+        # Extract material classes from composition features
+        material_classes = []
+        material_class_cols = [col for col in df.columns if col.startswith("composition_material_class_")]
+        
+        for idx, row in df.iterrows():
+            classes = []
+            for col in material_class_cols:
+                if row.get(col) and row[col] != "unknown":
+                    # Extract material name from column name
+                    material_name = col.replace("composition_material_class_", "").replace("_", " ")
+                    classes.append(material_name.title())
+            material_classes.append(", ".join(sorted(set(classes))) if classes else "unknown")
+        
+        df["material_type"] = material_classes
+
     # Add kinetic energy
     if "bullet_mass_g" in df.columns and "impact_velocity_mps" in df.columns:
         df["kinetic_energy_j"] = 0.5 * (df["bullet_mass_g"] / 1000) * (df["impact_velocity_mps"] ** 2)
+
+    # Add vest_type interaction features to help distinguish hard vs soft armor behavior
+    if "vest_type" in df.columns:
+        # Create binary indicator for hard vs soft armor (default to soft if not specified)
+        df["vest_type"] = df["vest_type"].fillna("soft")
+        df["is_hard_armor"] = df["vest_type"].str.contains("hard", case=False, na=False).astype(int)
+        df["is_soft_armor"] = df["vest_type"].str.contains("soft", case=False, na=False).astype(int)
+
+        # Interaction with kinetic energy (hard armor absorbs energy differently)
+        if "kinetic_energy_j" in df.columns:
+            df["kinetic_energy_x_hard_armor"] = df["kinetic_energy_j"] * df["is_hard_armor"]
+            df["kinetic_energy_x_soft_armor"] = df["kinetic_energy_j"] * df["is_soft_armor"]
+
+        # Interaction with thickness (hard armor is typically thinner but rigid)
+        if "material_thickness_mm" in df.columns:
+            df["thickness_x_hard_armor"] = df["material_thickness_mm"] * df["is_hard_armor"]
+            df["thickness_x_soft_armor"] = df["material_thickness_mm"] * df["is_soft_armor"]
+
+        # Interaction with layer count (hard vests have fewer layers)
+        if "number_of_layers" in df.columns:
+            df["layers_x_hard_armor"] = df["number_of_layers"] * df["is_hard_armor"]
+            df["layers_x_soft_armor"] = df["number_of_layers"] * df["is_soft_armor"]
+
+    # Add is_female interaction features (female vests have different BFD characteristics)
+    if "is_female" in df.columns:
+        # Fill NaN with False (default to male/unisex)
+        df["is_female"] = df["is_female"].fillna(False).astype(int)
+
+        # Interaction with panel side (female vests typically have lower front BFD)
+        if "panel_side" in df.columns:
+            # Create binary indicator for front panel
+            df["is_front_panel"] = df["panel_side"].str.contains("front", case=False, na=False).astype(int)
+            df["is_back_panel"] = df["panel_side"].str.contains("back", case=False, na=False).astype(int)
+
+            # Female x Front interaction (female vests have lower front BFD)
+            df["female_x_front_panel"] = df["is_female"] * df["is_front_panel"]
+            df["female_x_back_panel"] = df["is_female"] * df["is_back_panel"]
+
+        # Interaction with kinetic energy
+        if "kinetic_energy_j" in df.columns:
+            df["kinetic_energy_x_female"] = df["kinetic_energy_j"] * df["is_female"]
+
+        # Interaction with thickness
+        if "material_thickness_mm" in df.columns:
+            df["thickness_x_female"] = df["material_thickness_mm"] * df["is_female"]
 
     return df
 
@@ -523,7 +598,7 @@ def fill_missing_features(X: pd.DataFrame) -> pd.DataFrame:
 # Training logic
 # =============================================================================
 
-def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[str, float]], model_name: Optional[str] = None, warnings: list = None, data_metadata: dict = None) -> Dict[str, Any]:
+def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[str, float]], model_name: Optional[str] = None, warnings: list = None, data_metadata: dict = None, use_log_transform: bool = True) -> Dict[str, Any]:
     print(f"DEBUG: Initial training data shape: {df.shape}")
     print(f"DEBUG: Columns in initial data: {df.columns.tolist()}")
 
@@ -585,6 +660,8 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
         "panel_side",
         "weave_type",
         "material_type",
+        "vest_type",
+        "ply_orientations",
         # Composition string features
         "composition_sequence",
         "composition_first_material",
@@ -626,14 +703,41 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
             if len(X_valid) == 0:
                 continue
 
-            X_processed = preprocessor.transform(X_valid)
-            model = build_regressor()
-            model.fit(X_processed, y_valid)
+            # Apply log transform to BFD target to handle skewed distribution
+            use_log_transform_bfd = use_log_transform and target == "backface_deformation_mm"
+            y_train = y_valid.copy()
+            if use_log_transform_bfd:
+                # Add small constant to handle zero/negative values
+                y_train = np.log1p(np.maximum(y_train, 0))
 
+            X_processed = preprocessor.transform(X_valid)
+            
+            # Calculate sample weights based on vest_type to balance hard vs soft armor
+            sample_weights = None
+            if 'vest_type' in X_valid.columns:
+                vest_types = X_valid['vest_type'].fillna('soft')
+                type_counts = vest_types.value_counts()
+                if len(type_counts) > 1:
+                    # Inverse frequency weighting: rare types get higher weight
+                    weights = 1.0 / type_counts[vest_types].values
+                    # Normalize to mean of 1.0
+                    sample_weights = weights * (len(weights) / weights.sum())
+
+            model = build_regressor()
+            model.fit(X_processed, y_train, sample_weight=sample_weights)
+
+            # Inverse transform predictions for metrics
             y_pred = model.predict(X_processed)
+            if use_log_transform_bfd:
+                y_pred = np.expm1(y_pred)
+
             metrics = regression_error_summary(y_valid, y_pred)
 
-            regression_models[target] = model
+            # Store whether log transform was used
+            regression_models[target] = {
+                "model": model,
+                "use_log_transform": use_log_transform_bfd
+            }
             regression_metrics[target] = metrics
 
     # Train classification models
@@ -668,11 +772,29 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
 
     # Save models with versioning
     import joblib
+    import io
     version = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     version_dir = os.path.join(VERSIONS_DIR, version)
     os.makedirs(version_dir, exist_ok=True)
 
-    # Save preprocessor
+    # Save preprocessor to database (as binary data)
+    preprocessor_buffer = io.BytesIO()
+    joblib.dump(preprocessor, preprocessor_buffer)
+    preprocessor_bytes = preprocessor_buffer.getvalue()
+
+    # Save models to database (as binary data)
+    model_files = {}
+    for target, model in regression_models.items():
+        model_buffer = io.BytesIO()
+        joblib.dump(model, model_buffer)
+        model_files[f"{target}.pkl"] = model_buffer.getvalue()
+
+    for target, model in classification_models.items():
+        model_buffer = io.BytesIO()
+        joblib.dump(model, model_buffer)
+        model_files[f"{target}.pkl"] = model_buffer.getvalue()
+
+    # Also save to filesystem for backward compatibility (optional, can be removed later)
     preprocessor_path = os.path.join(version_dir, "preprocessor.pkl")
     joblib.dump(preprocessor, preprocessor_path)
 
@@ -686,6 +808,9 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
 
     # Use provided model name or default to version
     display_name = model_name if model_name else version
+
+    # Save metadata
+    # Calculate training data statistics
 
     # Save metadata
     # Calculate training data statistics
@@ -772,37 +897,15 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
         "anchor_point_training_rows": data_metadata.get("anchor_point_training_rows", 0) if data_metadata else 0,
     }
 
-    # Save version metadata
-    version_metadata_path = os.path.join(version_dir, "metadata.json")
-    with open(version_metadata_path, "w") as f:
+    # Save version metadata to filesystem for local development (in addition to database)
+    metadata_path = os.path.join(version_dir, "metadata.json")
+    with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    # Update registry
-    registry = []
-    if os.path.exists(REGISTRY_PATH):
-        with open(REGISTRY_PATH, "r") as f:
-            registry = json.load(f)
-
-    registry.append({
-        "version": version,
-        "model_name": display_name,
-        "trained_at": metadata["trained_at"],
-        "metrics": metadata["metrics"],
-        "regression_targets": available_regression_targets,
-        "classification_targets": available_classification_targets,
-    })
-
-    with open(REGISTRY_PATH, "w") as f:
-        json.dump(registry, f, indent=2)
-
-    # Save current metadata (for backward compatibility)
-    with open(METADATA_PATH, "w") as f:
-        json.dump(metadata, f, indent=2)
-
-    return metadata
+    return metadata, preprocessor_bytes, model_files
 
 
-def train_from_database(db_session, model_name: Optional[str] = None) -> Dict[str, Any]:
+def train_from_database(db_session, model_name: Optional[str] = None, use_log_transform: bool = True) -> Dict[str, Any]:
     """Train model using data from database."""
     from app.db.models import ShotData, Vest, Material, VestLayer, ModelRun
     from app.db.models.user import User
@@ -833,7 +936,7 @@ def train_from_database(db_session, model_name: Optional[str] = None) -> Dict[st
     
     # Fetch training data
     df, warnings, data_metadata = fetch_training_data(db_session)
-    
+
     if df.empty:
         raise ValueError(
             f"Database has data but training query returned empty results. " +
@@ -851,29 +954,11 @@ def train_from_database(db_session, model_name: Optional[str] = None) -> Dict[st
         )
     
     # Train
-    metadata = train_from_dataframe(df, material_properties, model_name=model_name, warnings=warnings, data_metadata=data_metadata)
+    metadata, preprocessor_bytes, model_files = train_from_dataframe(df, material_properties, model_name=model_name, warnings=warnings, data_metadata=data_metadata, use_log_transform=use_log_transform)
     
-    # Run model health evaluation automatically after training
-    print("Starting health evaluation...")
-    health_result = None
-    try:
-        health_result = evaluate_model_on_test_sessions(db_session, version=metadata["version"])
-        overall_avg_error = health_result.get("overall_average_error")
-        print("Health evaluation completed successfully")
-    except Exception as e:
-        print(f"WARNING: Failed to run health evaluation after training: {e}")
-        overall_avg_error = None
-    
-    # Save ModelRun record to database
+    # Save ModelRun record to database FIRST (before health evaluation)
     try:
         training_started_at = datetime.fromisoformat(metadata["trained_at"].replace('Z', '+00:00'))
-        
-        # Use health evaluation error if available, otherwise use training MAE
-        bfd_mae = overall_avg_error
-        if bfd_mae is None:
-            if "backface_deformation_mm_regression" in metadata["metrics"]:
-                bfd_metrics = metadata["metrics"]["backface_deformation_mm_regression"]
-                bfd_mae = bfd_metrics.get("mae")
         
         # Use training data count from metadata (training points, not test points)
         training_row_count = metadata.get("training_data_count")
@@ -890,8 +975,9 @@ def train_from_database(db_session, model_name: Optional[str] = None) -> Dict[st
             # Update existing record
             model_run.training_completed_at = training_started_at
             model_run.training_row_count = training_row_count
-            model_run.training_avg_error = bfd_mae
             model_run.metrics_json = metadata["metrics"]
+            model_run.preprocessor_file = preprocessor_bytes
+            model_run.model_file = model_files.get("backface_deformation_mm.pkl") if model_files else None
         else:
             # Create new record
             model_run = ModelRun(
@@ -901,10 +987,11 @@ def train_from_database(db_session, model_name: Optional[str] = None) -> Dict[st
                 training_started_at=training_started_at,
                 training_completed_at=training_started_at,
                 training_row_count=training_row_count,
-                training_avg_error=bfd_mae,
                 metrics_json=metadata["metrics"],
                 artifact_path=f"ballistic/versions/{metadata['version']}",
                 created_at=datetime.now(),
+                preprocessor_file=preprocessor_bytes,
+                model_file=model_files.get("backface_deformation_mm.pkl") if model_files else None,
             )
             db_session.add(model_run)
         
@@ -914,27 +1001,146 @@ def train_from_database(db_session, model_name: Optional[str] = None) -> Dict[st
         print(f"WARNING: Failed to save ModelRun record: {e}")
         # Don't fail the training if ModelRun save fails
     
-    return metadata
-
-
-def list_model_versions() -> List[Dict[str, Any]]:
-    """List all available model versions."""
-    if not os.path.exists(REGISTRY_PATH):
-        return []
+    # Run model health evaluation automatically after training (now that model is in database)
+    print("Starting health evaluation...")
+    health_result = None
+    try:
+        health_result = evaluate_model_on_test_sessions(db_session, version=metadata["version"])
+        overall_avg_error = health_result.get("overall_average_error")
+        print("Health evaluation completed successfully")
+    except Exception as e:
+        print(f"WARNING: Failed to run health evaluation after training: {e}")
+        overall_avg_error = None
     
-    with open(REGISTRY_PATH, "r") as f:
-        registry = json.load(f)
+    # Update ModelRun with health evaluation results
+    if health_result and overall_avg_error is not None:
+        try:
+            model_run = db_session.query(ModelRun).filter(
+                ModelRun.version == metadata["version"]
+            ).first()
+            if model_run:
+                model_run.training_avg_error = overall_avg_error
+                db_session.commit()
+        except Exception as e:
+            db_session.rollback()
+            print(f"WARNING: Failed to update ModelRun with health evaluation results: {e}")
     
-    # Sort by version (newest first)
-    return sorted(registry, key=lambda x: x["version"], reverse=True)
+    return metadata, health_result
 
 
-def load_model_version(version: str) -> Dict[str, Any]:
+def list_model_versions(db_session=None) -> List[Dict[str, Any]]:
+    """List all available model versions from database."""
+    if db_session is None:
+        # Fallback to filesystem if no database session provided
+        if not os.path.exists(REGISTRY_PATH):
+            return []
+        with open(REGISTRY_PATH, "r") as f:
+            registry = json.load(f)
+        return sorted(registry, key=lambda x: x["version"], reverse=True)
+    
+    from app.db.models.model_run import ModelRun
+    model_runs = db_session.query(ModelRun).filter(
+        ModelRun.model_type == "ballistic"
+    ).order_by(ModelRun.created_at.desc()).all()
+    
+    versions = []
+    for model_run in model_runs:
+        versions.append({
+            "version": model_run.version,
+            "model_name": model_run.model_name,
+            "trained_at": model_run.training_completed_at.isoformat() if model_run.training_completed_at else model_run.created_at.isoformat(),
+            "has_files": model_run.model_file is not None and model_run.preprocessor_file is not None,
+        })
+    
+    return versions
+
+
+def load_model_version(version: str, db_session=None) -> Dict[str, Any]:
     """Load a specific model version and set it as current."""
+    if db_session:
+        from app.db.models.model_run import ModelRun
+        model_run = db_session.query(ModelRun).filter(
+            ModelRun.version == version,
+            ModelRun.model_type == "ballistic"
+        ).first()
+        
+        if not model_run:
+            raise ValueError(f"Model version {version} not found in database")
+        
+        # Load model and preprocessor from database to filesystem (for backward compatibility)
+        import joblib
+        import io
+        
+        if model_run.preprocessor_file:
+            preprocessor = joblib.load(io.BytesIO(model_run.preprocessor_file))
+            preprocessor_path = os.path.join(MODEL_DIR, "preprocessor.pkl")
+            joblib.dump(preprocessor, preprocessor_path)
+        
+        if model_run.model_file:
+            model = joblib.load(io.BytesIO(model_run.model_file))
+            model_path = os.path.join(MODEL_DIR, "backface_deformation_mm.pkl")
+            joblib.dump(model, model_path)
+        
+        # Return metadata from database
+        metadata = {
+            "version": model_run.version,
+            "model_name": model_run.model_name,
+            "trained_at": model_run.training_completed_at.isoformat() if model_run.training_completed_at else model_run.created_at.isoformat(),
+            "metrics": model_run.metrics_json,
+            "regression_targets": ["backface_deformation_mm"],
+            "classification_targets": [],
+            "training_data_count": model_run.training_row_count,
+        }
+        
+        # Update current metadata
+        with open(METADATA_PATH, "w") as f:
+            json.dump(metadata, f, indent=2)
+        
+        return metadata
+    
+    # Fallback to filesystem
     version_dir = os.path.join(VERSIONS_DIR, version)
     
     if not os.path.exists(version_dir):
-        raise ValueError(f"Model version {version} not found")
+        # Check old location for backward compatibility (backend/ml/models/)
+        old_models_dir = os.path.join(PROJECT_ROOT, "backend", "ml", "models")
+        old_model_path = os.path.join(old_models_dir, f"bfd_predictor_{version}.pkl")
+        
+        if os.path.exists(old_model_path):
+            # Load from old location and migrate to new structure
+            import joblib
+            os.makedirs(version_dir, exist_ok=True)
+            
+            # Load old bundled model
+            model_data = joblib.load(old_model_path)
+            
+            # Extract and save in new structure
+            joblib.dump(model_data['model'], os.path.join(version_dir, 'backface_deformation_mm.pkl'))
+            joblib.dump(model_data['scaler'], os.path.join(version_dir, 'preprocessor.pkl'))
+            
+            # Create metadata
+            metadata = {
+                'version': version,
+                'feature_columns': model_data.get('feature_columns', []),
+                'feature_importance': model_data.get('feature_importance', {}),
+                'metrics': model_data.get('metrics', {}),
+                'training_date': model_data.get('training_date', version),
+                'model_type': 'XGBoostRegressor',
+                'model_name': 'bfd_predictor'
+            }
+            
+            with open(os.path.join(version_dir, 'metadata.json'), 'w') as f:
+                json.dump(metadata, f, indent=2)
+            
+            # Also save as current model
+            joblib.dump(model_data['model'], os.path.join(MODEL_DIR, 'backface_deformation_mm.pkl'))
+            joblib.dump(model_data['scaler'], os.path.join(MODEL_DIR, 'preprocessor.pkl'))
+            with open(METADATA_PATH, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            
+            return metadata
+        else:
+            raise ValueError(f"Model version {version} not found")
     
     # Load version metadata
     version_metadata_path = os.path.join(version_dir, "metadata.json")
@@ -965,26 +1171,55 @@ def load_model_version(version: str) -> Dict[str, Any]:
     return metadata
 
 
-def predict_with_version(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float]], version: Optional[str] = None) -> Dict[str, Any]:
+def predict_with_version(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float]], version: Optional[str] = None, db_session=None) -> Dict[str, Any]:
     """Make a prediction using a specific model version."""
     if version:
         # Load the specific version temporarily
         metadata = load_model_version(version)
 
-    return predict(data, material_properties)
+    return predict(data, material_properties, db_session)
 
 
-def predict_with_version_multi_shot(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float]], version: Optional[str] = None) -> Dict[str, Any]:
+def predict_with_version_multi_shot(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float]], version: Optional[str] = None, db_session=None) -> Dict[str, Any]:
     """Make a multi-shot prediction using a specific model version."""
     if version:
         # Load the specific version temporarily
         metadata = load_model_version(version)
 
-    return predict_multi_shot(data, material_properties)
+    return predict_multi_shot(data, material_properties, db_session=db_session)
 
 
-def delete_model_version(version: str) -> Dict[str, Any]:
+def delete_model_version(version: str, db_session=None) -> Dict[str, Any]:
     """Delete a specific model version."""
+    if db_session:
+        from app.db.models.model_run import ModelRun
+        model_run = db_session.query(ModelRun).filter(
+            ModelRun.version == version,
+            ModelRun.model_type == "ballistic"
+        ).first()
+        
+        if not model_run:
+            raise ValueError(f"Model version {version} not found in database")
+        
+        model_name = model_run.model_name
+        
+        # Delete from database
+        db_session.delete(model_run)
+        db_session.commit()
+        
+        # Also delete from filesystem if exists
+        version_dir = os.path.join(VERSIONS_DIR, version)
+        if os.path.exists(version_dir):
+            import shutil
+            shutil.rmtree(version_dir)
+        
+        return {
+            "version": version,
+            "model_name": model_name,
+            "deleted": True
+        }
+    
+    # Fallback to filesystem only
     version_dir = os.path.join(VERSIONS_DIR, version)
     
     if not os.path.exists(version_dir):
@@ -1017,45 +1252,71 @@ def delete_model_version(version: str) -> Dict[str, Any]:
     }
 
 
-def update_model_name(version: str, new_name: str) -> Dict[str, Any]:
+def update_model_name(version: str, new_name: str, db_session=None) -> Dict[str, Any]:
     """Update the display name of a model version."""
     version_dir = os.path.join(VERSIONS_DIR, version)
     
-    if not os.path.exists(version_dir):
+    # Check if version exists in filesystem or database
+    exists_in_filesystem = os.path.exists(version_dir)
+    exists_in_database = False
+    model_run = None
+    
+    if db_session:
+        from app.db.models.model_run import ModelRun
+        model_run = db_session.query(ModelRun).filter(
+            ModelRun.version == version,
+            ModelRun.model_type == "ballistic"
+        ).first()
+        exists_in_database = model_run is not None
+    
+    if not exists_in_filesystem and not exists_in_database:
         raise ValueError(f"Model version {version} not found")
     
-    # Update registry
-    registry = []
-    if os.path.exists(REGISTRY_PATH):
-        with open(REGISTRY_PATH, "r") as f:
-            registry = json.load(f)
+    old_name = None
     
-    # Find and update the version in registry
-    version_info = next((v for v in registry if v["version"] == version), None)
-    if not version_info:
-        raise ValueError(f"Model version {version} not found in registry")
+    # Update registry if filesystem exists
+    if exists_in_filesystem:
+        registry = []
+        if os.path.exists(REGISTRY_PATH):
+            with open(REGISTRY_PATH, "r") as f:
+                registry = json.load(f)
+        
+        # Find and update the version in registry
+        version_info = next((v for v in registry if v["version"] == version), None)
+        if version_info:
+            old_name = version_info["model_name"]
+            version_info["model_name"] = new_name
+            
+            with open(REGISTRY_PATH, "w") as f:
+                json.dump(registry, f, indent=2)
+        
+        # Update version metadata
+        version_metadata_path = os.path.join(version_dir, "metadata.json")
+        if os.path.exists(version_metadata_path):
+            with open(version_metadata_path, "r") as f:
+                metadata = json.load(f)
+            
+            metadata["model_name"] = new_name
+            
+            with open(version_metadata_path, "w") as f:
+                json.dump(metadata, f, indent=2)
+            
+            # Update current metadata if this is the current model
+            current_metadata = load_metadata()
+            if current_metadata and current_metadata.get("version") == version:
+                with open(METADATA_PATH, "w") as f:
+                    json.dump(metadata, f, indent=2)
     
-    old_name = version_info["model_name"]
-    version_info["model_name"] = new_name
+    # Update database record
+    if model_run:
+        old_name = old_name or model_run.model_name
+        model_run.model_name = new_name
+        if db_session:
+            db_session.commit()
     
-    with open(REGISTRY_PATH, "w") as f:
-        json.dump(registry, f, indent=2)
-    
-    # Update version metadata
-    version_metadata_path = os.path.join(version_dir, "metadata.json")
-    with open(version_metadata_path, "r") as f:
-        metadata = json.load(f)
-    
-    metadata["model_name"] = new_name
-    
-    with open(version_metadata_path, "w") as f:
-        json.dump(metadata, f, indent=2)
-    
-    # Update current metadata if this is the current model
-    current_metadata = load_metadata()
-    if current_metadata and current_metadata.get("version") == version:
-        with open(METADATA_PATH, "w") as f:
-            json.dump(metadata, f, indent=2)
+    # If no old_name was found, use version as fallback
+    if old_name is None:
+        old_name = version
     
     return {
         "version": version,
@@ -1069,20 +1330,68 @@ def update_model_name(version: str, new_name: str) -> Dict[str, Any]:
 # Prediction logic
 # =============================================================================
 
-def load_model(target: str):
+def load_model(target: str, db_session=None):
+    import joblib
+    import io
+
+    # Try to load from database first
+    if db_session:
+        from app.db.models.model_run import ModelRun
+        # Try to get the most recent model run with the model file
+        model_run = db_session.query(ModelRun).filter(
+            ModelRun.model_type == "ballistic",
+            ModelRun.model_file.isnot(None)
+        ).order_by(ModelRun.created_at.desc()).first()
+
+        if model_run and model_run.model_file:
+            try:
+                loaded = joblib.load(io.BytesIO(model_run.model_file))
+                # Handle new dict structure with log transform flag
+                if isinstance(loaded, dict) and "model" in loaded:
+                    return loaded
+                else:
+                    # Old format - wrap in dict
+                    return {"model": loaded, "use_log_transform": False}
+            except Exception as e:
+                print(f"ERROR: Failed to load model from database: {e}")
+
+    # Fallback to filesystem
     model_path = os.path.join(MODEL_DIR, f"{target}.pkl")
     if not os.path.exists(model_path):
         return None
+    loaded = joblib.load(model_path)
+    # Handle new dict structure with log transform flag
+    if isinstance(loaded, dict) and "model" in loaded:
+        return loaded
+    else:
+        # Old format - wrap in dict
+        return {"model": loaded, "use_log_transform": False}
+
+
+def load_preprocessor(db_session=None):
     import joblib
-    return joblib.load(model_path)
-
-
-def load_preprocessor():
+    import io
+    
+    # Try to load from database first
+    if db_session:
+        from app.db.models.model_run import ModelRun
+        # Try to get the most recent model run with the preprocessor file
+        model_run = db_session.query(ModelRun).filter(
+            ModelRun.model_type == "ballistic",
+            ModelRun.preprocessor_file.isnot(None)
+        ).order_by(ModelRun.created_at.desc()).first()
+        
+        if model_run and model_run.preprocessor_file:
+            try:
+                return joblib.load(io.BytesIO(model_run.preprocessor_file))
+            except Exception as e:
+                print(f"ERROR: Failed to load preprocessor from database: {e}")
+    
+    # Fallback to filesystem
     preprocessor_path = os.path.join(MODEL_DIR, "preprocessor.pkl")
     if not os.path.exists(preprocessor_path):
         print(f"WARNING: Preprocessor not found at {preprocessor_path}")
         return None
-    import joblib
     try:
         return joblib.load(preprocessor_path)
     except Exception as e:
@@ -1099,6 +1408,9 @@ def load_metadata() -> Dict[str, Any]:
 
 
 def prepare_single_input(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float]], validate: bool = True) -> pd.DataFrame:
+    # Ensure is_female is present with default value before creating DataFrame
+    if "is_female" not in data:
+        data["is_female"] = False
     df = pd.DataFrame([data])
     df = add_engineered_features(df, material_properties, validate=validate)
 
@@ -1113,6 +1425,8 @@ def prepare_single_input(data: Dict[str, Any], material_properties: Dict[str, Di
         "panel_side",
         "weave_type",
         "material_type",
+        "vest_type",
+        "ply_orientations",
     }
 
     # Add material class features to categorical
@@ -1180,6 +1494,14 @@ def generate_velocity_curves(
     if bfd_model is None:
         return {}
 
+    # Handle new dict structure with log transform flag
+    if isinstance(bfd_model, dict):
+        actual_model = bfd_model["model"]
+        use_log_transform = bfd_model.get("use_log_transform", False)
+    else:
+        actual_model = bfd_model
+        use_log_transform = False
+
     for shot_num in range(1, num_shots + 1):
         curve_points = []
         for velocity in velocity_range:
@@ -1189,7 +1511,10 @@ def generate_velocity_curves(
 
             X = prepare_single_input(curve_data, material_properties, validate=True)
             X_processed = preprocessor.transform(X)
-            bfd_prediction = float(bfd_model.predict(X_processed)[0])
+            bfd_prediction = float(actual_model.predict(X_processed)[0])
+            # Apply inverse transform if log transform was used
+            if use_log_transform:
+                bfd_prediction = float(np.expm1(bfd_prediction))
 
             curve_points.append({
                 "velocity_mps": velocity,
@@ -1205,6 +1530,7 @@ def predict_multi_shot(
     material_properties: Dict[str, Dict[str, float]],
     validate: bool = False,
     num_shots: int = 6,
+    db_session=None,
 ) -> Dict[str, Any]:
     """
     Predict backface deformation for multiple shots (default 6).
@@ -1227,7 +1553,7 @@ def predict_multi_shot(
         X = prepare_single_input(shot_data, material_properties, validate=True)
 
         # Load and apply preprocessor
-        preprocessor = load_preprocessor()
+        preprocessor = load_preprocessor(db_session)
         if preprocessor is None:
             raise HTTPException(
                 status_code=500,
@@ -1241,11 +1567,22 @@ def predict_multi_shot(
         bfd_prediction = None
         perforation_probability = None
 
-        bfd_model = load_model("backface_deformation_mm")
+        bfd_model = load_model("backface_deformation_mm", db_session)
         if bfd_model is not None:
-            bfd_prediction = float(bfd_model.predict(X_processed)[0])
+            # Handle new dict structure with log transform flag
+            if isinstance(bfd_model, dict):
+                actual_model = bfd_model["model"]
+                use_log_transform = bfd_model.get("use_log_transform", False)
+            else:
+                actual_model = bfd_model
+                use_log_transform = False
+            
+            bfd_prediction = float(actual_model.predict(X_processed)[0])
+            # Apply inverse transform if log transform was used
+            if use_log_transform:
+                bfd_prediction = float(np.expm1(bfd_prediction))
 
-        perforation_model = load_model("perforated")
+        perforation_model = load_model("perforated", db_session)
         if perforation_model is not None:
             perforation_probability = float(perforation_model.predict_proba(X_processed)[0, 1])
 
@@ -1274,7 +1611,7 @@ def predict_multi_shot(
     }
 
 
-def predict(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float]]) -> Dict[str, Any]:
+def predict(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float]], db_session=None) -> Dict[str, Any]:
     metadata = load_metadata()
 
     if not metadata:
@@ -1284,6 +1621,16 @@ def predict(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float
         )
 
     X = prepare_single_input(data, material_properties, validate=True)
+
+    # Load and apply preprocessor
+    preprocessor = load_preprocessor(db_session)
+    if preprocessor is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Preprocessor not found. The model may have been trained with an older version. Please retrain the model.",
+        )
+
+    X_processed = preprocessor.transform(X)
 
     # Log weighted average material properties for debugging
     if "composition_weighted_tensile_strength_mpa" in X.columns:
@@ -1315,15 +1662,15 @@ def predict(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float
     perforation_probability = None
     fail_probability = None
 
-    bfd_model = load_model("backface_deformation_mm")
+    bfd_model = load_model("backface_deformation_mm", db_session)
     if bfd_model is not None:
         bfd_prediction = float(bfd_model.predict(X_processed)[0])
 
-    perforation_model = load_model("perforated")
+    perforation_model = load_model("perforated", db_session)
     if perforation_model is not None:
         perforation_probability = float(perforation_model.predict_proba(X_processed)[0, 1])
 
-    fail_model = load_model("pass_fail")
+    fail_model = load_model("pass_fail", db_session)
     if fail_model is not None:
         fail_probability = float(fail_model.predict_proba(X_processed)[0, 1])
 
@@ -1400,7 +1747,7 @@ def evaluate_model_on_test_sessions(
     
     # Load the specified version if provided
     if version:
-        load_model_version(version)
+        load_model_version(version, db_session=db_session)
     
     # Load model metadata
     metadata = load_metadata()
@@ -1419,8 +1766,9 @@ def evaluate_model_on_test_sessions(
     # Fetch material properties
     material_properties = fetch_material_properties(db_session)
     
-    # Build query for shot data with test sessions and vests
-    query = (
+    # Build query for shot data - try both test session and vest_number approaches
+    # First try with test sessions (structured data)
+    query_with_session = (
         db_session.query(ShotData, TestSession, Vest)
         .join(TestSession, ShotData.test_session_id == TestSession.id)
         .outerjoin(Vest, TestSession.vest_id == Vest.id)
@@ -1428,12 +1776,49 @@ def evaluate_model_on_test_sessions(
     
     # Filter by protocol if specified
     if protocol_filter and protocol_filter != "all":
-        query = query.filter(TestSession.protocol == protocol_filter)
+        query_with_session = query_with_session.filter(TestSession.protocol == protocol_filter)
     
     # Only include shots with trauma data
-    query = query.filter(ShotData.trauma_mm.isnot(None))
+    query_with_session = query_with_session.filter(ShotData.trauma_mm.isnot(None))
     
-    results = query.all()
+    results = query_with_session.all()
+    
+    # If no results with test sessions, fall back to vest_number approach (like training)
+    if not results:
+        # Query shots with vest_number (matches training data structure)
+        query_with_vest = (
+            db_session.query(ShotData)
+            .filter(ShotData.trauma_mm.isnot(None))
+            .filter(ShotData.vest_number.isnot(None))
+        )
+        
+        shots_only = query_with_vest.all()
+        
+        if not shots_only:
+            return {
+                "vest_averages": [],
+                "point_data": [],
+                "total_points": 0,
+                "message": "No test data found matching criteria"
+            }
+        
+        # Convert to format expected by rest of function
+        results = []
+        for shot in shots_only:
+            # Create dummy test session and vest objects for compatibility
+            class DummyTestSession:
+                def __init__(self):
+                    self.id = None
+                    self.protocol = None
+                    self.conditioning = "dry"
+                    self.vest_id = None
+                    
+            class DummyVest:
+                def __init__(self):
+                    self.id = None
+                    self.vest_code = shot.vest_number
+                    
+            results.append((shot, DummyTestSession(), DummyVest()))
     
     if not results:
         return {
@@ -1446,25 +1831,42 @@ def evaluate_model_on_test_sessions(
     # Process each shot
     vest_errors = {}  # vest_code -> list of percentage errors
     point_data = []  # list of individual point data for graphing
-    
+
+    # Batch fetch all vest layers and materials to avoid N+1 queries
+    vest_ids = [vest.id for _, _, vest in results if vest]
+    vest_layers = db_session.query(VestLayer).filter(VestLayer.vest_id.in_(vest_ids)).all() if vest_ids else []
+    material_ids = list(set(vl.material_id for vl in vest_layers))
+    materials = {m.id: m for m in db_session.query(Material).filter(Material.id.in_(material_ids)).all()} if material_ids else {}
+
+    # Batch fetch all ammunition to avoid N+1 queries
+    calibers = list(set(shot_data.caliber for shot_data, _, _ in results if shot_data.caliber))
+    ammunition_map = {a.caliber: a for a in db_session.query(Ammunition).filter(Ammunition.caliber.in_(calibers)).all()} if calibers else {}
+
+    # Group vest layers by vest_id
+    vest_layers_by_vest = {}
+    for vl in vest_layers:
+        if vl.vest_id not in vest_layers_by_vest:
+            vest_layers_by_vest[vl.vest_id] = []
+        vest_layers_by_vest[vl.vest_id].append(vl)
+
     for shot_data, test_session, vest in results:
-        # Build vest composition from vest layers
+        # Build vest composition from vest layers (now using cached data)
         composition_parts = []
         total_layers = 0
         if vest:
-            vest_layers = db_session.query(VestLayer).filter(VestLayer.vest_id == vest.id).all()
-            for vl in sorted(vest_layers, key=lambda x: x.layer_index or 0):
-                material = db_session.query(Material).filter(Material.id == vl.material_id).first()
+            layers = vest_layers_by_vest.get(vest.id, [])
+            for vl in sorted(layers, key=lambda x: x.layer_index or 0):
+                material = materials.get(vl.material_id)
                 if material:
                     count = vl.layer_count or 1
                     total_layers += count
                     composition_parts.append(f"{count} {material.name}")
-        
+
         vest_composition = " + ".join(composition_parts) if composition_parts else ""
-        
-        # Get ammunition info
+
+        # Get ammunition info (now using cached data)
         caliber = shot_data.caliber
-        ammunition = db_session.query(Ammunition).filter(Ammunition.caliber == caliber).first()
+        ammunition = ammunition_map.get(caliber)
         
         # Build prediction input
         prediction_input = {
@@ -1480,13 +1882,29 @@ def evaluate_model_on_test_sessions(
             "humidity_pct": float(shot_data.humidity_percent) if shot_data.humidity_percent else 50.0,
             "condition": test_session.conditioning if test_session else "dry",
             "panel_side": shot_data.side,
+            "caliber_diameter_mm": float(ammunition.caliber_diameter_mm) if ammunition and ammunition.caliber_diameter_mm else None,
+            "caliber_length_mm": float(ammunition.caliber_length_mm) if ammunition and ammunition.caliber_length_mm else None,
+            "vest_type": vest.vest_type if vest else None,
+            "ply_orientations": None,  # Health check doesn't have layer-level ply orientation data
         }
         
         # Prepare input and predict
         try:
             X = prepare_single_input(prediction_input, material_properties, validate=False)
             X_processed = preprocessor.transform(X)
-            predicted_bfd = float(bfd_model.predict(X_processed)[0])
+            
+            # Handle new dict structure with log transform flag
+            if isinstance(bfd_model, dict):
+                actual_model = bfd_model["model"]
+                use_log_transform = bfd_model.get("use_log_transform", False)
+            else:
+                actual_model = bfd_model
+                use_log_transform = False
+            
+            predicted_bfd = float(actual_model.predict(X_processed)[0])
+            # Apply inverse transform if log transform was used
+            if use_log_transform:
+                predicted_bfd = float(np.expm1(predicted_bfd))
             
             # Get actual BFD
             actual_bfd = float(shot_data.trauma_mm)
@@ -1521,11 +1939,6 @@ def evaluate_model_on_test_sessions(
                 "caliber": getattr(shot_data, 'caliber', 'Unknown') if getattr(shot_data, 'caliber', None) else "Unknown",
             })
             
-            # Debug: print first few records to see what data we're getting
-            if len(point_data) <= 3:
-                print(f"DEBUG shot_data object: {dir(shot_data)}")
-                print(f"DEBUG point_data {len(point_data)}: protection_level={getattr(shot_data, 'protection_level', 'MISSING')}, caliber={getattr(shot_data, 'caliber', 'MISSING')}")
-            
         except Exception as e:
             print(f"ERROR: Failed to predict for shot {shot_data.id}: {e}")
             continue
@@ -1558,7 +1971,6 @@ def evaluate_model_on_test_sessions(
         
         anchor_df, anchor_metadata = fetch_anchor_points_as_training_data(db_session)
         if not anchor_df.empty:
-            print(f"DEBUG: Evaluating {len(anchor_df)} anchor points")
             
             for _, row in anchor_df.iterrows():
                 vest_composition = row.get('vest_composition', '')
@@ -1575,6 +1987,10 @@ def evaluate_model_on_test_sessions(
                     "humidity_pct": row.get('humidity_pct', 50.0),
                     "condition": row.get('condition'),
                     "panel_side": row.get('panel_side'),
+                    "caliber_diameter_mm": row.get('caliber_diameter_mm'),
+                    "caliber_length_mm": row.get('caliber_length_mm'),
+                    "vest_type": row.get('vest_type', 'soft'),
+                    "is_female": row.get('is_female', False),
                 }
                 
                 try:
@@ -1605,7 +2021,6 @@ def evaluate_model_on_test_sessions(
             # Filter out NaN values and calculate average
             valid_errors = [e for e in anchor_point_errors if not (e != e)]  # Filter NaN
             anchor_avg_error = round(sum(valid_errors) / len(valid_errors), 2) if valid_errors else 0
-            print(f"DEBUG: Anchor point average error: {anchor_avg_error}%")
             
             # Calculate per-material averages
             anchor_point_material_averages = []

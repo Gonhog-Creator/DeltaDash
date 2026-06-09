@@ -3,7 +3,7 @@ Ballistic ML API endpoints - database-driven training and prediction.
 """
 from typing import Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -55,17 +55,6 @@ class BallisticInput(BaseModel):
     condition: Optional[str] = Field(None, examples=["Ambient", "Humid"])
     panel_side: Optional[str] = Field(None, examples=["front", "back"])
 
-    # Optional geometry
-    panel_width_mm: Optional[float] = None
-    panel_height_mm: Optional[float] = None
-    plate_curvature_mm: Optional[float] = None
-
-    # Optional shot position
-    shot_x_position_mm: Optional[float] = None
-    shot_y_position_mm: Optional[float] = None
-    edge_distance_mm: Optional[float] = None
-    previous_shot_distance_mm: Optional[float] = None
-
     # Optional material properties (if not using vest_composition)
     fabric_elongation_pct: Optional[float] = None
     fabric_strain_pct: Optional[float] = None
@@ -73,6 +62,12 @@ class BallisticInput(BaseModel):
     fiber_thickness_um: Optional[float] = None
     epoxy_percentage: Optional[float] = None
     fiber_orientation_deg: Optional[float] = None
+
+    # New features
+    caliber_diameter_mm: Optional[float] = None
+    caliber_length_mm: Optional[float] = None
+    vest_type: Optional[str] = None
+    ply_orientations: Optional[str] = None
 
 
 class ProtocolPredictionInput(BaseModel):
@@ -181,19 +176,30 @@ def health(db: Session = Depends(get_db)):
 
 
 @router.post("/train")
-def train(db: Session = Depends(get_db), model_name: Optional[str] = None):
+def train(db: Session = Depends(get_db), model_name: Optional[str] = None, use_log_transform: bool = True):
     """
     Train ML model using data from database.
     Fetches shots, vests, materials, ammunition, and test sessions from DB.
     Optional model_name parameter to give the model a friendly name.
+    Optional use_log_transform parameter to enable/disable log transform for BFD target.
     """
     try:
-        metadata = train_from_database(db, model_name=model_name)
+        metadata, health_result = train_from_database(db, model_name=model_name, use_log_transform=use_log_transform)
+        # Get health check status from ModelRun
+        model_run = db.query(ModelRun).filter(ModelRun.version == metadata["version"]).first()
+        health_check_status = None
+        if model_run:
+            health_check_status = {
+                "training_avg_error": model_run.training_avg_error,
+                "health_check_passed": model_run.training_avg_error is not None
+            }
         return {
             "status": "success",
             "message": "Model trained successfully",
             "metadata": metadata,
             "warnings": metadata.get("warnings", []),
+            "health_check": health_check_status,
+            "health_result": health_result,  # Full health check results for caching
         }
     except ValueError as e:
         print(f"ERROR: ValueError during training: {str(e)}")
@@ -234,10 +240,10 @@ def predict_endpoint(data: BallisticInput, db: Session = Depends(get_db), versio
 
     # Make multi-shot prediction with optional version
     if version:
-        return predict_with_version_multi_shot(data.model_dump(), material_properties, version)
+        return predict_with_version_multi_shot(data.model_dump(), material_properties, version, db)
     else:
         from app.services.ml.ballistic_ml import predict_multi_shot
-        return predict_multi_shot(data.model_dump(), material_properties)
+        return predict_multi_shot(data.model_dump(), material_properties, db_session=db)
 
 
 @router.post("/predict-protocol")
@@ -265,7 +271,15 @@ def health_version(version: str, db: Session = Depends(get_db)):
     """Check model status for a specific version."""
     from app.db.models import ShotData, Vest, Material, VestLayer
     
-    # Load the specific version metadata
+    material_properties = fetch_material_properties(db)
+    
+    # Get database counts
+    shot_data_count = db.query(ShotData).count()
+    vest_count = db.query(Vest).count()
+    material_count = db.query(Material).count()
+    vest_layer_count = db.query(VestLayer).count()
+    
+    # Load metadata from filesystem (metadata_json field doesn't exist in ModelRun)
     version_dir = os.path.join(VERSIONS_DIR, version)
     if not os.path.exists(version_dir):
         return HealthResponse(
@@ -276,10 +290,10 @@ def health_version(version: str, db: Session = Depends(get_db)):
             regression_targets=[],
             classification_targets=[],
             feature_count=0,
-            material_count=0,
-            shot_count=0,
-            vest_count=0,
-            vest_layer_count=0,
+            material_count=len(material_properties),
+            shot_count=shot_data_count,
+            vest_count=vest_count,
+            vest_layer_count=vest_layer_count,
             data_health=None,
         )
     
@@ -293,23 +307,15 @@ def health_version(version: str, db: Session = Depends(get_db)):
             regression_targets=[],
             classification_targets=[],
             feature_count=0,
-            material_count=0,
+            material_count=len(material_properties),
             shot_count=0,
-            vest_count=0,
-            vest_layer_count=0,
+            vest_count=vest_count,
+            vest_layer_count=vest_layer_count,
             data_health=None,
         )
     
     with open(version_metadata_path, "r") as f:
         metadata = json.load(f)
-    
-    material_properties = fetch_material_properties(db)
-    
-    # Get database counts
-    shot_data_count = db.query(ShotData).count()
-    vest_count = db.query(Vest).count()
-    material_count = db.query(Material).count()
-    vest_layer_count = db.query(VestLayer).count()
     
     return HealthResponse(
         status="trained",
@@ -395,10 +401,10 @@ def list_versions_with_metrics(db: Session = Depends(get_db)):
 
 
 @router.post("/load-version/{version}")
-def load_version(version: str):
+def load_version(version: str, db: Session = Depends(get_db)):
     """Load a specific model version as the current model."""
     try:
-        metadata = load_model_version(version)
+        metadata = load_model_version(version, db)
         return {
             "status": "success",
             "message": f"Model version {version} loaded successfully",
@@ -478,8 +484,25 @@ def upload_model(
         if os.path.exists(target_version_dir):
             raise HTTPException(status_code=400, detail=f"Version {version} already exists")
         
-        # Copy version directory to the correct location
+        # Copy version directory to the correct location (for backward compatibility)
         shutil.copytree(source_version_dir, target_version_dir)
+        
+        # Load model and preprocessor files and save to database
+        import joblib
+        import io
+        
+        preprocessor_bytes = None
+        model_bytes = None
+        
+        preprocessor_path = os.path.join(target_version_dir, "preprocessor.pkl")
+        if os.path.exists(preprocessor_path):
+            with open(preprocessor_path, 'rb') as f:
+                preprocessor_bytes = f.read()
+        
+        model_path = os.path.join(target_version_dir, "backface_deformation_mm.pkl")
+        if os.path.exists(model_path):
+            with open(model_path, 'rb') as f:
+                model_bytes = f.read()
         
         # Update or create ModelRun record
         metadata_path = os.path.join(target_version_dir, "metadata.json")
@@ -503,6 +526,8 @@ def upload_model(
                 model_run.training_completed_at = trained_at
                 model_run.training_row_count = metadata.get("training_data_count")
                 model_run.metrics_json = metadata.get("metrics")
+                model_run.preprocessor_file = preprocessor_bytes
+                model_run.model_file = model_bytes
             else:
                 model_run = ModelRun(
                     model_name=metadata.get("model_name", version),
@@ -514,6 +539,8 @@ def upload_model(
                     metrics_json=metadata.get("metrics"),
                     artifact_path=f"ballistic/versions/{version}",
                     created_at=datetime.now(),
+                    preprocessor_file=preprocessor_bytes,
+                    model_file=model_bytes,
                 )
                 db.add(model_run)
             
@@ -535,10 +562,10 @@ def upload_model(
 
 
 @router.delete("/versions/{version}")
-def delete_version(version: str):
+def delete_version(version: str, db: Session = Depends(get_db)):
     """Delete a specific model version."""
     try:
-        result = delete_model_version(version)
+        result = delete_model_version(version, db)
         return {
             "status": "success",
             "message": f"Model version {result['model_name']} deleted successfully",
@@ -551,10 +578,10 @@ def delete_version(version: str):
 
 
 @router.put("/versions/{version}/name")
-def update_name(version: str, new_name: str):
+def update_name(version: str, new_name: str = Query(..., description="New model name"), db: Session = Depends(get_db)):
     """Update the display name of a model version."""
     try:
-        result = update_model_name(version, new_name)
+        result = update_model_name(version, new_name, db_session=db)
         return {
             "status": "success",
             "message": f"Model name updated from '{result['old_name']}' to '{result['new_name']}'",
@@ -601,33 +628,27 @@ def model_health(
 def calculate_missing_metrics(db: Session = Depends(get_db)):
     """
     Force recalculate training metrics for all model versions.
-    This will iterate through all model versions in the file registry and
+    This will iterate through all model versions in the database and
     calculate training_row_count and training_avg_error using model health evaluation.
     """
-    from app.services.ml.ballistic_ml import list_model_versions, load_metadata, VERSIONS_DIR
+    from app.services.ml.ballistic_ml import list_model_versions
     from datetime import datetime
-    import os
     
     try:
-        file_versions = list_model_versions()
+        model_runs = db.query(ModelRun).filter(
+            ModelRun.model_type == "ballistic"
+        ).order_by(ModelRun.created_at.desc()).all()
+        
         updated_count = 0
         processed_versions = []
         
-        for version in file_versions:
-            version_str = version["version"]
+        for model_run in model_runs:
+            version_str = model_run.version
             
-            # Load version metadata to get training data count
-            version_metadata_path = os.path.join(VERSIONS_DIR, version_str, "metadata.json")
-            if not os.path.exists(version_metadata_path):
-                continue
-            
-            with open(version_metadata_path, "r") as f:
-                metadata = json.load(f)
-            
-            # Get training data count from metadata (training points, not test points)
-            training_row_count = metadata.get("training_data_count")
+            # Get training data count from database
+            training_row_count = model_run.training_row_count
             if training_row_count is None:
-                print(f"WARNING: Version {version_str} is missing training_data_count in metadata, skipping")
+                print(f"WARNING: Version {version_str} is missing training_row_count, skipping")
                 continue
             
             # Run model health evaluation to get actual test error
@@ -640,61 +661,30 @@ def calculate_missing_metrics(db: Session = Depends(get_db)):
                 if overall_avg_error is not None:
                     bfd_mae = overall_avg_error
                 else:
-                    # Fallback to metadata MAE if health evaluation fails
-                    if "metrics" in metadata:
-                        metrics = metadata["metrics"]
+                    # Fallback to existing metrics if health evaluation fails
+                    if model_run.metrics_json:
+                        metrics = model_run.metrics_json
                         if "backface_deformation_mm_regression" in metrics:
                             bfd_metrics = metrics["backface_deformation_mm_regression"]
                             bfd_mae = bfd_metrics.get("mae")
             except Exception as e:
                 print(f"WARNING: Failed to run health evaluation for {version_str}: {e}")
-                # Fallback to metadata MAE
-                bfd_mae = None
-                if "metrics" in metadata:
-                    metrics = metadata["metrics"]
+                # Fallback to existing metrics
+                bfd_mae = model_run.training_avg_error
+                if bfd_mae is None and model_run.metrics_json:
+                    metrics = model_run.metrics_json
                     if "backface_deformation_mm_regression" in metrics:
                         bfd_metrics = metrics["backface_deformation_mm_regression"]
                         bfd_mae = bfd_metrics.get("mae")
             
-            # Parse trained_at datetime
-            trained_at = None
-            if "trained_at" in metadata:
-                try:
-                    trained_at = datetime.fromisoformat(metadata["trained_at"].replace('Z', '+00:00'))
-                except:
-                    pass
-            
-            # Create or update ModelRun record (always update, don't skip existing)
-            existing_run = db.query(ModelRun).filter(
-                ModelRun.version == version_str,
-                ModelRun.model_type == "ballistic"
-            ).first()
-            
-            if existing_run:
-                # Update existing record
-                existing_run.training_row_count = training_row_count
-                existing_run.training_avg_error = bfd_mae
-                if trained_at:
-                    existing_run.training_completed_at = trained_at
-            else:
-                # Create new record
-                model_run = ModelRun(
-                    model_name=version.get("model_name", version_str),
-                    model_type="ballistic",
-                    version=version_str,
-                    training_started_at=trained_at,
-                    training_completed_at=trained_at,
-                    training_row_count=training_row_count,
-                    training_avg_error=bfd_mae,
-                    metrics_json=metadata.get("metrics"),
-                    artifact_path=f"ballistic/versions/{version_str}",
-                )
-                db.add(model_run)
+            # Update ModelRun record
+            model_run.training_row_count = training_row_count
+            model_run.training_avg_error = bfd_mae
             
             updated_count += 1
             processed_versions.append({
                 "version": version_str,
-                "model_name": version.get("model_name", version_str),
+                "model_name": model_run.model_name,
                 "training_row_count": training_row_count,
                 "training_avg_error": bfd_mae
             })

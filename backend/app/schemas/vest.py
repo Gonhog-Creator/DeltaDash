@@ -27,6 +27,7 @@ class VestLayer(VestLayerBase):
 class VestBase(BaseModel):
     vest_code: str
     vest_type: Optional[str] = None
+    is_female: Optional[bool] = False
     threat_level: Optional[str] = None
     protection_class: Optional[str] = None
     total_layers: Optional[int] = Field(None, ge=0)
@@ -44,6 +45,7 @@ class VestCreate(VestBase):
 class VestUpdate(BaseModel):
     vest_code: Optional[str] = None
     vest_type: Optional[str] = None
+    is_female: Optional[bool] = None
     threat_level: Optional[str] = None
     protection_class: Optional[str] = None
     total_layers: Optional[int] = Field(None, ge=0)
@@ -71,6 +73,7 @@ class VestListItem(BaseModel):
     id: UUID
     vest_code: str
     vest_type: Optional[str]
+    is_female: Optional[bool] = False
     threat_level: Optional[str]
     protection_class: Optional[str]
     total_layers: Optional[int]

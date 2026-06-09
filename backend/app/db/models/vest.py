@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, Integer, DateTime, ForeignKey, func, JSON
+from sqlalchemy import Column, String, Numeric, Integer, DateTime, ForeignKey, func, JSON, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -12,6 +12,7 @@ class Vest(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     vest_code = Column(String, nullable=False, index=True)
     vest_type = Column(String)
+    is_female = Column(Boolean, default=False)
     threat_level = Column(String)
     protection_class = Column(String)
     total_layers = Column(Integer)

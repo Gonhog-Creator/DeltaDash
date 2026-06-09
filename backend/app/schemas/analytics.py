@@ -20,6 +20,7 @@ class AnalyticsPoint(BaseModel):
     trauma_qualitative: Optional[str] = None  # Test result (OK, punctured, perforada)
     is_official: Optional[bool] = None
     material_name: Optional[str] = None
+    material_class: Optional[str] = None
 
 
 class AnalyticsData(BaseModel):

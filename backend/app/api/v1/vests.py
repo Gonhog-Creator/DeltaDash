@@ -214,17 +214,18 @@ def update_vest_layers(
 
 @router.post("/recalculate-thickness")
 def recalculate_all_thicknesses(
+    force: bool = False,
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(require_write_access)
 ):
     """Recalculate total thickness for all vests based on their layers.
-    Only updates vests that don't have a thickness value."""
+    Only updates vests that don't have a thickness value unless force=True."""
     vests = db.query(VestModel).all()
     updated_count = 0
 
     for vest in vests:
-        # Only calculate if thickness is not set
-        if vest.total_thickness_mm is None:
+        # Calculate if thickness is not set or if force=True
+        if force or vest.total_thickness_mm is None:
             calculated_thickness = calculate_vest_thickness(vest.id, db)
             if calculated_thickness is not None:
                 vest.total_thickness_mm = calculated_thickness

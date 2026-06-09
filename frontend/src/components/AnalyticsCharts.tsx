@@ -1,5 +1,6 @@
 import Plot from 'react-plotly.js';
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 
 interface AnalyticsPoint {
   velocity: number | null;
@@ -16,6 +17,8 @@ interface AnalyticsPoint {
   angle_degrees: number | null;
   trauma_qualitative: string | null;
   is_official: boolean | null;
+  material_name: string | null;
+  material_class: string | null;
 }
 
 interface AnalyticsData {
@@ -527,6 +530,256 @@ export function EnergyVsBfdChart({
             analyticsData={analyticsData}
             filteredPoints={filteredPoints}
             debugStats={{ xLabel: 'bullet energy', yLabel: 'BFD' }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface MaterialVsBfdChartProps {
+  filteredPoints: AnalyticsPoint[];
+  isAdmin: boolean;
+  analyticsData: AnalyticsData | undefined;
+  uniqueCalibers: string[];
+  uniqueProtectionLevels: string[];
+  selectedCalibers: string[];
+  selectedProtectionLevels: string[];
+  setSelectedCalibers: (calibers: string[]) => void;
+  setSelectedProtectionLevels: (levels: string[]) => void;
+}
+
+export function MaterialVsBfdChart({
+  filteredPoints,
+  isAdmin,
+  analyticsData,
+  uniqueCalibers,
+  uniqueProtectionLevels,
+  selectedCalibers,
+  selectedProtectionLevels,
+  setSelectedCalibers,
+  setSelectedProtectionLevels,
+}: MaterialVsBfdChartProps) {
+  const navigate = useNavigate();
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  const normalizeCategoryName = (name: string): string => {
+    if (!name) return '';
+    return name
+      .replace(/_/g, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
+  const categoryBfdData = filteredPoints
+    .filter(p => p.material_class && p.bfd_mm !== null)
+    .reduce((acc, point) => {
+      const category = point.material_class!;
+      if (!acc[category]) {
+        acc[category] = { sum: 0, count: 0, materials: new Map<string, { sum: number; count: number }>() };
+      }
+      acc[category].sum += point.bfd_mm!;
+      acc[category].count += 1;
+      
+      const materialName = point.material_name || 'Unknown';
+      if (!acc[category].materials.has(materialName)) {
+        acc[category].materials.set(materialName, { sum: 0, count: 0 });
+      }
+      acc[category].materials.get(materialName)!.sum += point.bfd_mm!;
+      acc[category].materials.get(materialName)!.count += 1;
+      
+      return acc;
+    }, {} as Record<string, { sum: number; count: number; materials: Map<string, { sum: number; count: number }> }>);
+
+  const categories = Object.keys(categoryBfdData).sort();
+  const normalizedCategories = categories.map(normalizeCategoryName);
+  let chartData: { x: string[]; y: number[]; counts: number[]; names: string[] };
+  let noDataMessage = '';
+
+  if (selectedCategory) {
+    const categoryData = categoryBfdData[selectedCategory];
+    if (categoryData && categoryData.materials.size > 0) {
+      const materials = Array.from(categoryData.materials.keys()).sort();
+      const avgBfds = materials.map(m => categoryData.materials.get(m)!.sum / categoryData.materials.get(m)!.count);
+      const counts = materials.map(m => categoryData.materials.get(m)!.count);
+      chartData = { x: materials, y: avgBfds, counts, names: materials };
+    } else {
+      chartData = { x: [], y: [], counts: [], names: [] };
+      const allMaterials = Array.from(
+        new Set(filteredPoints.filter(p => p.material_name).map(p => p.material_name))
+      ).sort();
+      noDataMessage = `No materials found in "${selectedCategory}" category. Available categories: ${categories.join(', ')}`;
+    }
+  } else {
+    const avgBfds = categories.map(c => categoryBfdData[c].sum / categoryBfdData[c].count);
+    const counts = categories.map(c => categoryBfdData[c].count);
+    chartData = { x: normalizedCategories, y: avgBfds, counts, names: normalizedCategories };
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Filters</h2>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Material Category</label>
+          <div className="flex flex-wrap gap-4 border rounded-md p-2">
+            <label className="flex items-center space-x-2">
+              <input
+                type="radio"
+                name="category"
+                checked={selectedCategory === null}
+                onChange={() => setSelectedCategory(null)}
+                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className="text-sm text-gray-700">All Categories</span>
+            </label>
+            {categories.map(category => (
+              <label key={category} className="flex items-center space-x-2">
+                <input
+                  type="radio"
+                  name="category"
+                  checked={selectedCategory === category}
+                  onChange={() => setSelectedCategory(category)}
+                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-sm text-gray-700">{normalizeCategoryName(category)}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          {selectedCategory ? `Materials in ${normalizeCategoryName(selectedCategory)} Category` : 'Material Categories vs Average BFD'}
+        </h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Y-axis: Average Back Face Deformation (mm)<br />
+          X-axis: {selectedCategory ? 'Material Name' : 'Material Category'}
+        </p>
+
+        {chartData.x.length > 0 ? (
+          <div className="h-[600px]">
+            <Plot
+              data={[
+                {
+                  x: chartData.x,
+                  y: chartData.y,
+                  type: 'bar',
+                  marker: {
+                    color: chartData.x.map((_, idx) => idx % 2 === 0 ? '#3b82f6' : '#6366f1'),
+                    line: {
+                      color: '#1e40af',
+                      width: 1,
+                    },
+                  },
+                  text: chartData.y.map((avg, idx) => avg.toFixed(2)),
+                  textposition: 'outside',
+                  textfont: {
+                    size: 16,
+                    color: '#1f2937',
+                    family: 'Inter, sans-serif',
+                  },
+                  hoverinfo: 'x+y',
+                  hovertemplate: '<b>%{x}</b><br>Avg BFD: %{y:.2f} mm<extra></extra>',
+                  name: 'Average BFD',
+                },
+                {
+                  x: chartData.x,
+                  y: chartData.y,
+                  type: 'bar',
+                  marker: {
+                    color: 'rgba(37, 99, 235, 0)',
+                  },
+                  text: chartData.counts.map(count => `n=${count}`),
+                  textposition: 'inside bottom',
+                  textfont: {
+                    size: 14,
+                    color: '#ffffff',
+                    family: 'Inter, sans-serif',
+                  },
+                  hoverinfo: 'skip',
+                  showlegend: false,
+                },
+              ]}
+              layout={{
+                autosize: true,
+                margin: { t: 80, r: 50, b: 120, l: 90 },
+                xaxis: {
+                  title: {
+                    text: selectedCategory ? 'Material Name' : 'Material Category',
+                    font: {
+                      size: 14,
+                      color: '#374151',
+                      family: 'Inter, sans-serif',
+                    },
+                  },
+                  gridcolor: '#f3f4f6',
+                  zerolinecolor: '#d1d5db',
+                  tickangle: -45,
+                  tickfont: {
+                    size: 12,
+                    color: '#6b7280',
+                    family: 'Inter, sans-serif',
+                  },
+                },
+                yaxis: {
+                  title: {
+                    text: 'Average BFD (mm)',
+                    font: {
+                      size: 14,
+                      color: '#374151',
+                      family: 'Inter, sans-serif',
+                    },
+                  },
+                  gridcolor: '#f3f4f6',
+                  zerolinecolor: '#d1d5db',
+                  tickfont: {
+                    size: 12,
+                    color: '#6b7280',
+                    family: 'Inter, sans-serif',
+                  },
+                },
+                hovermode: 'closest',
+                hoverlabel: {
+                  bgcolor: 'rgba(255, 255, 255, 0.95)',
+                  bordercolor: '#e5e7eb',
+                  font: {
+                    size: 13,
+                    color: '#1f2937',
+                    family: 'Inter, sans-serif',
+                  },
+                },
+                plot_bgcolor: '#ffffff',
+                paper_bgcolor: '#ffffff',
+                font: {
+                  family: 'Inter, sans-serif',
+                },
+                barmode: 'overlay',
+                showlegend: false,
+              }}
+              config={{
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                displaylogo: false,
+              }}
+              style={{ width: '100%', height: '100%' }}
+            />
+          </div>
+        ) : (
+          <div className="flex items-center justify-center h-96">
+            <div className="text-gray-500 text-center">{noDataMessage || 'No data available for selected category'}</div>
+          </div>
+        )}
+
+        {isAdmin && (
+          <DebugInfo
+            analyticsData={analyticsData}
+            filteredPoints={filteredPoints}
+            debugStats={{ xLabel: selectedCategory ? 'material' : 'material category', yLabel: 'BFD' }}
           />
         )}
       </div>

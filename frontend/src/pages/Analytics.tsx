@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import Plot from 'react-plotly.js';
 import { apiClient } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
-import { VelocityVsBfdChart, EnergyVsVelocityChart, EnergyVsBfdChart } from '../components/AnalyticsCharts';
+import { VelocityVsBfdChart, EnergyVsVelocityChart, EnergyVsBfdChart, MaterialVsBfdChart } from '../components/AnalyticsCharts';
 
 interface ProtocolThreatLevel {
   protocol_id: string;
@@ -27,7 +27,8 @@ interface AnalyticsPoint {
   angle_degrees: number | null;
   trauma_qualitative: string | null;
   is_official: boolean | null;
-  material_type: string | null;
+  material_name: string | null;
+  material_class: string | null;
 }
 
 interface AnalyticsData {
@@ -63,7 +64,7 @@ export function Analytics() {
     queryFn: () => apiClient.get<AnalyticsData>('/api/v1/analytics/velocity-vs-bfd'),
   });
 
-  const [activeTab, setActiveTab] = useState<'builder' | 'velocity-bfd' | 'energy-velocity' | 'energy-bfd'>('builder');
+  const [activeTab, setActiveTab] = useState<'builder' | 'velocity-bfd' | 'energy-velocity' | 'energy-bfd' | 'material-bfd'>('builder');
   const [xAxis, setXAxis] = useState<AxisOption>('bfd_mm');
   const [yAxis, setYAxis] = useState<AxisOption>('velocity');
   const [colorGrouping, setColorGrouping] = useState<ColorGroupingOption>('side');
@@ -284,6 +285,16 @@ export function Analytics() {
             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
           >
             Bullet Energy vs BFD
+          </button>
+          <button
+            onClick={() => setActiveTab('material-bfd')}
+            className={`${
+              activeTab === 'material-bfd'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+          >
+            Material vs BFD
           </button>
         </nav>
       </div>
@@ -640,6 +651,18 @@ export function Analytics() {
         />
       ) : activeTab === 'energy-bfd' ? (
         <EnergyVsBfdChart
+          filteredPoints={filteredPoints}
+          isAdmin={isAdmin}
+          analyticsData={analyticsData}
+          uniqueCalibers={uniqueCalibers}
+          uniqueProtectionLevels={uniqueProtectionLevels}
+          selectedCalibers={selectedCalibers}
+          selectedProtectionLevels={selectedProtectionLevels}
+          setSelectedCalibers={setSelectedCalibers}
+          setSelectedProtectionLevels={setSelectedProtectionLevels}
+        />
+      ) : activeTab === 'material-bfd' ? (
+        <MaterialVsBfdChart
           filteredPoints={filteredPoints}
           isAdmin={isAdmin}
           analyticsData={analyticsData}

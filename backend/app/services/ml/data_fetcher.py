@@ -9,6 +9,20 @@ import pandas as pd
 from app.db.models import ShotData, Vest, VestLayer, Material, TestSession, Ammunition, AnchorPoint, AnchorPointLayer
 
 
+def extract_ply_orientations(layers: List[Dict[str, Any]]) -> str:
+    """Extract ply orientation information from material layers."""
+    orientations = []
+    for layer in layers:
+        material = layer['material']
+        if material and material.ply_orientations:
+            # ply_orientations is a JSONB array of orientations
+            if isinstance(material.ply_orientations, list):
+                orientations.extend([str(o) for o in material.ply_orientations])
+            elif isinstance(material.ply_orientations, str):
+                orientations.append(material.ply_orientations)
+    return ", ".join(orientations) if orientations else None
+
+
 def fetch_training_data(db: Session, verbose: bool = True) -> tuple[pd.DataFrame, list[str]]:
     """
     Fetch all training data from database for ML model training.
@@ -179,6 +193,11 @@ def fetch_training_data(db: Session, verbose: bool = True) -> tuple[pd.DataFrame
             'perforated': perforated,
             'pass_fail': None,  # Not available in ShotData
             'material_type': material_type_str,
+            'caliber_diameter_mm': float(ammunition.caliber_diameter_mm) if ammunition and ammunition.caliber_diameter_mm else None,
+            'caliber_length_mm': float(ammunition.caliber_length_mm) if ammunition and ammunition.caliber_length_mm else None,
+            'vest_type': vest.vest_type if vest else None,
+            'is_female': vest.is_female if vest else False,
+            'ply_orientations': extract_ply_orientations(layers),
         }
         
         rows.append(row)
@@ -317,6 +336,11 @@ def fetch_anchor_points_as_training_data(db: Session) -> tuple[pd.DataFrame, dic
                 'perforated': perforated_int,
                 'pass_fail': 'fail' if ap.expected_perforated else 'pass',
                 'material_type': material_type_str,
+                'caliber_diameter_mm': float(ammo.caliber_diameter_mm) if ammo.caliber_diameter_mm else None,
+                'caliber_length_mm': float(ammo.caliber_length_mm) if ammo.caliber_length_mm else None,
+                'vest_type': 'soft',  # Default to soft armor for anchor points
+                'is_female': False,  # Anchor points default to male/unisex
+                'ply_orientations': None,  # Anchor points don't have ply orientations
             }
             
             rows.append(row)

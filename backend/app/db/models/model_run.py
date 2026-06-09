@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Float, func
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Float, func, LargeBinary
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import uuid
 
@@ -19,6 +19,8 @@ class ModelRun(Base):
     formula = Column(String)
     metrics_json = Column(JSONB)
     artifact_path = Column(String)
+    model_file = Column(LargeBinary, nullable=True)
+    preprocessor_file = Column(LargeBinary, nullable=True)
     notes = Column(String)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

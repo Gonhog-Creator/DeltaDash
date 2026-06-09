@@ -4,7 +4,7 @@ import { apiClient } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AnchorPointsTab } from '../components/AnchorPointsTab';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, LineChart, Line, Legend } from 'recharts';
+import Plot from 'react-plotly.js';
 
 const API_BASE_URL = import.meta.env.DEV
   ? 'http://localhost:8000'
@@ -55,7 +55,10 @@ export function ModelTraining() {
   const [calculatingMetrics, setCalculatingMetrics] = useState(false);
   const [calculatingVersion, setCalculatingVersion] = useState<string | null>(null);
   const [showAnchorPointDetails, setShowAnchorPointDetails] = useState(false);
+  const [showHealthModal, setShowHealthModal] = useState(false);
   const [protocolThreatLevels, setProtocolThreatLevels] = useState<ProtocolThreatLevel[]>([]);
+  const [healthCheckStatus, setHealthCheckStatus] = useState<any>(null);
+  const [useLogTransform, setUseLogTransform] = useState(true);
 
   // Fetch protocol threat levels on mount
   useEffect(() => {
@@ -77,10 +80,22 @@ export function ModelTraining() {
     setTrainingWarnings([]);
 
     try {
-      const url = modelName ? `/api/v1/ballistic/train?model_name=${encodeURIComponent(modelName)}` : '/api/v1/ballistic/train';
+      const url = modelName ? `/api/v1/ballistic/train?model_name=${encodeURIComponent(modelName)}&use_log_transform=${useLogTransform}` : `/api/v1/ballistic/train?use_log_transform=${useLogTransform}`;
       const result = await apiClient.post<any>(url);
       setTrainingStatus(result);
       setTrainingWarnings(result.warnings || []);
+      setHealthCheckStatus(result.health_check);
+      
+      // Use cached health check results from training response
+      if (result.metadata?.version) {
+        setSelectedModelVersion(result.metadata.version);
+        
+        // Use health results already computed during training
+        if (result.health_result) {
+          setHealthData(result.health_result);
+        }
+      }
+      
       setShowSuccessModal(true);
       setModelName(''); // Clear model name after training
       // Wait a moment for database transaction to commit before refreshing
@@ -94,13 +109,15 @@ export function ModelTraining() {
   };
 
   const handleCheckHealthForVersion = async (version: string) => {
-  try {
-    const result = await apiClient.get<any>(`/api/v1/ballistic/health/version/${version}`);
-    setHealthStatus(result);
-  } catch (err: any) {
-    setError(err.detail || 'Health check failed');
-  }
-};
+    setError(null);
+    try {
+      const result = await apiClient.get<any>(`/api/v1/ballistic/health/version/${version}`);
+      setHealthStatus(result);
+      setShowHealthModal(true);
+    } catch (err: any) {
+      setError(err.detail || 'Failed to load model details');
+    }
+  };
 
   const handleGetMetrics = async () => {
     try {
@@ -268,12 +285,22 @@ export function ModelTraining() {
     handleListVersions();
   }, []);
 
-  // Set default model version to most recent
+  // Set default model version to most recent, or clear if selected version no longer exists
   useEffect(() => {
-    if (modelVersions.length > 0 && !selectedModelVersion) {
-      setSelectedModelVersion(modelVersions[0].version);
+    if (modelVersions.length > 0) {
+      // If selected version no longer exists in the list, clear it or select first available
+      if (selectedModelVersion && !modelVersions.find(v => v.version === selectedModelVersion)) {
+        setSelectedModelVersion(modelVersions[0].version);
+      }
+      // If no version is selected, select the first one
+      else if (!selectedModelVersion) {
+        setSelectedModelVersion(modelVersions[0].version);
+      }
+    } else {
+      // If no versions exist, clear selection
+      setSelectedModelVersion('');
     }
-  }, [modelVersions]);
+  }, [modelVersions, selectedModelVersion]);
 
   // Update URL when tab changes
   useEffect(() => {
@@ -373,6 +400,18 @@ export function ModelTraining() {
               placeholder="e.g., March 2025 1.1"
               className="w-full border rounded p-2"
             />
+          </div>
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="use_log_transform"
+              checked={useLogTransform}
+              onChange={(e) => setUseLogTransform(e.target.checked)}
+              className="rounded"
+            />
+            <label htmlFor="use_log_transform" className="text-sm font-medium">
+              Use Log Transform for BFD (reduces error for skewed distributions)
+            </label>
           </div>
           <button
             onClick={handleTrain}
@@ -511,7 +550,7 @@ export function ModelTraining() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {modelVersions.map((version) => (
                   <tr key={version.version}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900 max-w-xs break-words">
                       {version.model_name || version.version}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{version.version}</td>
@@ -530,7 +569,7 @@ export function ModelTraining() {
                           onClick={() => handleCheckHealthForVersion(version.version)}
                           className="px-3 py-1 bg-gray-600 text-white text-sm rounded hover:bg-gray-700"
                         >
-                          Health
+                          Details
                         </button>
                         <button
                           onClick={() => handleRecalculateVersionMetrics(version.version)}
@@ -882,27 +921,25 @@ export function ModelTraining() {
               const maxActual = Math.max(...filteredPointData.map((p: any) => p.actual_bfd));
               const maxPredicted = Math.max(...filteredPointData.map((p: any) => p.predicted_bfd));
               const maxValue = Math.max(maxActual, maxPredicted) + 5;
-              
+
               // Calculate linear regression (trend line)
               const n = filteredPointData.length;
               const sumX = filteredPointData.reduce((sum: number, p: any) => sum + p.actual_bfd, 0);
               const sumY = filteredPointData.reduce((sum: number, p: any) => sum + p.predicted_bfd, 0);
               const sumXY = filteredPointData.reduce((sum: number, p: any) => sum + (p.actual_bfd * p.predicted_bfd), 0);
               const sumX2 = filteredPointData.reduce((sum: number, p: any) => sum + (p.actual_bfd * p.actual_bfd), 0);
-              
+
               const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
               const intercept = (sumY - slope * sumX) / n;
-              
+
               const minX = Math.min(...filteredPointData.map((p: any) => p.actual_bfd));
               const maxX = Math.max(...filteredPointData.map((p: any) => p.actual_bfd));
-              const trendLineStart = { x: minX, y: slope * minX + intercept };
-              const trendLineEnd = { x: maxX, y: slope * maxX + intercept };
-              
+
               // Color palette for grouping
               const colors = ['#dc2626', '#2563eb', '#16a34a', '#9333ea', '#ea580c', '#0891b2', '#ca8a04', '#db2777'];
-              
+
               // Group data by color grouping
-              const groupedData = colorGrouping !== 'none' 
+              const groupedData = colorGrouping !== 'none'
                 ? (() => {
                     const groups = new Map<string, any[]>();
                     filteredPointData.forEach(p => {
@@ -926,59 +963,189 @@ export function ModelTraining() {
                     return Array.from(groups.entries());
                   })()
                 : [['all', filteredPointData]];
-              
+
+              const plotlyData = [
+                // Perfect prediction line (green dashed)
+                {
+                  x: [0, maxValue],
+                  y: [0, maxValue],
+                  mode: 'lines' as const,
+                  type: 'scatter' as const,
+                  line: { color: 'green', width: 2, dash: 'dash' },
+                  name: 'Perfect Prediction',
+                  hoverinfo: 'skip',
+                },
+                // Trend line (red)
+                {
+                  x: [minX, maxX],
+                  y: [slope * minX + intercept, slope * maxX + intercept],
+                  mode: 'lines' as const,
+                  type: 'scatter' as const,
+                  line: { color: 'red', width: 2 },
+                  name: 'Trend Line',
+                  hoverinfo: 'skip',
+                },
+                // Data points grouped by color
+                ...groupedData.map(([groupName, points], index) => ({
+                  x: points.map((p: any) => p.actual_bfd),
+                  y: points.map((p: any) => p.predicted_bfd),
+                  mode: 'markers' as const,
+                  type: 'scatter' as const,
+                  marker: { size: 8, color: colorGrouping === 'none' ? '#3b82f6' : colors[index % colors.length] },
+                  name: String(groupName),
+                  text: points.map((p: any) =>
+                    `Vest: ${p.vest_code}<br>Protocol: ${p.protocol}<br>Actual: ${p.actual_bfd?.toFixed(2)} mm<br>Predicted: ${p.predicted_bfd?.toFixed(2)} mm<br>Error: ${p.percent_error?.toFixed(2)}%`
+                  ),
+                  hoverinfo: 'text',
+                })),
+              ];
+
               return (
-                <div className="h-96">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ScatterChart>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        type="number" 
-                        dataKey="actual_bfd" 
-                        name="Actual BFD (mm)"
-                        domain={[0, maxValue]}
-                        tickFormatter={(value) => Math.round(value)}
-                      />
-                      <YAxis 
-                        type="number" 
-                        dataKey="predicted_bfd" 
-                        name="Predicted BFD (mm)"
-                        domain={[0, maxValue]}
-                        tickFormatter={(value) => Math.round(value)}
-                      />
-                      <Tooltip 
-                        cursor={{ strokeDasharray: '3 3' }}
-                        formatter={(value: any) => [`${value?.toFixed(2)} mm`, '']}
-                        labelFormatter={(label: any) => `Actual: ${label?.toFixed(2)} mm`}
-                      />
-                      {colorGrouping !== 'none' && <Legend />}
-                      <ReferenceLine 
-                        segment={[
-                          { x: 0, y: 0 },
-                          { x: maxValue, y: maxValue }
-                        ]}
-                        stroke="green"
-                        strokeWidth={2}
-                        strokeDasharray="5 5"
-                      />
-                      <ReferenceLine 
-                        segment={[
-                          { x: trendLineStart.x, y: trendLineStart.y },
-                          { x: trendLineEnd.x, y: trendLineEnd.y }
-                        ]}
-                        stroke="red"
-                        strokeWidth={2}
-                      />
-                      {groupedData.map(([groupName, points], index) => (
-                        <Scatter
-                          key={groupName}
-                          data={points}
-                          fill={colorGrouping === 'none' ? '#3b82f6' : colors[index % colors.length]}
-                          name={String(groupName)}
-                        />
-                      ))}
-                    </ScatterChart>
-                  </ResponsiveContainer>
+                <div className="h-[500px]">
+                  <Plot
+                    data={plotlyData}
+                    layout={{
+                      autosize: true,
+                      margin: { t: 40, r: 40, b: 60, l: 80 },
+                      xaxis: {
+                        title: 'Actual BFD (mm)',
+                        gridcolor: '#e5e7eb',
+                        zerolinecolor: '#9ca3af',
+                        range: [0, maxValue],
+                      },
+                      yaxis: {
+                        title: 'Predicted BFD (mm)',
+                        gridcolor: '#e5e7eb',
+                        zerolinecolor: '#9ca3af',
+                        range: [0, maxValue],
+                      },
+                      hovermode: 'closest',
+                      plot_bgcolor: 'rgba(255, 255, 255, 0.8)',
+                      paper_bgcolor: 'white',
+                      font: { family: 'Inter, sans-serif' },
+                      showlegend: colorGrouping !== 'none',
+                    }}
+                    config={{
+                      responsive: true,
+                      displayModeBar: true,
+                      modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                      displaylogo: false,
+                    }}
+                    style={{ width: '100%', height: '100%' }}
+                  />
+                </div>
+              );
+            })() : (
+              <p className="text-sm text-gray-600">No point data available for graphing.</p>
+            )}
+          </div>
+
+          {/* Error vs Measured BFD Graph */}
+          <div className="bg-white rounded-lg shadow p-6 mt-6">
+            <h2 className="text-xl font-semibold mb-4">Error vs Measured BFD</h2>
+            {filteredPointData.length > 0 ? (() => {
+              const maxActual = Math.max(...filteredPointData.map((p: any) => p.actual_bfd));
+              const maxError = Math.max(...filteredPointData.map((p: any) => p.percent_error));
+              const minError = Math.min(...filteredPointData.map((p: any) => p.percent_error));
+
+              // Color palette for grouping
+              const colors = ['#dc2626', '#2563eb', '#16a34a', '#9333ea', '#ea580c', '#0891b2', '#ca8a04', '#db2777'];
+
+              // Group data by color grouping
+              const groupedData = colorGrouping !== 'none'
+                ? (() => {
+                    const groups = new Map<string, any[]>();
+                    filteredPointData.forEach(p => {
+                      let key: string;
+                      if (colorGrouping === 'vest') {
+                        key = p.vest_code;
+                      } else if (colorGrouping === 'protocol') {
+                        key = p.protocol;
+                      } else if (colorGrouping === 'protection_level') {
+                        key = p.protection_level;
+                      } else if (colorGrouping === 'caliber') {
+                        key = p.caliber;
+                      } else {
+                        key = 'all';
+                      }
+                      if (!groups.has(key)) {
+                        groups.set(key, []);
+                      }
+                      groups.get(key)!.push(p);
+                    });
+                    return Array.from(groups.entries());
+                  })()
+                : [['all', filteredPointData]];
+
+              const plotlyData = [
+                // Zero error line (green dashed)
+                {
+                  x: [0, maxActual + 5],
+                  y: [0, 0],
+                  mode: 'lines' as const,
+                  type: 'scatter' as const,
+                  line: { color: 'green', width: 2, dash: 'dash' },
+                  name: 'Zero Error',
+                  hoverinfo: 'skip',
+                },
+                // Average error line (orange)
+                {
+                  x: [0, maxActual + 5],
+                  y: [healthData?.overall_average_error || 0, healthData?.overall_average_error || 0],
+                  mode: 'lines' as const,
+                  type: 'scatter' as const,
+                  line: { color: 'orange', width: 2, dash: 'dot' },
+                  name: `Avg Error: ${healthData?.overall_average_error?.toFixed(1)}%`,
+                  hoverinfo: 'skip',
+                },
+                // Data points grouped by color
+                ...groupedData.map(([groupName, points], index) => ({
+                  x: points.map((p: any) => p.actual_bfd),
+                  y: points.map((p: any) => p.percent_error),
+                  mode: 'markers' as const,
+                  type: 'scatter' as const,
+                  marker: { size: 8, color: colorGrouping === 'none' ? '#3b82f6' : colors[index % colors.length] },
+                  name: String(groupName),
+                  text: points.map((p: any) =>
+                    `Vest: ${p.vest_code}<br>Protocol: ${p.protocol}<br>Measured: ${p.actual_bfd?.toFixed(2)} mm<br>Predicted: ${p.predicted_bfd?.toFixed(2)} mm<br>Error: ${p.percent_error?.toFixed(2)}%`
+                  ),
+                  hoverinfo: 'text',
+                })),
+              ];
+
+              return (
+                <div className="h-[500px]">
+                  <Plot
+                    data={plotlyData}
+                    layout={{
+                      autosize: true,
+                      margin: { t: 40, r: 40, b: 60, l: 80 },
+                      xaxis: {
+                        title: 'Measured BFD (mm)',
+                        gridcolor: '#e5e7eb',
+                        zerolinecolor: '#9ca3af',
+                        range: [0, maxActual + 5],
+                      },
+                      yaxis: {
+                        title: 'Error (%)',
+                        gridcolor: '#e5e7eb',
+                        zerolinecolor: '#9ca3af',
+                        range: [Math.max(0, minError - 5), maxError + 5],
+                      },
+                      hovermode: 'closest',
+                      plot_bgcolor: 'rgba(255, 255, 255, 0.8)',
+                      paper_bgcolor: 'white',
+                      font: { family: 'Inter, sans-serif' },
+                      showlegend: true,
+                    }}
+                    config={{
+                      responsive: true,
+                      displayModeBar: true,
+                      modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                      displaylogo: false,
+                    }}
+                    style={{ width: '100%', height: '100%' }}
+                  />
                 </div>
               );
             })() : (
@@ -1416,9 +1583,25 @@ export function ModelTraining() {
       {showSuccessModal && (
         <ConfirmModal
           title="Training Complete"
-          message="The ML model has been trained successfully using data from the database."
+          message={
+            <div>
+              <p>The ML model has been trained successfully using data from the database.</p>
+              {healthCheckStatus && (
+                <div className="mt-2">
+                  {healthCheckStatus.health_check_passed ? (
+                    <p className="text-green-600">Health check passed with {healthCheckStatus.training_avg_error}% average error.</p>
+                  ) : (
+                    <p className="text-red-600">Health check failed. Please run a manual health check for details.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          }
           confirmLabel="OK"
-          onConfirm={() => setShowSuccessModal(false)}
+          onConfirm={() => {
+            setShowSuccessModal(false);
+            setHealthCheckStatus(null);
+          }}
         />
       )}
 
@@ -1496,6 +1679,44 @@ export function ModelTraining() {
                   Save
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Details Modal */}
+      {showHealthModal && healthStatus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowHealthModal(false)} />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Model Details</h3>
+            <div className="space-y-4">
+              <div><strong>Model Name:</strong> {healthStatus.model_name || 'N/A'}</div>
+              <div><strong>Status:</strong> {healthStatus.status}</div>
+              <div><strong>Version:</strong> {healthStatus.version || 'N/A'}</div>
+              <div><strong>Trained At:</strong> {healthStatus.trained_at ? new Date(healthStatus.trained_at).toLocaleString() : 'N/A'}</div>
+              <div><strong>Feature Count:</strong> {healthStatus.feature_count}</div>
+              <div><strong>Training Data Count:</strong> {healthStatus.shot_count}</div>
+              <div><strong>Material Count:</strong> {healthStatus.material_count}</div>
+              <div><strong>Regression Targets:</strong> {healthStatus.regression_targets?.join(', ') || 'None'}</div>
+              <div><strong>Classification Targets:</strong> {healthStatus.classification_targets?.join(', ') || 'None'}</div>
+              {healthStatus.data_health && (
+                <div className="mt-4 pt-4 border-t">
+                  <h4 className="font-medium mb-2">Data Health</h4>
+                  <div className="text-sm text-gray-600">
+                    <div>Total Data Points: {healthStatus.data_health.total_data_points}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowHealthModal(false)}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

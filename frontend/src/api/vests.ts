@@ -20,6 +20,7 @@ export interface Vest {
   id: string;
   vest_code: string;
   vest_type: string | null;
+  is_female: boolean | null;
   threat_level: string | null;
   total_layers: number | null;
   total_thickness_mm: number | null;
@@ -36,6 +37,7 @@ export interface Vest {
 export interface VestCreate {
   vest_code: string;
   vest_type?: string | null;
+  is_female?: boolean | null;
   threat_level?: string | null;
   total_layers?: number | null;
   total_thickness_mm?: number | null;
@@ -50,6 +52,7 @@ export interface VestCreate {
 export interface VestUpdate {
   vest_code?: string | null;
   vest_type?: string | null;
+  is_female?: boolean | null;
   threat_level?: string | null;
   total_layers?: number | null;
   total_thickness_mm?: number | null;
@@ -114,5 +117,8 @@ export const vestsApi = {
 
   getTestSessions: (id: string) => apiClient.get<VestTestSessionsResponse>(`/api/v1/vests/${id}/test-sessions`),
 
-  recalculateThickness: () => apiClient.post<{ message: string }>('/api/v1/vests/recalculate-thickness'),
+  recalculateThickness: (force?: boolean) => {
+    const query = force ? '?force=true' : '';
+    return apiClient.post<{ message: string }>(`/api/v1/vests/recalculate-thickness${query}`);
+  },
 };

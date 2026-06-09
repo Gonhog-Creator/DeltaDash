@@ -128,24 +128,20 @@ def get_velocity_vs_bfd(
         
         angle_degrees_value = float(shot.angle_degrees) if shot.angle_degrees is not None else None
         
-        # Get majority material name from vest layers
-        material_name = None
+        # Get all materials from vest layers - create one data point per material
+        materials_found = []
         if vest:
             vest_layers = db.query(VestLayerModel, MaterialModel).outerjoin(
                 MaterialModel, VestLayerModel.material_id == MaterialModel.id
             ).filter(VestLayerModel.vest_id == vest.id).all()
             
             if vest_layers:
-                # Count material names
-                material_name_counts = {}
                 for layer, material in vest_layers:
                     if material and material.name:
-                        mat_name = material.name
-                        material_name_counts[mat_name] = material_name_counts.get(mat_name, 0) + 1
-                
-                # Get the majority material name
-                if material_name_counts:
-                    material_name = max(material_name_counts, key=material_name_counts.get)
+                        materials_found.append({
+                            'name': material.name,
+                            'class': material.material_class
+                        })
         else:
             # Fallback: try to find vest by vest_number if vest not linked via vest_id
             if shot.vest_number:
@@ -156,33 +152,56 @@ def get_velocity_vs_bfd(
                     ).filter(VestLayerModel.vest_id == matching_vest.id).all()
                     
                     if vest_layers:
-                        material_name_counts = {}
                         for layer, material in vest_layers:
                             if material and material.name:
-                                mat_name = material.name
-                                material_name_counts[mat_name] = material_name_counts.get(mat_name, 0) + 1
-                        
-                        if material_name_counts:
-                            material_name = max(material_name_counts, key=material_name_counts.get)
+                                materials_found.append({
+                                    'name': material.name,
+                                    'class': material.material_class
+                                })
         
-        point = AnalyticsPoint(
-            velocity=float(shot.velocity_m_s) if shot.velocity_m_s else None,
-            bullet_energy=bullet_energy,
-            bfd_mm=float(shot.trauma_mm) if shot.trauma_mm else None,
-            caliber=ammunition.name if ammunition and ammunition.name else standardized_caliber,
-            protection_level=normalize_protection_level(shot.protection_level),
-            test_session_id=str(shot.test_session_id) if shot.test_session_id else None,
-            test_session_name=test_session.name if test_session else None,
-            parent_test_session_name=parent_session.name if parent_session else None,
-            vest_number=shot.vest_number,
-            side=shot.side,
-            shot_number=shot.shot_number,
-            angle_degrees=angle_degrees_value,
-            trauma_qualitative=shot.trauma_qualitative,
-            is_official=test_session.is_official if test_session else None,
-            material_name=material_name,
-        )
-        points.append(point)
+        # Create a data point for each material found in the vest layers
+        if materials_found:
+            for mat in materials_found:
+                point = AnalyticsPoint(
+                    velocity=float(shot.velocity_m_s) if shot.velocity_m_s else None,
+                    bullet_energy=bullet_energy,
+                    bfd_mm=float(shot.trauma_mm) if shot.trauma_mm else None,
+                    caliber=ammunition.name if ammunition and ammunition.name else standardized_caliber,
+                    protection_level=normalize_protection_level(shot.protection_level),
+                    test_session_id=str(shot.test_session_id) if shot.test_session_id else None,
+                    test_session_name=test_session.name if test_session else None,
+                    parent_test_session_name=parent_session.name if parent_session else None,
+                    vest_number=shot.vest_number,
+                    side=shot.side,
+                    shot_number=shot.shot_number,
+                    angle_degrees=angle_degrees_value,
+                    trauma_qualitative=shot.trauma_qualitative,
+                    is_official=test_session.is_official if test_session else None,
+                    material_name=mat['name'],
+                    material_class=mat['class'],
+                )
+                points.append(point)
+        else:
+            # If no materials found, still add the point with null material info
+            point = AnalyticsPoint(
+                velocity=float(shot.velocity_m_s) if shot.velocity_m_s else None,
+                bullet_energy=bullet_energy,
+                bfd_mm=float(shot.trauma_mm) if shot.trauma_mm else None,
+                caliber=ammunition.name if ammunition and ammunition.name else standardized_caliber,
+                protection_level=normalize_protection_level(shot.protection_level),
+                test_session_id=str(shot.test_session_id) if shot.test_session_id else None,
+                test_session_name=test_session.name if test_session else None,
+                parent_test_session_name=parent_session.name if parent_session else None,
+                vest_number=shot.vest_number,
+                side=shot.side,
+                shot_number=shot.shot_number,
+                angle_degrees=angle_degrees_value,
+                trauma_qualitative=shot.trauma_qualitative,
+                is_official=test_session.is_official if test_session else None,
+                material_name=None,
+                material_class=None,
+            )
+            points.append(point)
     
     analytics_data = AnalyticsData(points=points)
     return analytics_data

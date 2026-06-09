@@ -77,6 +77,7 @@ export function Vests() {
   const [formData, setFormData] = useState<VestCreate>({
     vest_code: '',
     vest_type: '',
+    is_female: false,
     threat_level: '',
     total_layers: null,
     total_thickness_mm: null,
@@ -91,6 +92,17 @@ export function Vests() {
   const [layers, setLayers] = useState<VestLayerCreate[]>([]);
 
   const SIZE_OPTIONS = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL'];
+
+  // Close modal on Escape key - must be before early returns
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showDetailsModal) {
+        handleCloseDetailsModal();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [showDetailsModal]);
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error loading vests</div>;
@@ -200,30 +212,11 @@ export function Vests() {
   };
 
   const handleRecalculateThickness = async () => {
-    if (!vests || !materials) return;
+    if (!vests) return;
     setRecalculating(true);
     try {
-      let updatedCount = 0;
-      for (const vest of vests) {
-        if (!vest.total_thickness_mm && vest.layers && vest.layers.length > 0) {
-          const calculatedThickness = vest.layers.reduce((sum, layer) => {
-            const material = materials.find(m => m.id === layer.material_id);
-            if (material && material.thickness_mm && layer.layer_count) {
-              return sum + (material.thickness_mm * layer.layer_count);
-            }
-            return sum;
-          }, 0);
-          
-          if (calculatedThickness > 0) {
-            await updateMutation.mutateAsync({ 
-              id: vest.id, 
-              vest: { total_thickness_mm: calculatedThickness } 
-            });
-            updatedCount++;
-          }
-        }
-      }
-      alert(`Successfully updated thickness for ${updatedCount} vests`);
+      const result = await vestsApi.recalculateThickness(true);
+      alert(result.message);
     } catch (err) {
       console.error('Failed to recalculate thickness:', err);
       alert('Failed to recalculate thickness. See console for details.');
@@ -239,6 +232,7 @@ export function Vests() {
     setFormData({
       vest_code: fullVest.vest_code,
       vest_type: fullVest.vest_type || '',
+      is_female: fullVest.is_female || false,
       threat_level: fullVest.threat_level || '',
       protection_class: fullVest.protection_class || '',
       total_layers: fullVest.total_layers,
@@ -265,6 +259,7 @@ export function Vests() {
     setFormData({
       vest_code: '',
       vest_type: '',
+      is_female: false,
       threat_level: '',
       protection_class: '',
       total_layers: null,
@@ -485,22 +480,38 @@ export function Vests() {
                 />
               </div>
               {formData.vest_type?.toLowerCase() === 'soft' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Stitched</label>
-                  <div className="flex items-center gap-4 mt-1">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={formData.stitch_pattern === 'stitched'}
-                        onChange={(e) => setFormData({ ...formData, stitch_pattern: e.target.checked ? 'stitched' : null })}
-                        className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
-                      />
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Female Vest</label>
+                    <div className="flex items-center gap-4 mt-1">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={formData.is_female || false}
+                          onChange={(e) => setFormData({ ...formData, is_female: e.target.checked })}
+                          className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                        />
+                        <span className="text-sm text-gray-700">Is Female Vest</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Stitched</label>
+                    <div className="flex items-center gap-4 mt-1">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={formData.stitch_pattern === 'stitched'}
+                          onChange={(e) => setFormData({ ...formData, stitch_pattern: e.target.checked ? 'stitched' : null })}
+                          className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                        />
                       <span className="text-sm text-gray-700">Stitched</span>
                     </label>
                   </div>
                 </div>
-              )}
-              {editingVest && role === 'admin' && (
+              </>
+            )}
+            {editingVest && role === 'admin' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Created By</label>
                   <input
@@ -825,6 +836,10 @@ export function Vests() {
                 <div>
                   <span className="text-gray-500">Type:</span>
                   <span className="ml-2 font-medium">{selectedVest.vest_type ? selectedVest.vest_type.charAt(0).toUpperCase() + selectedVest.vest_type.slice(1).toLowerCase() : '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Female:</span>
+                  <span className="ml-2 font-medium">{selectedVest.is_female ? 'Yes' : 'No'}</span>
                 </div>
                 <div>
                   <span className="text-gray-500">Threat Level:</span>

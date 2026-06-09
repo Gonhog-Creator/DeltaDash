@@ -43,6 +43,9 @@ class FeatureEngineer:
         # Panel side feature
         features['panel_side'] = getattr(shot, 'panel_side', 'front')
         
+        # Add interaction features
+        features.update(self._compute_interaction_features(features))
+        
         return features
     
     def _extract_projectile_features(self, shot: ShotData) -> Dict:
@@ -198,6 +201,65 @@ class FeatureEngineer:
         
         return features
     
+    def _compute_interaction_features(self, features: Dict) -> Dict:
+        """
+        Compute interaction features from base features
+        
+        Args:
+            features: Dictionary of base features
+            
+        Returns:
+            Dictionary of interaction features
+        """
+        interaction_features = {}
+        
+        # Extract numerical values with defaults
+        velocity = features.get('impact_velocity_mps', 0)
+        bullet_mass = features.get('bullet_mass_g', 0)
+        areal_density = features.get('total_areal_density_g_m2', 0)
+        thickness = features.get('material_thickness_mm', 0)
+        layer_count = features.get('layer_count', 0)
+        impact_angle = features.get('impact_angle_deg', 0)
+        
+        # Kinetic energy: 0.5 * mass * velocity^2
+        if bullet_mass > 0 and velocity > 0:
+            interaction_features['kinetic_energy_j'] = 0.5 * bullet_mass * (velocity ** 2)
+        else:
+            interaction_features['kinetic_energy_j'] = 0
+        
+        # Velocity × areal density (impact energy per unit area)
+        interaction_features['velocity_areal_density'] = velocity * areal_density
+        
+        # Velocity × thickness (impact through material)
+        interaction_features['velocity_thickness'] = velocity * thickness
+        
+        # Bullet mass × areal density (momentum transfer)
+        interaction_features['mass_areal_density'] = bullet_mass * areal_density
+        
+        # Layer count × thickness (total material resistance)
+        interaction_features['layer_thickness'] = layer_count * thickness
+        
+        # Velocity × cos(angle) (effective velocity perpendicular to surface)
+        import math
+        interaction_features['effective_velocity'] = velocity * math.cos(math.radians(impact_angle))
+        
+        # Kinetic energy per unit areal density
+        if areal_density > 0:
+            interaction_features['energy_per_density'] = interaction_features['kinetic_energy_j'] / areal_density
+        else:
+            interaction_features['energy_per_density'] = 0
+        
+        # Velocity squared (non-linear relationship)
+        interaction_features['velocity_squared'] = velocity ** 2
+        
+        # Material density ratio (areal density / thickness)
+        if thickness > 0:
+            interaction_features['density_ratio'] = areal_density / thickness
+        else:
+            interaction_features['density_ratio'] = 0
+        
+        return interaction_features
+    
     def extract_training_data(self) -> Tuple[List[Dict], List[float]]:
         """
         Extract all training data from database
@@ -230,8 +292,42 @@ class FeatureEngineer:
         Returns:
             List of feature dictionaries with encoded categorical variables
         """
-        # For now, return as-is. In production, use proper encoding (OneHot, LabelEncoder, etc.)
-        return features_list
+        if not features_list:
+            return features_list
+        
+        # Convert to DataFrame for easier encoding
+        import pandas as pd
+        df = pd.DataFrame(features_list)
+        
+        # Define low-cardinality features (use OneHot encoding)
+        low_cardinality_features = [
+            'panel_side', 'condition', 'vest_size', 'primary_fabric_type'
+        ]
+        
+        # Define high-cardinality features (use Label encoding)
+        high_cardinality_features = [
+            'ammunition_used', 'projectile_type', 'material_type', 'vest_composition'
+        ]
+        
+        # OneHot encode low-cardinality features
+        for col in low_cardinality_features:
+            if col in df.columns:
+                # Get dummies and drop first to avoid multicollinearity
+                dummies = pd.get_dummies(df[col], prefix=col, drop_first=True)
+                df = pd.concat([df, dummies], axis=1)
+                df = df.drop(col, axis=1)
+        
+        # Label encode high-cardinality features
+        from sklearn.preprocessing import LabelEncoder
+        label_encoders = {}
+        for col in high_cardinality_features:
+            if col in df.columns:
+                le = LabelEncoder()
+                df[col] = le.fit_transform(df[col].astype(str))
+                label_encoders[col] = le
+        
+        # Convert back to list of dictionaries
+        return df.to_dict('records')
     
     def normalize_features(self, features_list: List[Dict]) -> np.ndarray:
         """
