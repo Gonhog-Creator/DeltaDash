@@ -1260,10 +1260,16 @@ def run_alembic_upgrade(
         from alembic.command import upgrade
         
         # Create alembic config
-        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        # admin.py is at app/api/v1/admin.py - go up 3 levels to get project root
+        backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        migrations_path = os.path.join(backend_dir, 'migrations')
+        if not os.path.exists(migrations_path):
+            # Docker fallback: __file__ is /app/app/api/v1/admin.py, need /app
+            backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+            migrations_path = os.path.join(backend_dir, 'migrations')
         config = Config(os.path.join(backend_dir, 'alembic.ini'))
         config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL"))
-        config.set_main_option("script_location", os.path.join(backend_dir, 'migrations'))
+        config.set_main_option("script_location", migrations_path)
         
         # Run the upgrade
         upgrade(config, "head")

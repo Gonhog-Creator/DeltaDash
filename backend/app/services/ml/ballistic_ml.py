@@ -318,8 +318,39 @@ def add_composition_features(df: pd.DataFrame, material_properties: Dict[str, Di
     return pd.concat([df, composition_features], axis=1)
 
 
-def add_engineered_features(df: pd.DataFrame, material_properties: Dict[str, Dict[str, float]], validate: bool = False) -> pd.DataFrame:
-    """Add engineering features using dynamic material properties."""
+def add_engineered_features(
+    df: pd.DataFrame,
+    material_properties: Dict[str, Dict[str, float]],
+    validate: bool = False,
+    feature_toggles: Optional[Dict[str, bool]] = None,
+) -> pd.DataFrame:
+    """Add engineering features using dynamic material properties.
+    
+    Args:
+        df: Input DataFrame
+        material_properties: Material property dictionary
+        validate: Whether to validate features
+        feature_toggles: Dictionary of feature group toggles. If None, all features enabled.
+            Keys: 'kinetic_energy', 'composite_thickness', 'layer_density',
+                  'caliber_features', 'areal_density', 'vest_composition',
+                  'vest_type_interactions', 'is_female_features', 'shot_sequence',
+                  'material_density', 'velocity_interactions'
+    """
+    # Default: all features enabled
+    if feature_toggles is None:
+        feature_toggles = {
+            'kinetic_energy': True,
+            'composite_thickness': True,
+            'layer_density': True,
+            'caliber_features': True,
+            'areal_density': True,
+            'vest_composition': True,
+            'vest_type_interactions': True,
+            'is_female_features': True,
+            'shot_sequence': True,
+            'material_density': True,
+            'velocity_interactions': True,
+        }
     df = normalize_column_names(df)
     df = df.copy()
     df = add_composition_features(df, material_properties, validate=validate)
@@ -376,11 +407,12 @@ def add_engineered_features(df: pd.DataFrame, material_properties: Dict[str, Dic
         df["material_type"] = material_classes
 
     # Add kinetic energy
-    if "bullet_mass_g" in df.columns and "impact_velocity_mps" in df.columns:
-        df["kinetic_energy_j"] = 0.5 * (df["bullet_mass_g"] / 1000) * (df["impact_velocity_mps"] ** 2)
+    if feature_toggles.get('kinetic_energy', True):
+        if "bullet_mass_g" in df.columns and "impact_velocity_mps" in df.columns:
+            df["kinetic_energy_j"] = 0.5 * (df["bullet_mass_g"] / 1000) * (df["impact_velocity_mps"] ** 2)
 
     # Add vest_type interaction features to help distinguish hard vs soft armor behavior
-    if "vest_type" in df.columns:
+    if feature_toggles.get('vest_type_interactions', True) and "vest_type" in df.columns:
         # Create binary indicator for hard vs soft armor (default to soft if not specified)
         df["vest_type"] = df["vest_type"].fillna("soft")
         df["is_hard_armor"] = df["vest_type"].str.contains("hard", case=False, na=False).astype(int)
@@ -402,7 +434,7 @@ def add_engineered_features(df: pd.DataFrame, material_properties: Dict[str, Dic
             df["layers_x_soft_armor"] = df["number_of_layers"] * df["is_soft_armor"]
 
     # Add is_female interaction features (female vests have different BFD characteristics)
-    if "is_female" in df.columns:
+    if feature_toggles.get('is_female_features', True) and "is_female" in df.columns:
         # Fill NaN with False (default to male/unisex)
         df["is_female"] = df["is_female"].fillna(False).astype(int)
 
@@ -425,7 +457,7 @@ def add_engineered_features(df: pd.DataFrame, material_properties: Dict[str, Dic
             df["thickness_x_female"] = df["material_thickness_mm"] * df["is_female"]
 
     # Add shot sequence effect (first shot has different behavior due to material settling)
-    if "shot_number" in df.columns:
+    if feature_toggles.get('shot_sequence', True) and "shot_number" in df.columns:
         df["is_first_shot"] = (df["shot_number"] == 1).astype(int)
         layers_col = "number_of_layers" if "number_of_layers" in df.columns else "total_layers"
         if layers_col in df.columns:
@@ -433,21 +465,22 @@ def add_engineered_features(df: pd.DataFrame, material_properties: Dict[str, Dic
 
     # Material density (areal density / thickness = effective density)
     # Use material_weight_g_m2 converted to kg_m2
-    if "material_weight_g_m2" in df.columns and "material_thickness_mm" in df.columns:
+    if feature_toggles.get('material_density', True) and "material_weight_g_m2" in df.columns and "material_thickness_mm" in df.columns:
         areal_density_kg_m2 = df["material_weight_g_m2"] / 1000.0
         df["material_density"] = areal_density_kg_m2 / df["material_thickness_mm"].clip(lower=0.1)
 
     # Velocity interactions (high velocity amplifies other effects)
-    velocity_col = "impact_velocity_mps" if "impact_velocity_mps" in df.columns else "velocity_ms"
-    layers_col = "number_of_layers" if "number_of_layers" in df.columns else "total_layers"
-    angle_col = "impact_angle_deg" if "impact_angle_deg" in df.columns else "angle_degrees"
+    if feature_toggles.get('velocity_interactions', True):
+        velocity_col = "impact_velocity_mps" if "impact_velocity_mps" in df.columns else "velocity_ms"
+        layers_col = "number_of_layers" if "number_of_layers" in df.columns else "total_layers"
+        angle_col = "impact_angle_deg" if "impact_angle_deg" in df.columns else "angle_degrees"
 
-    if velocity_col in df.columns:
-        if layers_col in df.columns:
-            df["velocity_x_layers"] = df[velocity_col] * df[layers_col]
-        if angle_col in df.columns:
-            # Normalize angle (90 = perpendicular, lower = oblique)
-            df["velocity_x_obliquity"] = df[velocity_col] * (90 - df[angle_col].fillna(90)).clip(lower=0)
+        if velocity_col in df.columns:
+            if layers_col in df.columns:
+                df["velocity_x_layers"] = df[velocity_col] * df[layers_col]
+            if angle_col in df.columns:
+                # Normalize angle (90 = perpendicular, lower = oblique)
+                df["velocity_x_obliquity"] = df[velocity_col] * (90 - df[angle_col].fillna(90)).clip(lower=0)
 
     return df
 
@@ -521,16 +554,27 @@ def build_preprocessing_pipeline(numeric_cols: List[str], categorical_cols: List
     )
 
 
-def build_regressor() -> XGBRegressor:
+def build_regressor(
+    n_estimators: int = 800,
+    max_depth: int = 6,
+    learning_rate: float = 0.05,
+    subsample: float = 0.9,
+    colsample_bytree: float = 0.9,
+    min_child_weight: int = 2,
+    reg_lambda: float = 1.0,
+    reg_alpha: float = 0.1,
+    gamma: float = 0,
+) -> XGBRegressor:
     return XGBRegressor(
-        n_estimators=800,
-        max_depth=6,
-        learning_rate=0.05,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        min_child_weight=2,
-        reg_lambda=1.0,
-        reg_alpha=0.1,
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        learning_rate=learning_rate,
+        subsample=subsample,
+        colsample_bytree=colsample_bytree,
+        min_child_weight=min_child_weight,
+        reg_lambda=reg_lambda,
+        reg_alpha=reg_alpha,
+        gamma=gamma,
         objective="reg:squarederror",
         random_state=42,
         tree_method="hist",
@@ -625,11 +669,20 @@ def fill_missing_features(X: pd.DataFrame) -> pd.DataFrame:
 # Training logic
 # =============================================================================
 
-def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[str, float]], model_name: Optional[str] = None, warnings: list = None, data_metadata: dict = None, use_log_transform: bool = True) -> Dict[str, Any]:
+def train_from_dataframe(
+    df: pd.DataFrame,
+    material_properties: Dict[str, Dict[str, float]],
+    model_name: Optional[str] = None,
+    warnings: list = None,
+    data_metadata: dict = None,
+    use_log_transform: bool = True,
+    hyperparameters: Optional[Dict[str, Any]] = None,
+    feature_toggles: Optional[Dict[str, bool]] = None,
+) -> Dict[str, Any]:
     print(f"DEBUG: Initial training data shape: {df.shape}")
     print(f"DEBUG: Columns in initial data: {df.columns.tolist()}")
 
-    df = add_engineered_features(df, material_properties)
+    df = add_engineered_features(df, material_properties, feature_toggles=feature_toggles)
 
     print(f"DEBUG: After feature engineering shape: {df.shape}")
 
@@ -734,8 +787,10 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
             use_log_transform_bfd = use_log_transform and target == "backface_deformation_mm"
             y_train = y_valid.copy()
             if use_log_transform_bfd:
-                # Add small constant to handle zero/negative values
-                y_train = np.log1p(np.maximum(y_train, 0))
+                # Ensure y_train is numpy array of floats, handle edge cases
+                y_train = np.asarray(y_train, dtype=np.float64)
+                # Clip negative values and apply log1p
+                y_train = np.log1p(np.clip(y_train, 0, None))
 
             X_processed = preprocessor.transform(X_valid)
             
@@ -750,7 +805,11 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
                     # Normalize to mean of 1.0
                     sample_weights = weights * (len(weights) / weights.sum())
 
-            model = build_regressor()
+            # Build model with custom or default hyperparameters
+            if hyperparameters:
+                model = build_regressor(**hyperparameters)
+            else:
+                model = build_regressor()
             model.fit(X_processed, y_train, sample_weight=sample_weights)
 
             # Inverse transform predictions for metrics
@@ -932,7 +991,14 @@ def train_from_dataframe(df: pd.DataFrame, material_properties: Dict[str, Dict[s
     return metadata, preprocessor_bytes, model_files
 
 
-def train_from_database(db_session, model_name: Optional[str] = None, use_log_transform: bool = True) -> Dict[str, Any]:
+def train_from_database(
+    db_session,
+    model_name: Optional[str] = None,
+    use_log_transform: bool = True,
+    hyperparameters: Optional[Dict[str, Any]] = None,
+    feature_toggles: Optional[Dict[str, bool]] = None,
+    ignore_anchor_points: bool = False,
+) -> Dict[str, Any]:
     """Train model using data from database."""
     from app.db.models import ShotData, Vest, Material, VestLayer, ModelRun
     from app.db.models.user import User
@@ -962,7 +1028,7 @@ def train_from_database(db_session, model_name: Optional[str] = None, use_log_tr
         )
     
     # Fetch training data
-    df, warnings, data_metadata = fetch_training_data(db_session)
+    df, warnings, data_metadata = fetch_training_data(db_session, ignore_anchor_points=ignore_anchor_points)
 
     if df.empty:
         raise ValueError(
@@ -981,7 +1047,16 @@ def train_from_database(db_session, model_name: Optional[str] = None, use_log_tr
         )
     
     # Train
-    metadata, preprocessor_bytes, model_files = train_from_dataframe(df, material_properties, model_name=model_name, warnings=warnings, data_metadata=data_metadata, use_log_transform=use_log_transform)
+    metadata, preprocessor_bytes, model_files = train_from_dataframe(
+        df,
+        material_properties,
+        model_name=model_name,
+        warnings=warnings,
+        data_metadata=data_metadata,
+        use_log_transform=use_log_transform,
+        hyperparameters=hyperparameters,
+        feature_toggles=feature_toggles,
+    )
     
     # Save ModelRun record to database FIRST (before health evaluation)
     try:
@@ -1876,8 +1951,18 @@ def evaluate_model_on_test_sessions(
             vest_layers_by_vest[vl.vest_id] = []
         vest_layers_by_vest[vl.vest_id].append(vl)
 
-    for shot_data, test_session, vest in results:
-        # Build vest composition from vest layers (now using cached data)
+    # Handle model dict structure once
+    if isinstance(bfd_model, dict):
+        actual_model = bfd_model["model"]
+        use_log_transform = bfd_model.get("use_log_transform", False)
+    else:
+        actual_model = bfd_model
+        use_log_transform = False
+
+    # Build all prediction inputs as a batch for speed
+    batch_rows = []
+    row_metadata = []  # parallel list of (vest_identifier, vest_name, protocol, actual_bfd, shot_number, protection_level, caliber)
+    for shot_data_rec, test_session, vest in results:
         composition_parts = []
         total_layers = 0
         if vest:
@@ -1890,85 +1975,105 @@ def evaluate_model_on_test_sessions(
                     composition_parts.append(f"{count} {material.name}")
 
         vest_composition = " + ".join(composition_parts) if composition_parts else ""
-
-        # Get ammunition info (now using cached data)
-        caliber = shot_data.caliber
+        caliber = shot_data_rec.caliber
         ammunition = ammunition_map.get(caliber)
-        
-        # Build prediction input
-        prediction_input = {
+
+        batch_rows.append({
             "vest_composition": vest_composition,
             "number_of_layers": total_layers,
             "ammunition_used": ammunition.name if ammunition else caliber,
-            "threat_level": shot_data.protection_level,
-            "shot_number": int(float(shot_data.shot_number)) if shot_data.shot_number else 1,
-            "impact_velocity_mps": float(shot_data.velocity_m_s) if shot_data.velocity_m_s else None,
-            "impact_angle_deg": float(shot_data.angle_degrees) if shot_data.angle_degrees else 0.0,
+            "threat_level": shot_data_rec.protection_level,
+            "shot_number": int(float(shot_data_rec.shot_number)) if shot_data_rec.shot_number else 1,
+            "impact_velocity_mps": float(shot_data_rec.velocity_m_s) if shot_data_rec.velocity_m_s else None,
+            "impact_angle_deg": float(shot_data_rec.angle_degrees) if shot_data_rec.angle_degrees else 0.0,
             "bullet_mass_g": float(ammunition.projectile_mass_grams) if ammunition and ammunition.projectile_mass_grams else None,
-            "temperature_c": float(shot_data.temperature_c) if shot_data.temperature_c else 20.0,
-            "humidity_pct": float(shot_data.humidity_percent) if shot_data.humidity_percent else 50.0,
+            "temperature_c": float(shot_data_rec.temperature_c) if shot_data_rec.temperature_c else 20.0,
+            "humidity_pct": float(shot_data_rec.humidity_percent) if shot_data_rec.humidity_percent else 50.0,
             "condition": test_session.conditioning if test_session else "dry",
-            "panel_side": shot_data.side,
+            "panel_side": shot_data_rec.side,
             "caliber_diameter_mm": float(ammunition.caliber_diameter_mm) if ammunition and ammunition.caliber_diameter_mm else None,
             "caliber_length_mm": float(ammunition.caliber_length_mm) if ammunition and ammunition.caliber_length_mm else None,
             "vest_type": vest.vest_type if vest else None,
-            "ply_orientations": None,  # Health check doesn't have layer-level ply orientation data
-        }
-        
-        # Prepare input and predict
-        try:
-            X = prepare_single_input(prediction_input, material_properties, validate=False)
-            X_processed = preprocessor.transform(X)
-            
-            # Handle new dict structure with log transform flag
-            if isinstance(bfd_model, dict):
-                actual_model = bfd_model["model"]
-                use_log_transform = bfd_model.get("use_log_transform", False)
-            else:
-                actual_model = bfd_model
-                use_log_transform = False
-            
-            predicted_bfd = float(actual_model.predict(X_processed)[0])
-            # Apply inverse transform if log transform was used
-            if use_log_transform:
-                predicted_bfd = float(np.expm1(predicted_bfd))
-            
-            # Get actual BFD
-            actual_bfd = float(shot_data.trauma_mm)
-            
-            # Calculate percentage error
+            "is_female": vest.is_female if vest and hasattr(vest, 'is_female') else False,
+            "ply_orientations": None,
+        })
+
+        vest_identifier = vest.vest_code if vest else f"Unknown-{shot_data_rec.test_session_id}"
+        row_metadata.append({
+            "vest_identifier": vest_identifier,
+            "vest_name": vest.vest_code if vest else "Unknown",
+            "protocol": test_session.protocol if test_session else "Unknown",
+            "actual_bfd": float(shot_data_rec.trauma_mm),
+            "shot_number": shot_data_rec.shot_number,
+            "protection_level": (getattr(shot_data_rec, 'protection_level', None) or
+                               (test_session.threat_level if test_session else None) or
+                               (vest.threat_level if vest else None) or
+                               "Unknown"),
+            "caliber": getattr(shot_data_rec, 'caliber', 'Unknown') if getattr(shot_data_rec, 'caliber', None) else "Unknown",
+        })
+
+    # Shared categorical feature names for batch processing
+    feature_columns = metadata.get("feature_columns", [])
+    categorical_feature_names = {
+        "vest_composition", "ammunition_used", "threat_level", "condition",
+        "panel_side", "weave_type", "material_type", "vest_type", "ply_orientations",
+    }
+    for mat_name in material_properties:
+        prefix = mat_name.lower().replace(" ", "_").replace("-", "_")
+        categorical_feature_names.add(f"composition_material_class_{prefix}")
+
+    # Batch feature engineering + prediction
+    try:
+        batch_df = pd.DataFrame(batch_rows)
+        batch_df = add_engineered_features(batch_df, material_properties, validate=False)
+
+        if feature_columns:
+            for col in feature_columns:
+                if col not in batch_df.columns:
+                    if col in categorical_feature_names:
+                        batch_df[col] = "unknown"
+                    else:
+                        batch_df[col] = np.nan
+            batch_df = batch_df[feature_columns]
+
+        for col in batch_df.columns:
+            if col in categorical_feature_names:
+                batch_df[col] = batch_df[col].fillna("unknown").astype(str)
+
+        batch_df = fill_missing_features(batch_df)
+        X_processed = preprocessor.transform(batch_df)
+        predictions = actual_model.predict(X_processed)
+        if use_log_transform:
+            predictions = np.expm1(predictions)
+
+        for i, meta in enumerate(row_metadata):
+            predicted_bfd = float(predictions[i])
+            actual_bfd = meta["actual_bfd"]
             if actual_bfd != 0:
                 percent_error = abs(predicted_bfd - actual_bfd) / actual_bfd * 100
             else:
-                percent_error = abs(predicted_bfd - actual_bfd)  # Absolute error if actual is 0
-            
-            # Get vest identifier
-            vest_identifier = vest.vest_code if vest else f"Unknown-{shot_data.test_session_id}"
-            
-            # Aggregate by vest
+                percent_error = abs(predicted_bfd - actual_bfd)
+
+            vest_identifier = meta["vest_identifier"]
             if vest_identifier not in vest_errors:
                 vest_errors[vest_identifier] = []
             vest_errors[vest_identifier].append(percent_error)
-            
-            # Add to point data for graphing
+
             point_data.append({
                 "vest_code": vest_identifier,
-                "vest_name": vest.vest_code if vest else "Unknown",
-                "protocol": test_session.protocol if test_session else "Unknown",
+                "vest_name": meta["vest_name"],
+                "protocol": meta["protocol"],
                 "actual_bfd": actual_bfd,
                 "predicted_bfd": predicted_bfd,
                 "percent_error": percent_error,
-                "shot_number": shot_data.shot_number,
-                "protection_level": (getattr(shot_data, 'protection_level', None) or 
-                                   (test_session.threat_level if test_session else None) or 
-                                   (vest.threat_level if vest else None) or 
-                                   "Unknown"),
-                "caliber": getattr(shot_data, 'caliber', 'Unknown') if getattr(shot_data, 'caliber', None) else "Unknown",
+                "shot_number": meta["shot_number"],
+                "protection_level": meta["protection_level"],
+                "caliber": meta["caliber"],
             })
-            
-        except Exception as e:
-            print(f"ERROR: Failed to predict for shot {shot_data.id}: {e}")
-            continue
+    except Exception as e:
+        print(f"ERROR: Batch prediction failed: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Calculate vest averages
     vest_averages = []
@@ -1998,53 +2103,51 @@ def evaluate_model_on_test_sessions(
         
         anchor_df, anchor_metadata = fetch_anchor_points_as_training_data(db_session)
         if not anchor_df.empty:
-            
-            for _, row in anchor_df.iterrows():
-                vest_composition = row.get('vest_composition', '')
-                prediction_input = {
-                    "vest_composition": vest_composition,
-                    "number_of_layers": row.get('number_of_layers'),
-                    "ammunition_used": row.get('ammunition_used'),
-                    "threat_level": row.get('threat_level'),
-                    "shot_number": row.get('shot_number', 1),
-                    "impact_velocity_mps": row.get('impact_velocity_mps'),
-                    "impact_angle_deg": row.get('impact_angle_deg', 0.0),
-                    "bullet_mass_g": row.get('bullet_mass_g'),
-                    "temperature_c": row.get('temperature_c', 20.0),
-                    "humidity_pct": row.get('humidity_pct', 50.0),
-                    "condition": row.get('condition'),
-                    "panel_side": row.get('panel_side'),
-                    "caliber_diameter_mm": row.get('caliber_diameter_mm'),
-                    "caliber_length_mm": row.get('caliber_length_mm'),
-                    "vest_type": row.get('vest_type', 'soft'),
-                    "is_female": row.get('is_female', False),
-                }
-                
-                try:
-                    X = prepare_single_input(prediction_input, material_properties, validate=False)
-                    X_processed = preprocessor.transform(X)
-                    predicted_bfd = float(bfd_model.predict(X_processed)[0])
-                    
-                    actual_bfd = row.get('backface_deformation_mm')
-                    if actual_bfd is not None:
-                        actual_bfd = float(actual_bfd)
-                        
-                        # Calculate percentage error
-                        if actual_bfd != 0:
-                            percent_error = abs(predicted_bfd - actual_bfd) / actual_bfd * 100
+            # Batch predict all anchor points at once
+            anchor_input_df = anchor_df.copy()
+            anchor_input_df = add_engineered_features(anchor_input_df, material_properties, validate=False)
+
+            if feature_columns:
+                # Add missing columns with defaults
+                for col in feature_columns:
+                    if col not in anchor_input_df.columns:
+                        if col in categorical_feature_names:
+                            anchor_input_df[col] = "unknown"
                         else:
-                            percent_error = abs(predicted_bfd - actual_bfd)  # Absolute error if actual is 0
-                        
-                        anchor_point_errors.append(percent_error)
-                        
-                        # Track by material composition
-                        if vest_composition not in anchor_point_material_errors:
-                            anchor_point_material_errors[vest_composition] = []
-                        anchor_point_material_errors[vest_composition].append(percent_error)
-                except Exception as e:
-                    print(f"ERROR: Failed to predict for anchor point: {e}")
-                    continue
-            
+                            anchor_input_df[col] = np.nan
+                
+                # Only select columns that exist (defensive)
+                existing_cols = [col for col in feature_columns if col in anchor_input_df.columns]
+                missing_cols = set(feature_columns) - set(existing_cols)
+                if missing_cols:
+                    print(f"Warning: Columns missing after addition: {missing_cols}")
+                anchor_input_df = anchor_input_df[existing_cols]
+
+            for col in anchor_input_df.columns:
+                if col in categorical_feature_names:
+                    anchor_input_df[col] = anchor_input_df[col].fillna("unknown").astype(str)
+
+            anchor_input_df = fill_missing_features(anchor_input_df)
+            X_anchor = preprocessor.transform(anchor_input_df)
+            anchor_predictions = actual_model.predict(X_anchor)
+            if use_log_transform:
+                anchor_predictions = np.expm1(anchor_predictions)
+
+            for i, (_, row) in enumerate(anchor_df.iterrows()):
+                actual_bfd = row.get('backface_deformation_mm')
+                if actual_bfd is not None:
+                    actual_bfd = float(actual_bfd)
+                    predicted_bfd = float(anchor_predictions[i])
+                    if actual_bfd != 0:
+                        percent_error = abs(predicted_bfd - actual_bfd) / actual_bfd * 100
+                    else:
+                        percent_error = abs(predicted_bfd - actual_bfd)
+                    anchor_point_errors.append(percent_error)
+                    vest_composition = row.get('vest_composition', '')
+                    if vest_composition not in anchor_point_material_errors:
+                        anchor_point_material_errors[vest_composition] = []
+                    anchor_point_material_errors[vest_composition].append(percent_error)
+
             # Filter out NaN values and calculate average
             valid_errors = [e for e in anchor_point_errors if not (e != e)]  # Filter NaN
             anchor_avg_error = round(sum(valid_errors) / len(valid_errors), 2) if valid_errors else 0

@@ -23,7 +23,7 @@ def extract_ply_orientations(layers: List[Dict[str, Any]]) -> str:
     return ", ".join(orientations) if orientations else None
 
 
-def fetch_training_data(db: Session, verbose: bool = True) -> tuple[pd.DataFrame, list[str]]:
+def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points: bool = False) -> tuple[pd.DataFrame, list[str], dict]:
     """
     Fetch all training data from database for ML model training.
     
@@ -227,13 +227,21 @@ def fetch_training_data(db: Session, verbose: bool = True) -> tuple[pd.DataFrame
     # Add statistics to warnings
     warnings_list.append(f"Layer count range: {min(layer_counts) if layer_counts else 0} - {max(layer_counts) if layer_counts else 0} (mean: {sum(layer_counts) / len(layer_counts) if layer_counts else 0:.1f})")
 
-    # Fetch and merge anchor points
-    anchor_df, anchor_metadata = fetch_anchor_points_as_training_data(db)
-    if not anchor_df.empty:
+    # Fetch and merge anchor points (unless explicitly disabled)
+    anchor_df = pd.DataFrame()
+    anchor_metadata = {"anchor_point_count": 0, "anchor_point_training_rows": 0}
+    
+    if not ignore_anchor_points:
+        anchor_df, anchor_metadata = fetch_anchor_points_as_training_data(db)
+        if not anchor_df.empty:
+            if verbose:
+                print(f"DEBUG: Adding {len(anchor_df)} anchor points to training data")
+                warnings_list.append(f"Added {len(anchor_df)} anchor points to training data")
+            df = pd.concat([df, anchor_df], ignore_index=True)
+    else:
         if verbose:
-            print(f"DEBUG: Adding {len(anchor_df)} anchor points to training data")
-            warnings_list.append(f"Added {len(anchor_df)} anchor points to training data")
-        df = pd.concat([df, anchor_df], ignore_index=True)
+            print("DEBUG: Anchor points are being ignored (ignore_anchor_points=True)")
+            warnings_list.append("Anchor points were excluded from training data")
 
     # Build metadata
     metadata = {

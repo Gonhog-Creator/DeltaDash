@@ -78,6 +78,50 @@ export function BallisticTesting() {
   const [error, setError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  // Custom Vest State
+  const [useCustomVest, setUseCustomVest] = useState(false);
+  const [customVestLayers, setCustomVestLayers] = useState<Array<{material_id: string; layer_count: number; notes?: string}>>([]);
+  const [customVestBase, setCustomVestBase] = useState({
+    vest_type: 'soft' as 'soft' | 'hard' | 'hybrid',
+    is_female: false,
+    panel_protects_front: true,
+    panel_protects_back: true,
+    panel_protects_sides: false,
+  });
+
+  // Calculate derived values from layers
+  const calculatedThickness = customVestLayers.reduce((sum, layer) => {
+    const material = materials?.find(m => m.id === layer.material_id);
+    if (material?.thickness_mm && layer.layer_count) {
+      return sum + (material.thickness_mm * layer.layer_count);
+    }
+    return sum;
+  }, 0);
+
+  const calculatedTotalLayers = customVestLayers.reduce((sum, layer) => sum + (layer.layer_count || 0), 0);
+
+  const calculatedArealDensity = customVestLayers.reduce((sum, layer) => {
+    const material = materials?.find(m => m.id === layer.material_id);
+    if (material?.areal_density_g_m2 && layer.layer_count) {
+      return sum + (material.areal_density_g_m2 * layer.layer_count);
+    }
+    return sum;
+  }, 0);
+
+  const addCustomLayer = () => {
+    setCustomVestLayers([...customVestLayers, { material_id: '', layer_count: 1 }]);
+  };
+
+  const removeCustomLayer = (index: number) => {
+    setCustomVestLayers(customVestLayers.filter((_, i) => i !== index));
+  };
+
+  const updateCustomLayer = (index: number, field: string, value: any) => {
+    const updated = [...customVestLayers];
+    updated[index] = { ...updated[index], [field]: value };
+    setCustomVestLayers(updated);
+  };
+
   // Fetch model versions on mount
   useEffect(() => {
     const fetchModelVersions = async () => {
@@ -102,7 +146,7 @@ export function BallisticTesting() {
   };
 
   const handlePredict = async () => {
-    if (!selectedVestId) {
+    if (!useCustomVest && !selectedVestId) {
       setValidationError('Please select a vest');
       return;
     }
@@ -121,17 +165,39 @@ export function BallisticTesting() {
     setValidationError(null);
 
     try {
+      const requestBody: any = {
+        protocol_id: selectedProtocolId,
+        level_index: selectedLevelIndex,
+      };
+
+      if (useCustomVest) {
+        requestBody.custom_vest = {
+          ...customVestBase,
+          total_layers: calculatedTotalLayers,
+          total_thickness_mm: calculatedThickness,
+          material_areal_density_g_m2: calculatedArealDensity,
+          layers: customVestLayers,
+        };
+      } else {
+        requestBody.vest_id = selectedVestId;
+      }
+
       const result = await apiClient.post<PredictionResponse>(
         `/api/v1/ballistic/predict-protocol?version=${selectedVersion}`,
-        {
-          vest_id: selectedVestId,
-          protocol_id: selectedProtocolId,
-          level_index: selectedLevelIndex,
-        }
+        requestBody
       );
       setPrediction(result);
     } catch (err: any) {
-      const errorMessage = err.detail || 'Prediction failed';
+      let errorMessage = 'Prediction failed';
+      if (err.detail) {
+        if (typeof err.detail === 'string') {
+          errorMessage = err.detail;
+        } else if (Array.isArray(err.detail)) {
+          errorMessage = err.detail.map((e: any) => e.msg || e).join(', ');
+        } else if (typeof err.detail === 'object') {
+          errorMessage = err.detail.msg || JSON.stringify(err.detail);
+        }
+      }
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -175,23 +241,188 @@ export function BallisticTesting() {
             </div>
           )}
 
+          {/* Vest Selection Toggle */}
+          <div className="mb-4 flex items-center space-x-4">
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="radio"
+                checked={!useCustomVest}
+                onChange={() => setUseCustomVest(false)}
+                className="rounded-full"
+              />
+              <span className="font-medium">Select Prebuilt Vest</span>
+            </label>
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="radio"
+                checked={useCustomVest}
+                onChange={() => setUseCustomVest(true)}
+                className="rounded-full"
+              />
+              <span className="font-medium">Build Custom Vest</span>
+            </label>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Vest Selection */}
-            <div>
-              <label className="block text-sm font-medium mb-1">Vest</label>
-              <select
-                value={selectedVestId}
-                onChange={(e) => setSelectedVestId(e.target.value)}
-                className="w-full border rounded p-2"
-              >
-                <option value="">Select vest...</option>
-                {vests?.sort((a, b) => (a.vest_code || a.name).localeCompare(b.vest_code || b.name)).map((vest) => (
-                  <option key={vest.id} value={vest.id}>
-                    {vest.vest_code || vest.name} - {vest.vest_type || 'N/A'} - {vest.threat_level || 'N/A'}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Prebuilt Vest Selection */}
+            {!useCustomVest && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Vest</label>
+                <select
+                  value={selectedVestId}
+                  onChange={(e) => setSelectedVestId(e.target.value)}
+                  className="w-full border rounded p-2"
+                >
+                  <option value="">Select vest...</option>
+                  {vests?.sort((a, b) => (a.vest_code || a.name).localeCompare(b.vest_code || b.name)).map((vest) => (
+                    <option key={vest.id} value={vest.id}>
+                      {vest.vest_code || vest.name} - {vest.vest_type || 'N/A'} - {vest.threat_level || 'N/A'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Custom Vest Form */}
+            {useCustomVest && (
+              <div className="lg:col-span-2 space-y-4">
+                {/* Basic Vest Properties */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Vest Type</label>
+                    <select
+                      value={customVestBase.vest_type}
+                      onChange={(e) => setCustomVestBase({...customVestBase, vest_type: e.target.value as 'soft' | 'hard' | 'hybrid'})}
+                      className="w-full border rounded p-2"
+                    >
+                      <option value="soft">Soft Armor</option>
+                      <option value="hard">Hard Armor</option>
+                      <option value="hybrid">Hybrid</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Gender</label>
+                    <select
+                      value={customVestBase.is_female ? 'female' : 'male'}
+                      onChange={(e) => setCustomVestBase({...customVestBase, is_female: e.target.value === 'female'})}
+                      className="w-full border rounded p-2"
+                    >
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Panel Protection</label>
+                    <div className="flex space-x-3 text-sm">
+                      <label className="flex items-center space-x-1">
+                        <input
+                          type="checkbox"
+                          checked={customVestBase.panel_protects_front}
+                          onChange={(e) => setCustomVestBase({...customVestBase, panel_protects_front: e.target.checked})}
+                          className="rounded"
+                        />
+                        <span>Front</span>
+                      </label>
+                      <label className="flex items-center space-x-1">
+                        <input
+                          type="checkbox"
+                          checked={customVestBase.panel_protects_back}
+                          onChange={(e) => setCustomVestBase({...customVestBase, panel_protects_back: e.target.checked})}
+                          className="rounded"
+                        />
+                        <span>Back</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Layer Builder */}
+                <div className="border rounded p-4 bg-gray-50">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-medium text-gray-800">Vest Layers</h4>
+                    <button
+                      type="button"
+                      onClick={addCustomLayer}
+                      className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                    >
+                      Add Layer
+                    </button>
+                  </div>
+
+                  {customVestLayers.length === 0 && (
+                    <p className="text-sm text-gray-500 italic mb-3">No layers added yet. Click "Add Layer" to start building your vest.</p>
+                  )}
+
+                  {customVestLayers.map((layer, index) => (
+                    <div key={index} className="bg-white p-3 rounded mb-2 border">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-gray-700">Layer {index + 1}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeCustomLayer(index)}
+                          className="text-red-600 hover:text-red-900 text-sm"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Material</label>
+                          <select
+                            value={layer.material_id || ''}
+                            onChange={(e) => updateCustomLayer(index, 'material_id', e.target.value || null)}
+                            className="w-full border rounded p-2 text-sm"
+                          >
+                            <option value="">Select material...</option>
+                            {materials?.map((material) => (
+                              <option key={material.id} value={material.id}>
+                                {material.name} ({material.material_class || 'N/A'})
+                                {material.ply_count ? ` - ${material.ply_count} ply` : ''}
+                                {material.thickness_mm ? ` - ${material.thickness_mm}mm` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Layer Count</label>
+                          <input
+                            type="number"
+                            value={layer.layer_count || ''}
+                            onChange={(e) => updateCustomLayer(index, 'layer_count', e.target.value === '' ? '' : parseInt(e.target.value))}
+                            className="w-full border rounded p-2 text-sm"
+                            min={1}
+                            placeholder="Enter count"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Calculated Totals */}
+                  {customVestLayers.length > 0 && (
+                    <div className="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
+                      <h5 className="text-sm font-medium text-blue-800 mb-2">Calculated Totals</h5>
+                      <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-600">Total Layers:</span>
+                          <span className="font-medium ml-1">{calculatedTotalLayers}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Total Thickness:</span>
+                          <span className="font-medium ml-1">{calculatedThickness.toFixed(2)} mm</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Areal Density:</span>
+                          <span className="font-medium ml-1">{calculatedArealDensity.toFixed(0)} g/m²</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Protocol Selection */}
             <div>
@@ -257,7 +488,7 @@ export function BallisticTesting() {
               <h3 className="font-semibold text-blue-800 mb-2">Summary Statistics</h3>
               <div className="grid grid-cols-4 gap-4 text-sm">
                 <div>
-                  <span className="text-gray-600">Mean BFD:</span>
+                  <span className="text-gray-600">Mean BFD (first 3):</span>
                   <span className="ml-2 font-medium">{prediction.summary.mean_bfd_mm.toFixed(2)} mm</span>
                 </div>
                 <div>
@@ -279,32 +510,65 @@ export function BallisticTesting() {
             <div className="mb-6">
               <h3 className="font-semibold text-blue-800 mb-2">Detailed Predictions</h3>
               <div className="overflow-x-auto">
-                <table className="min-w-full border border-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Shot #</th>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Side</th>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Conditioning</th>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Ammunition</th>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Velocity (m/s)</th>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Predicted BFD (mm)</th>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">95% CI (mm)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {prediction.predictions.map((shot) => (
-                      <tr key={`${shot.shot_number}-${shot.side}-${shot.conditioning}`} className="border-b">
-                        <td className="px-4 py-2 text-sm">{shot.shot_number}</td>
-                        <td className="px-4 py-2 text-sm capitalize">{shot.side}</td>
-                        <td className="px-4 py-2 text-sm capitalize">{shot.conditioning}</td>
-                        <td className="px-4 py-2 text-sm">{shot.ammunition_name}</td>
-                        <td className="px-4 py-2 text-sm">{shot.reference_velocity_m_s.toFixed(1)}</td>
-                        <td className="px-4 py-2 text-sm font-medium">{shot.predicted_bfd_mm.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-sm">{shot.confidence_interval_low_mm.toFixed(2)} - {shot.confidence_interval_high_mm.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {(() => {
+                  // Group predictions by ammunition, then by side
+                  const groupedByAmmo = prediction.predictions.reduce((acc, shot) => {
+                    if (!acc[shot.ammunition_name]) {
+                      acc[shot.ammunition_name] = {};
+                    }
+                    if (!acc[shot.ammunition_name][shot.side]) {
+                      acc[shot.ammunition_name][shot.side] = [];
+                    }
+                    acc[shot.ammunition_name][shot.side].push(shot);
+                    return acc;
+                  }, {} as Record<string, Record<string, typeof prediction.predictions>>);
+
+                  return Object.entries(groupedByAmmo).map(([ammoName, sides]) => (
+                    <div key={ammoName} className="mb-6">
+                      <h4 className="text-md font-medium text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">{ammoName}</h4>
+                      {Object.entries(sides).map(([side, shots]) => {
+                        const maxBfd = Math.max(...shots.map(s => s.predicted_bfd_mm));
+                        return (
+                          <div key={side} className="mb-4">
+                            <h5 className="text-sm font-medium text-gray-700 mb-2 ml-2 capitalize">{side}</h5>
+                            <table className="min-w-full border border-gray-200">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Shot #</th>
+                                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Conditioning</th>
+                                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Velocity (m/s)</th>
+                                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Predicted BFD (mm)</th>
+                                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Perf. Prob.</th>
+                                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">95% CI (mm)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {shots.map((shot) => (
+                                  <tr key={`${shot.shot_number}-${shot.conditioning}`} className="border-b">
+                                    <td className="px-4 py-2 text-sm">{shot.shot_number}</td>
+                                    <td className={`px-4 py-2 text-sm capitalize ${shot.conditioning === 'dry' ? 'bg-orange-50' : 'bg-blue-50'}`}>
+                                      {shot.conditioning}
+                                    </td>
+                                    <td className="px-4 py-2 text-sm">{Math.round(shot.reference_velocity_m_s)}</td>
+                                    <td className={`px-4 py-2 text-sm font-medium ${shot.predicted_bfd_mm === maxBfd ? 'font-black' : ''}`}>
+                                      {shot.predicted_bfd_mm.toFixed(2)}
+                                    </td>
+                                    <td className="px-4 py-2 text-sm">
+                                      {shot.perforation_probability !== null && shot.perforation_probability !== undefined
+                                        ? `${(shot.perforation_probability * 100).toFixed(1)}%`
+                                        : 'N/A'}
+                                    </td>
+                                    <td className="px-4 py-2 text-sm">{shot.confidence_interval_low_mm.toFixed(2)} - {shot.confidence_interval_high_mm.toFixed(2)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
 

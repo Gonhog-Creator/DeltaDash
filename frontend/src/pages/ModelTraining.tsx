@@ -60,6 +60,53 @@ export function ModelTraining() {
   const [healthCheckStatus, setHealthCheckStatus] = useState<any>(null);
   const [useLogTransform, setUseLogTransform] = useState(true);
 
+  // Advanced Training Controls
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [ignoreAnchorPoints, setIgnoreAnchorPoints] = useState(false);
+  const [hyperparameters, setHyperparameters] = useState({
+    n_estimators: 800,
+    max_depth: 6,
+    learning_rate: 0.05,
+    subsample: 0.9,
+    colsample_bytree: 0.9,
+    min_child_weight: 2,
+    reg_lambda: 1.0,
+    reg_alpha: 0.1,
+    gamma: 0.0,
+  });
+  const [featureToggles, setFeatureToggles] = useState({
+    // High impact - keep enabled
+    shot_sequence: true,
+    velocity_interactions: true,
+    vest_type_interactions: true,
+    is_female_features: true,
+    // Low/negative impact - disable by default (can re-enable manually)
+    kinetic_energy: false,
+    composite_thickness: false,
+    layer_density: false,
+    caliber_features: false,
+    areal_density: false,
+    vest_composition: false,
+    material_density: false,
+  });
+
+  // Custom Vest Prediction State
+  const [useCustomVest, setUseCustomVest] = useState(false);
+  const [customVest, setCustomVest] = useState({
+    vest_type: 'soft',
+    is_female: false,
+    total_layers: 20,
+    total_thickness_mm: 12.0,
+    material_areal_density_g_m2: 250.0,
+    panel_protects_front: true,
+    panel_protects_back: true,
+    panel_protects_sides: false,
+  });
+
+  // Feature Analysis state
+  const [featureAnalysisLoading, setFeatureAnalysisLoading] = useState(false);
+  const [featureAnalysisResults, setFeatureAnalysisResults] = useState<any>(null);
+
   // Fetch protocol threat levels on mount
   useEffect(() => {
     const fetchProtocolThreatLevels = async () => {
@@ -80,31 +127,63 @@ export function ModelTraining() {
     setTrainingWarnings([]);
 
     try {
-      const url = modelName ? `/api/v1/ballistic/train?model_name=${encodeURIComponent(modelName)}&use_log_transform=${useLogTransform}` : `/api/v1/ballistic/train?use_log_transform=${useLogTransform}`;
-      const result = await apiClient.post<any>(url);
+      // Build request body with all training parameters
+      const requestBody: any = {
+        model_name: modelName || undefined,
+        use_log_transform: useLogTransform,
+        hyperparameters: hyperparameters,
+        feature_toggles: featureToggles,
+        ignore_anchor_points: ignoreAnchorPoints,
+      };
+
+      const result = await apiClient.post<any>('/api/v1/ballistic/train', requestBody);
       setTrainingStatus(result);
       setTrainingWarnings(result.warnings || []);
       setHealthCheckStatus(result.health_check);
-      
+
       // Use cached health check results from training response
       if (result.metadata?.version) {
         setSelectedModelVersion(result.metadata.version);
-        
+
         // Use health results already computed during training
         if (result.health_result) {
           setHealthData(result.health_result);
         }
       }
-      
+
       setShowSuccessModal(true);
       setModelName(''); // Clear model name after training
       // Wait a moment for database transaction to commit before refreshing
       await new Promise(resolve => setTimeout(resolve, 500));
       handleListVersions(); // Refresh versions after training
     } catch (err: any) {
-      setError(err.detail || 'Training failed');
+      // Network errors (e.g. proxy timeout) don't have .detail — the model may have saved
+      if (!err.detail && (err.message === 'Failed to fetch' || err.name === 'TypeError')) {
+        setError('Training request timed out, but the model may have been saved. Refreshing...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        handleListVersions();
+      } else {
+        setError(err.detail || 'Training failed');
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAnalyzeFeatures = async () => {
+    setFeatureAnalysisLoading(true);
+    setError(null);
+    try {
+      const requestBody = {
+        use_log_transform: useLogTransform,
+        hyperparameters: hyperparameters,
+      };
+      const result = await apiClient.post<any>('/api/v1/ballistic/analyze-features', requestBody);
+      setFeatureAnalysisResults(result);
+    } catch (err: any) {
+      setError(err.detail || 'Feature analysis failed');
+    } finally {
+      setFeatureAnalysisLoading(false);
     }
   };
 
@@ -401,18 +480,199 @@ export function ModelTraining() {
               className="w-full border rounded p-2"
             />
           </div>
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="use_log_transform"
-              checked={useLogTransform}
-              onChange={(e) => setUseLogTransform(e.target.checked)}
-              className="rounded"
-            />
-            <label htmlFor="use_log_transform" className="text-sm font-medium">
-              Use Log Transform for BFD (reduces error for skewed distributions)
-            </label>
+          {/* Advanced Toggle Button */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+            >
+              {showAdvanced ? 'Hide Advanced' : 'Advanced'} {showAdvanced ? '▲' : '▼'}
+            </button>
           </div>
+
+          {/* Advanced Section */}
+          {showAdvanced && (
+            <div className="border border-gray-200 rounded p-4 space-y-4 bg-gray-50">
+              <h3 className="font-medium text-gray-700">Advanced Training Options</h3>
+
+              {/* Log Transform */}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="use_log_transform"
+                  checked={useLogTransform}
+                  onChange={(e) => setUseLogTransform(e.target.checked)}
+                  className="rounded"
+                />
+                <label htmlFor="use_log_transform" className="text-sm font-medium">
+                  Use Log Transform for BFD
+                </label>
+              </div>
+
+              {/* Ignore Anchor Points */}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="ignore_anchor_points"
+                  checked={ignoreAnchorPoints}
+                  onChange={(e) => setIgnoreAnchorPoints(e.target.checked)}
+                  className="rounded"
+                />
+                <label htmlFor="ignore_anchor_points" className="text-sm font-medium">
+                  Ignore Anchor Points (do not include in training)
+                </label>
+              </div>
+
+              {/* Hyperparameters */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-gray-600">XGBoost Hyperparameters</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-600">Trees (n_estimators)</label>
+                    <input
+                      type="number"
+                      min={50}
+                      max={2000}
+                      value={hyperparameters.n_estimators}
+                      onChange={(e) => setHyperparameters({...hyperparameters, n_estimators: parseInt(e.target.value)})}
+                      className="w-full border rounded p-1 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600">Max Depth</label>
+                    <input
+                      type="number"
+                      min={2}
+                      max={15}
+                      value={hyperparameters.max_depth}
+                      onChange={(e) => setHyperparameters({...hyperparameters, max_depth: parseInt(e.target.value)})}
+                      className="w-full border rounded p-1 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600">Learning Rate</label>
+                    <input
+                      type="number"
+                      step={0.01}
+                      min={0.001}
+                      max={0.5}
+                      value={hyperparameters.learning_rate}
+                      onChange={(e) => setHyperparameters({...hyperparameters, learning_rate: parseFloat(e.target.value)})}
+                      className="w-full border rounded p-1 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600">L2 Regularization (lambda)</label>
+                    <input
+                      type="number"
+                      step={0.1}
+                      min={0}
+                      max={10}
+                      value={hyperparameters.reg_lambda}
+                      onChange={(e) => setHyperparameters({...hyperparameters, reg_lambda: parseFloat(e.target.value)})}
+                      className="w-full border rounded p-1 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Feature Toggles */}
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold text-gray-600">Feature Groups</h4>
+                <div className="grid grid-cols-4 gap-3">
+                  {Object.entries(featureToggles).map(([key, value]) => {
+                    const featureInfo: Record<string, { name: string; formula: string }> = {
+                      kinetic_energy: { name: 'Kinetic Energy', formula: '0.5 × mass × velocity²' },
+                      composite_thickness: { name: 'Composite Thickness', formula: 'layer1×t1 + layer2×t2...' },
+                      layer_density: { name: 'Layer Density', formula: 'total_layers / area' },
+                      caliber_features: { name: 'Caliber Features', formula: 'diameter, length, area' },
+                      areal_density: { name: 'Areal Density', formula: 'weight_g / 1000 / area' },
+                      vest_composition: { name: 'Vest Composition', formula: 'material counts + sequence' },
+                      vest_type_interactions: { name: 'Vest Type Interactions', formula: 'hard/soft × energy, thickness' },
+                      is_female_features: { name: 'Female Vest Features', formula: 'is_female × panel, energy' },
+                      shot_sequence: { name: 'Shot Sequence Effects', formula: 'is_first_shot, shot/layers' },
+                      material_density: { name: 'Material Density', formula: 'areal_density / thickness' },
+                      velocity_interactions: { name: 'Velocity Interactions', formula: 'velocity × layers, obliquity' },
+                    };
+                    const info = featureInfo[key] || { name: key, formula: '' };
+                    return (
+                      <label key={key} className="flex flex-col space-y-1 p-2 border border-gray-200 rounded cursor-pointer hover:bg-gray-50">
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={value}
+                            onChange={(e) => setFeatureToggles({...featureToggles, [key]: e.target.checked})}
+                            className="rounded"
+                          />
+                          <span className="text-sm font-medium text-gray-700">{info.name}</span>
+                        </div>
+                        <span className="text-xs text-gray-500 font-mono pl-5">{info.formula}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Feature Analysis Button */}
+              <div className="border-t border-gray-200 pt-4">
+                <button
+                  onClick={handleAnalyzeFeatures}
+                  disabled={featureAnalysisLoading}
+                  className="w-full bg-indigo-600 text-white py-2 px-4 rounded hover:bg-indigo-700 disabled:bg-gray-400"
+                >
+                  {featureAnalysisLoading ? 'Analyzing Features (trains 12 models)...' : 'Run Feature Importance Analysis'}
+                </button>
+                <p className="text-xs text-gray-500 mt-1">
+                  Trains model with all features, then without each feature group. Higher MAE impact = more important feature.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Feature Analysis Results */}
+          {featureAnalysisResults && (
+            <div className="border border-indigo-200 rounded p-4 bg-indigo-50">
+              <h4 className="font-semibold text-indigo-800 mb-3">Feature Importance Results</h4>
+              <div className="text-sm mb-2">
+                <span className="font-medium">Baseline MAE: </span>
+                <span className="font-mono">{featureAnalysisResults.baseline?.mae?.toFixed(4) || 'N/A'} mm</span>
+              </div>
+              <div className="space-y-1">
+                {featureAnalysisResults.ranked_by_importance?.map((feature: string, idx: number) => {
+                  const data = featureAnalysisResults.ablation[feature];
+                  const impact = data?.mae_impact;
+                  const displayNames: Record<string, string> = {
+                    kinetic_energy: 'Kinetic Energy',
+                    composite_thickness: 'Composite Thickness',
+                    layer_density: 'Layer Density',
+                    caliber_features: 'Caliber Features',
+                    areal_density: 'Areal Density',
+                    vest_composition: 'Vest Composition',
+                    vest_type_interactions: 'Vest Type Interactions',
+                    is_female_features: 'Female Vest Features',
+                    shot_sequence: 'Shot Sequence Effects',
+                    material_density: 'Material Density',
+                    velocity_interactions: 'Velocity Interactions',
+                  };
+                  return (
+                    <div key={feature} className="flex items-center justify-between text-sm py-1 border-b border-indigo-100 last:border-0">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium text-indigo-600 w-6">#{idx + 1}</span>
+                        <span>{displayNames[feature] || feature}</span>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <span className="text-gray-600">MAE: {data?.mae?.toFixed(4)}</span>
+                        <span className={`font-mono font-medium ${impact > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {impact > 0 ? '+' : ''}{impact?.toFixed(4)} mm
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <button
             onClick={handleTrain}
             disabled={loading}
