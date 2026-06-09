@@ -424,6 +424,31 @@ def add_engineered_features(df: pd.DataFrame, material_properties: Dict[str, Dic
         if "material_thickness_mm" in df.columns:
             df["thickness_x_female"] = df["material_thickness_mm"] * df["is_female"]
 
+    # Add shot sequence effect (first shot has different behavior due to material settling)
+    if "shot_number" in df.columns:
+        df["is_first_shot"] = (df["shot_number"] == 1).astype(int)
+        layers_col = "number_of_layers" if "number_of_layers" in df.columns else "total_layers"
+        if layers_col in df.columns:
+            df["shot_sequence_ratio"] = df["shot_number"] / df[layers_col].clip(lower=1)
+
+    # Material density (areal density / thickness = effective density)
+    # Use material_weight_g_m2 converted to kg_m2
+    if "material_weight_g_m2" in df.columns and "material_thickness_mm" in df.columns:
+        areal_density_kg_m2 = df["material_weight_g_m2"] / 1000.0
+        df["material_density"] = areal_density_kg_m2 / df["material_thickness_mm"].clip(lower=0.1)
+
+    # Velocity interactions (high velocity amplifies other effects)
+    velocity_col = "impact_velocity_mps" if "impact_velocity_mps" in df.columns else "velocity_ms"
+    layers_col = "number_of_layers" if "number_of_layers" in df.columns else "total_layers"
+    angle_col = "impact_angle_deg" if "impact_angle_deg" in df.columns else "angle_degrees"
+
+    if velocity_col in df.columns:
+        if layers_col in df.columns:
+            df["velocity_x_layers"] = df[velocity_col] * df[layers_col]
+        if angle_col in df.columns:
+            # Normalize angle (90 = perpendicular, lower = oblique)
+            df["velocity_x_obliquity"] = df[velocity_col] * (90 - df[angle_col].fillna(90)).clip(lower=0)
+
     return df
 
 
@@ -498,16 +523,18 @@ def build_preprocessing_pipeline(numeric_cols: List[str], categorical_cols: List
 
 def build_regressor() -> XGBRegressor:
     return XGBRegressor(
-        n_estimators=400,
-        max_depth=3,
-        learning_rate=0.03,
-        subsample=0.85,
-        colsample_bytree=0.85,
-        min_child_weight=3,
-        reg_lambda=5.0,
-        reg_alpha=0.5,
+        n_estimators=800,
+        max_depth=6,
+        learning_rate=0.05,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        min_child_weight=2,
+        reg_lambda=1.0,
+        reg_alpha=0.1,
         objective="reg:squarederror",
         random_state=42,
+        tree_method="hist",
+        grow_policy="depthwise",
     )
 
 
