@@ -802,15 +802,22 @@ def predict_protocol_endpoint(data: ProtocolPredictionInput, db: Session = Depen
     Returns predictions for all shots in the protocol level (front/back, dry/wet for each ammunition).
     Optional version parameter to use a specific model version.
     """
+    import sys
+    import os
+    backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    if backend_dir not in sys.path:
+        sys.path.insert(0, backend_dir)
     from ml.prediction_service import PredictionService
 
     prediction_service = PredictionService(db)
 
     # Validate that either vest_id or custom_vest is provided
     if not data.vest_id and not data.custom_vest:
+        print(f"ERROR: Neither vest_id nor custom_vest provided. vest_id={data.vest_id}, custom_vest={data.custom_vest}")
         raise HTTPException(status_code=400, detail="Either vest_id or custom_vest must be provided")
 
     try:
+        print(f"DEBUG: predict_protocol called with vest_id={data.vest_id}, protocol_id={data.protocol_id}, level_index={data.level_index}, version={version}")
         if data.custom_vest:
             # Handle custom vest prediction
             result = prediction_service.predict_bfd_for_custom_vest(
@@ -824,8 +831,14 @@ def predict_protocol_endpoint(data: ProtocolPredictionInput, db: Session = Depen
             result = prediction_service.predict_bfd_for_protocol(data.vest_id, data.protocol_id, data.level_index, version)
         return result
     except ValueError as e:
+        print(f"ERROR: ValueError in predict_protocol: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        print(f"ERROR: Exception in predict_protocol: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
 

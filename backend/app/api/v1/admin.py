@@ -60,6 +60,9 @@ class SyncPreview(BaseModel):
 class SyncConfirmation(BaseModel):
     confirmed_changes: Dict[str, Dict[str, List[str]]]  # {entity_name: {change_type: [record_ids]}}
 
+class ResetRequest(BaseModel):
+    entities: Optional[List[str]] = None  # If None, reset all entities
+
 def compare_records(existing_record: Any, remote_data: Dict[str, Any], model_class: Any) -> List[FieldChange]:
     """Compare existing record with remote data and return field changes."""
     changes = []
@@ -117,9 +120,7 @@ def get_preview_changes(remote_cursor, local_db: Session) -> SyncPreview:
         ("vest_layers", VestLayer, "SELECT * FROM vest_layers"),
         ("test_sessions", TestSession, "SELECT * FROM test_sessions"),
         ("shot_data", ShotData, "SELECT * FROM shot_data"),
-        ("users", User, "SELECT * FROM users"),
         ("model_runs", ModelRun, "SELECT * FROM model_runs"),
-        ("predictions", Prediction, "SELECT * FROM predictions"),
         ("protocols", Protocol, "SELECT * FROM protocols"),
         ("locations", Location, "SELECT * FROM locations"),
         ("anchor_points", AnchorPoint, "SELECT * FROM anchor_points"),
@@ -285,9 +286,7 @@ def get_count_preview(remote_cursor, local_db: Session) -> SyncPreview:
         ("vest_layers", VestLayer, "SELECT COUNT(*) FROM vest_layers"),
         ("test_sessions", TestSession, "SELECT COUNT(*) FROM test_sessions"),
         ("shot_data", ShotData, "SELECT COUNT(*) FROM shot_data"),
-        ("users", User, "SELECT COUNT(*) FROM users"),
         ("model_runs", ModelRun, "SELECT COUNT(*) FROM model_runs"),
-        ("predictions", Prediction, "SELECT COUNT(*) FROM predictions"),
         ("protocols", Protocol, "SELECT COUNT(*) FROM protocols"),
         ("locations", Location, "SELECT COUNT(*) FROM locations"),
         ("anchor_points", AnchorPoint, "SELECT COUNT(*) FROM anchor_points"),
@@ -731,57 +730,10 @@ def sync_database(
                 
                 print("Shot data synced successfully")
             
-            # Sync users
-            print("Syncing users...")
-            remote_cursor.execute("SELECT * FROM users")
-            columns = [desc[0] for desc in remote_cursor.description]
-            users_data = remote_cursor.fetchall()
-            print(f"Found {len(users_data)} user records")
-            
-            # Skip if no remote data
-            if not users_data:
-                print("  No user records to sync")
-            else:
-                # Get existing records as hash map for O(1) lookups
-                existing_users = {}
-                for item in local_db.query(User).all():
-                    existing_users[str(item.id)] = item
-                
-                new_users = []
-                updated_users = []
-                
-                for row in users_data:
-                    user_dict = dict(zip(columns, row))
-                    valid_columns = {key: value for key, value in user_dict.items() if hasattr(User, key)}
-                    # Convert UUID strings to UUID objects
-                    if 'id' in valid_columns and isinstance(valid_columns['id'], str):
-                        valid_columns['id'] = uuid.UUID(valid_columns['id'])
-                    existing = existing_users.get(str(valid_columns['id']))
-                    
-                    if not existing:
-                        if should_sync_record("users", str(valid_columns['id']), "new"):
-                            new_users.append(valid_columns)
-                    else:
-                        if should_sync_record("users", str(valid_columns['id']), "updated"):
-                            updated_users.append(valid_columns)
-                
-                if new_users:
-                    local_db.bulk_insert_mappings(User, new_users)
-                    applied_changes["new"] += len(new_users)
-                    print(f"  Bulk inserted {len(new_users)} new user records")
-                
-                if updated_users:
-                    local_db.bulk_update_mappings(User, updated_users)
-                    applied_changes["updated"] += len(updated_users)
-                    print(f"  Bulk updated {len(updated_users)} user records")
-                
-                local_db.commit()
-                print("Users synced successfully")
             
             # Sync model runs
             print("Syncing model runs...")
-            # Exclude LargeBinary fields to prevent memory issues
-            remote_cursor.execute("SELECT id, version, model_name, model_type, training_row_count, training_avg_error, training_completed_at, created_at, created_by FROM model_runs")
+            remote_cursor.execute("SELECT * FROM model_runs")
             columns = [desc[0] for desc in remote_cursor.description]
             model_runs_data = remote_cursor.fetchall()
             print(f"Found {len(model_runs_data)} model run records")
@@ -806,14 +758,20 @@ def sync_database(
                         valid_columns['id'] = uuid.UUID(valid_columns['id'])
                     if 'created_by' in valid_columns and valid_columns['created_by'] and isinstance(valid_columns['created_by'], str):
                         valid_columns['created_by'] = uuid.UUID(valid_columns['created_by'])
-                    # Check if model run exists by ID or by name (to prevent duplicates)
-                    existing = existing_model_runs.get(str(valid_columns['id']))
-                    if not existing and 'model_name' in valid_columns and valid_columns['model_name']:
-                        # Also check by model name to prevent duplicates
+                    
+                    # Match models by name first (primary), then by ID (fallback)
+                    # This handles cases where models are created locally and uploaded with different IDs
+                    existing = None
+                    if 'model_name' in valid_columns and valid_columns['model_name']:
                         for item in existing_model_runs.values():
                             if item.model_name == valid_columns['model_name']:
                                 existing = item
                                 break
+                    
+                    # If no match by name, try matching by ID
+                    if not existing:
+                        existing = existing_model_runs.get(str(valid_columns['id']))
+                    
                     if not existing:
                         if should_sync_record("model_runs", str(valid_columns['id']), "new"):
                             new_model_runs.append(valid_columns)
@@ -834,48 +792,6 @@ def sync_database(
                 local_db.commit()
                 print("Model runs synced successfully")
             
-            # Sync predictions
-            print("Syncing predictions...")
-            remote_cursor.execute("SELECT * FROM predictions")
-            columns = [desc[0] for desc in remote_cursor.description]
-            predictions_data = remote_cursor.fetchall()
-            print(f"Found {len(predictions_data)} prediction records")
-            
-            # Skip if no remote data
-            if not predictions_data:
-                print("  No prediction records to sync")
-            else:
-                # Get existing records as hash map for O(1) lookups
-                existing_predictions = {}
-                for item in local_db.query(Prediction).all():
-                    existing_predictions[str(item.id)] = item
-                
-                new_predictions = []
-                updated_predictions = []
-                
-                for row in predictions_data:
-                    prediction_dict = dict(zip(columns, row))
-                    valid_columns = {key: value for key, value in prediction_dict.items() if hasattr(Prediction, key)}
-                    existing = existing_predictions.get(str(valid_columns['id']))
-                    if not existing:
-                        if should_sync_record("predictions", valid_columns['id'], "new"):
-                            new_predictions.append(valid_columns)
-                    else:
-                        if should_sync_record("predictions", valid_columns['id'], "updated"):
-                            updated_predictions.append(valid_columns)
-                
-                if new_predictions:
-                    local_db.bulk_insert_mappings(Prediction, new_predictions)
-                    applied_changes["new"] += len(new_predictions)
-                    print(f"  Bulk inserted {len(new_predictions)} new prediction records")
-                
-                if updated_predictions:
-                    local_db.bulk_update_mappings(Prediction, updated_predictions)
-                    applied_changes["updated"] += len(updated_predictions)
-                    print(f"  Bulk updated {len(updated_predictions)} prediction records")
-                
-                local_db.commit()
-                print("Predictions synced successfully")
             
             # Sync protocols
             print("Syncing protocols...")
@@ -1064,7 +980,6 @@ def sync_database(
                 ("shot_data", ShotData),
                 ("anchor_point_layers", AnchorPointLayer),
                 ("anchor_points", AnchorPoint),
-                ("predictions", Prediction),
                 ("model_runs", ModelRun),
                 ("test_sessions", TestSession),
                 ("vest_layers", VestLayer),
@@ -1086,6 +1001,9 @@ def sync_database(
                             local_db.query(TestSession).filter(TestSession.parent_test_group_id.in_(deleted_ids)).update({"parent_test_group_id": None}, synchronize_session=False)
                             local_db.commit()
                         for record_id in deleted_ids:
+                            # Skip "count" marker which is used for syncing all records
+                            if record_id == "count":
+                                continue
                             existing = local_db.query(model_class).filter(model_class.id == record_id).first()
                             if existing:
                                 local_db.delete(existing)
@@ -1103,7 +1021,6 @@ def sync_database(
                 "test_sessions": len(test_sessions_data),
                 "shot_data": len(shot_data),
                 "model_runs": len(model_runs_data),
-                "predictions": len(predictions_data),
                 "protocols": len(protocols_data),
                 "locations": len(locations_data),
                 "anchor_points": len(anchor_points_data),
@@ -1127,12 +1044,17 @@ def sync_database(
 
 @router.post("/reset-database")
 def reset_database(
+    request: Optional[ResetRequest] = None,
     current_user: User = Depends(get_current_active_user)
 ):
-    """Reset local database to match remote database (delete local data + sync fresh)."""
+    """Reset local database to match remote database (delete local data + sync fresh).
+    If entities are specified, only reset those entities. Otherwise, reset all."""
     # Check if user is admin
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Get list of entities to reset
+    entities_to_reset = request.entities if request and request.entities else None
     
     # Remote database connection details
     remote_db_url = os.getenv("REMOTE_DATABASE_URL")
@@ -1142,20 +1064,36 @@ def reset_database(
     local_db: Session = SessionLocal()
     
     try:
-        # Delete all local data
+        # Define entity deletion order (children before parents)
+        # Must delete all entities in proper order to handle FK dependencies
+        deletion_order = [
+            ("anchor_point_layers", AnchorPointLayer),
+            ("shot_data", ShotData),
+            ("vest_layers", VestLayer),
+            ("test_sessions", TestSession),
+            ("anchor_points", AnchorPoint),
+            ("vests", Vest),
+            ("model_runs", ModelRun),
+            ("materials", Material),
+            ("ammunition", Ammunition),
+            ("protocols", Protocol),
+            ("locations", Location),
+        ]
+        
+        # Delete local data
+        # If entities are selected, delete all of them (in proper order)
+        # If no entities selected, delete all
         print("Deleting local database data...")
-        local_db.query(AnchorPointLayer).delete()
-        local_db.query(AnchorPoint).delete()
-        local_db.query(Location).delete()
-        local_db.query(Protocol).delete()
-        local_db.query(Prediction).delete()
-        local_db.query(ModelRun).delete()
-        local_db.query(ShotData).delete()
-        local_db.query(VestLayer).delete()
-        local_db.query(Vest).delete()
-        local_db.query(TestSession).delete()
-        local_db.query(Material).delete()
-        local_db.query(Ammunition).delete()
+        if entities_to_reset:
+            print(f"Resetting selected entities: {entities_to_reset}")
+            for entity_name, model_class in deletion_order:
+                if entity_name in entities_to_reset:
+                    print(f"  Deleting {entity_name}...")
+                    local_db.query(model_class).delete()
+        else:
+            print("Deleting all entities...")
+            for entity_name, model_class in deletion_order:
+                local_db.query(model_class).delete()
         local_db.commit()
         print("Local data deleted successfully")
         
@@ -1166,206 +1104,225 @@ def reset_database(
         print("Successfully connected to remote database")
         
         try:
+            # Initialize data variables for return statement
+            ammunition_data = []
+            materials_data = []
+            vests_data = []
+            vest_layers_data = []
+            test_sessions_data = []
+            shot_data = []
+            model_runs_data = []
+            protocols_data = []
+            locations_data = []
+            anchor_points_data = []
+            anchor_point_layers_data = []
+            
             # Sync ammunition
-            print("Syncing ammunition...")
-            remote_cursor.execute("SELECT * FROM ammunition")
-            columns = [desc[0] for desc in remote_cursor.description]
-            ammunition_data = remote_cursor.fetchall()
-            print(f"Found {len(ammunition_data)} ammunition records")
-            
-            for row in ammunition_data:
-                ammo_dict = dict(zip(columns, row))
-                new_ammo = Ammunition(**ammo_dict)
-                local_db.add(new_ammo)
-            
-            local_db.commit()
-            print("Ammunition synced successfully")
+            if not entities_to_reset or "ammunition" in entities_to_reset:
+                print("Syncing ammunition...")
+                remote_cursor.execute("SELECT * FROM ammunition")
+                columns = [desc[0] for desc in remote_cursor.description]
+                ammunition_data = remote_cursor.fetchall()
+                print(f"Found {len(ammunition_data)} ammunition records")
+                
+                for row in ammunition_data:
+                    ammo_dict = dict(zip(columns, row))
+                    new_ammo = Ammunition(**ammo_dict)
+                    local_db.add(new_ammo)
+                
+                local_db.commit()
+                print("Ammunition synced successfully")
             
             # Sync materials
-            remote_cursor.execute("SELECT * FROM materials")
-            columns = [desc[0] for desc in remote_cursor.description]
-            materials_data = remote_cursor.fetchall()
-            
-            for row in materials_data:
-                material_dict = dict(zip(columns, row))
-                valid_columns = {key: value for key, value in material_dict.items() if hasattr(Material, key)}
-                new_material = Material(**valid_columns)
-                local_db.add(new_material)
-            
-            local_db.commit()
-            print("Materials synced successfully")
+            if not entities_to_reset or "materials" in entities_to_reset:
+                print("Syncing materials...")
+                remote_cursor.execute("SELECT * FROM materials")
+                columns = [desc[0] for desc in remote_cursor.description]
+                materials_data = remote_cursor.fetchall()
+                
+                for row in materials_data:
+                    material_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in material_dict.items() if hasattr(Material, key)}
+                    new_material = Material(**valid_columns)
+                    local_db.add(new_material)
+                
+                local_db.commit()
+                print("Materials synced successfully")
             
             # Sync vests
-            remote_cursor.execute("SELECT * FROM vests")
-            columns = [desc[0] for desc in remote_cursor.description]
-            vests_data = remote_cursor.fetchall()
-            
-            for row in vests_data:
-                vest_dict = dict(zip(columns, row))
-                valid_columns = {key: value for key, value in vest_dict.items() if hasattr(Vest, key)}
-                new_vest = Vest(**valid_columns)
-                local_db.add(new_vest)
-            
-            local_db.commit()
-            print("Vests synced successfully")
+            if not entities_to_reset or "vests" in entities_to_reset:
+                print("Syncing vests...")
+                remote_cursor.execute("SELECT * FROM vests")
+                columns = [desc[0] for desc in remote_cursor.description]
+                vests_data = remote_cursor.fetchall()
+                
+                for row in vests_data:
+                    vest_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in vest_dict.items() if hasattr(Vest, key)}
+                    new_vest = Vest(**valid_columns)
+                    local_db.add(new_vest)
+                
+                local_db.commit()
+                print("Vests synced successfully")
             
             # Sync vest layers
-            remote_cursor.execute("SELECT * FROM vest_layers")
-            columns = [desc[0] for desc in remote_cursor.description]
-            vest_layers_data = remote_cursor.fetchall()
-            
-            for row in vest_layers_data:
-                vest_layer_dict = dict(zip(columns, row))
-                valid_columns = {key: value for key, value in vest_layer_dict.items() if hasattr(VestLayer, key)}
-                new_vest_layer = VestLayer(**valid_columns)
-                local_db.add(new_vest_layer)
-            
-            local_db.commit()
-            print("Vest layers synced successfully")
+            if not entities_to_reset or "vest_layers" in entities_to_reset:
+                print("Syncing vest layers...")
+                remote_cursor.execute("SELECT * FROM vest_layers")
+                columns = [desc[0] for desc in remote_cursor.description]
+                vest_layers_data = remote_cursor.fetchall()
+                
+                for row in vest_layers_data:
+                    vest_layer_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in vest_layer_dict.items() if hasattr(VestLayer, key)}
+                    new_vest_layer = VestLayer(**valid_columns)
+                    local_db.add(new_vest_layer)
+                
+                local_db.commit()
+                print("Vest layers synced successfully")
             
             # Sync test sessions
-            remote_cursor.execute("SELECT * FROM test_sessions")
-            columns = [desc[0] for desc in remote_cursor.description]
-            test_sessions_data = remote_cursor.fetchall()
-            
-            for row in test_sessions_data:
-                test_session_dict = dict(zip(columns, row))
-                valid_columns = {key: value for key, value in test_session_dict.items() if hasattr(TestSession, key)}
-                new_test_session = TestSession(**valid_columns)
-                local_db.add(new_test_session)
-            
-            local_db.commit()
-            print("Test sessions synced successfully")
+            if not entities_to_reset or "test_sessions" in entities_to_reset:
+                print("Syncing test sessions...")
+                remote_cursor.execute("SELECT * FROM test_sessions")
+                columns = [desc[0] for desc in remote_cursor.description]
+                test_sessions_data = remote_cursor.fetchall()
+                
+                for row in test_sessions_data:
+                    test_session_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in test_session_dict.items() if hasattr(TestSession, key)}
+                    new_test_session = TestSession(**valid_columns)
+                    local_db.add(new_test_session)
+                
+                local_db.commit()
+                print("Test sessions synced successfully")
             
             # Sync shot data
-            remote_cursor.execute("SELECT * FROM shot_data")
-            columns = [desc[0] for desc in remote_cursor.description]
-            shot_data = remote_cursor.fetchall()
-            
-            for row in shot_data:
-                shot_dict = dict(zip(columns, row))
-                valid_columns = {key: value for key, value in shot_dict.items() if hasattr(ShotData, key)}
-                new_shot = ShotData(**valid_columns)
-                local_db.add(new_shot)
-            
-            local_db.commit()
-            print("Shot data synced successfully")
-            
-            # Sync users
-            remote_cursor.execute("SELECT * FROM users")
-            columns = [desc[0] for desc in remote_cursor.description]
-            users_data = remote_cursor.fetchall()
-            print(f"Found {len(users_data)} user records")
-            
-            for row in users_data:
-                user_dict = dict(zip(columns, row))
-                valid_columns = {key: value for key, value in user_dict.items() if hasattr(User, key)}
-                # Convert UUID strings to UUID objects
-                if 'id' in valid_columns and isinstance(valid_columns['id'], str):
-                    valid_columns['id'] = uuid.UUID(valid_columns['id'])
-                new_user = User(**valid_columns)
-                local_db.add(new_user)
-            
-            local_db.commit()
-            print("Users synced successfully")
+            if not entities_to_reset or "shot_data" in entities_to_reset:
+                print("Syncing shot data...")
+                remote_cursor.execute("SELECT * FROM shot_data")
+                columns = [desc[0] for desc in remote_cursor.description]
+                shot_data = remote_cursor.fetchall()
+                
+                for row in shot_data:
+                    shot_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in shot_dict.items() if hasattr(ShotData, key)}
+                    new_shot = ShotData(**valid_columns)
+                    local_db.add(new_shot)
+                
+                local_db.commit()
+                print("Shot data synced successfully")
             
             # Sync model runs
-            remote_cursor.execute("SELECT * FROM model_runs")
-            columns = [desc[0] for desc in remote_cursor.description]
-            model_runs_data = remote_cursor.fetchall()
-            
-            for row in model_runs_data:
-                model_run_dict = dict(zip(columns, row))
-                valid_columns = {key: value for key, value in model_run_dict.items() if hasattr(ModelRun, key)}
-                # Convert UUID strings to UUID objects
-                if 'id' in valid_columns and isinstance(valid_columns['id'], str):
-                    valid_columns['id'] = uuid.UUID(valid_columns['id'])
-                if 'created_by' in valid_columns and valid_columns['created_by'] and isinstance(valid_columns['created_by'], str):
-                    valid_columns['created_by'] = uuid.UUID(valid_columns['created_by'])
-                new_model_run = ModelRun(**valid_columns)
-                local_db.add(new_model_run)
-            
-            local_db.commit()
-            print("Model runs synced successfully")
-            
-            # Sync predictions
-            remote_cursor.execute("SELECT * FROM predictions")
-            columns = [desc[0] for desc in remote_cursor.description]
-            predictions_data = remote_cursor.fetchall()
-            
-            for row in predictions_data:
-                prediction_dict = dict(zip(columns, row))
-                valid_columns = {key: value for key, value in prediction_dict.items() if hasattr(Prediction, key)}
-                new_prediction = Prediction(**valid_columns)
-                local_db.add(new_prediction)
-            
-            local_db.commit()
-            print("Predictions synced successfully")
+            if not entities_to_reset or "model_runs" in entities_to_reset:
+                print("Syncing model runs...")
+                remote_cursor.execute("SELECT * FROM model_runs")
+                columns = [desc[0] for desc in remote_cursor.description]
+                model_runs_data = remote_cursor.fetchall()
+                print(f"Found {len(model_runs_data)} model run records")
+                
+                # Get existing model runs for name matching
+                existing_model_runs = {}
+                for item in local_db.query(ModelRun).all():
+                    existing_model_runs[item.model_name] = item
+                
+                for row in model_runs_data:
+                    model_run_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in model_run_dict.items() if hasattr(ModelRun, key)}
+                    # Convert UUID strings to UUID objects
+                    if 'id' in valid_columns and isinstance(valid_columns['id'], str):
+                        valid_columns['id'] = uuid.UUID(valid_columns['id'])
+                    if 'created_by' in valid_columns and valid_columns['created_by'] and isinstance(valid_columns['created_by'], str):
+                        valid_columns['created_by'] = uuid.UUID(valid_columns['created_by'])
+                    
+                    # Match models by name first (primary), then by ID (fallback)
+                    existing = None
+                    if 'model_name' in valid_columns and valid_columns['model_name']:
+                        existing = existing_model_runs.get(valid_columns['model_name'])
+                    
+                    # Only add if not already exists (by name or ID)
+                    if not existing:
+                        new_model_run = ModelRun(**valid_columns)
+                        local_db.add(new_model_run)
+                        # Update existing map for subsequent iterations
+                        if 'model_name' in valid_columns and valid_columns['model_name']:
+                            existing_model_runs[valid_columns['model_name']] = new_model_run
+                
+                local_db.commit()
+                print("Model runs synced successfully")
             
             # Sync protocols
-            remote_cursor.execute("SELECT * FROM protocols")
-            columns = [desc[0] for desc in remote_cursor.description]
-            protocols_data = remote_cursor.fetchall()
-            
-            for row in protocols_data:
-                protocol_dict = dict(zip(columns, row))
-                valid_columns = {key: value for key, value in protocol_dict.items() if hasattr(Protocol, key)}
-                new_protocol = Protocol(**valid_columns)
-                local_db.add(new_protocol)
-            
-            local_db.commit()
-            print("Protocols synced successfully")
+            if not entities_to_reset or "protocols" in entities_to_reset:
+                print("Syncing protocols...")
+                remote_cursor.execute("SELECT * FROM protocols")
+                columns = [desc[0] for desc in remote_cursor.description]
+                protocols_data = remote_cursor.fetchall()
+                
+                for row in protocols_data:
+                    protocol_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in protocol_dict.items() if hasattr(Protocol, key)}
+                    new_protocol = Protocol(**valid_columns)
+                    local_db.add(new_protocol)
+                
+                local_db.commit()
+                print("Protocols synced successfully")
             
             # Sync locations
-            remote_cursor.execute("SELECT * FROM locations")
-            columns = [desc[0] for desc in remote_cursor.description]
-            locations_data = remote_cursor.fetchall()
-            
-            for row in locations_data:
-                location_dict = dict(zip(columns, row))
-                valid_columns = {key: value for key, value in location_dict.items() if hasattr(Location, key)}
-                new_location = Location(**valid_columns)
-                local_db.add(new_location)
-            
-            local_db.commit()
-            print("Locations synced successfully")
+            if not entities_to_reset or "locations" in entities_to_reset:
+                print("Syncing locations...")
+                remote_cursor.execute("SELECT * FROM locations")
+                columns = [desc[0] for desc in remote_cursor.description]
+                locations_data = remote_cursor.fetchall()
+                
+                for row in locations_data:
+                    location_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in location_dict.items() if hasattr(Location, key)}
+                    new_location = Location(**valid_columns)
+                    local_db.add(new_location)
+                
+                local_db.commit()
+                print("Locations synced successfully")
             
             # Sync anchor points
-            remote_cursor.execute("SELECT * FROM anchor_points")
-            columns = [desc[0] for desc in remote_cursor.description]
-            anchor_points_data = remote_cursor.fetchall()
-            print(f"Found {len(anchor_points_data)} anchor point records")
-            
-            for row in anchor_points_data:
-                anchor_point_dict = dict(zip(columns, row))
-                valid_columns = {key: value for key, value in anchor_point_dict.items() if hasattr(AnchorPoint, key)}
-                # Convert UUID strings to UUID objects
-                if 'id' in valid_columns and isinstance(valid_columns['id'], str):
-                    valid_columns['id'] = uuid.UUID(valid_columns['id'])
-                if 'created_by_id' in valid_columns and isinstance(valid_columns['created_by_id'], str):
-                    valid_columns['created_by_id'] = uuid.UUID(valid_columns['created_by_id'])
-                if 'batch_id' in valid_columns and valid_columns['batch_id'] and isinstance(valid_columns['batch_id'], str):
-                    valid_columns['batch_id'] = uuid.UUID(valid_columns['batch_id'])
-                new_anchor_point = AnchorPoint(**valid_columns)
-                local_db.add(new_anchor_point)
-            
-            local_db.commit()
-            print("Anchor points synced successfully")
+            if not entities_to_reset or "anchor_points" in entities_to_reset:
+                print("Syncing anchor points...")
+                remote_cursor.execute("SELECT * FROM anchor_points")
+                columns = [desc[0] for desc in remote_cursor.description]
+                anchor_points_data = remote_cursor.fetchall()
+                print(f"Found {len(anchor_points_data)} anchor point records")
+                
+                for row in anchor_points_data:
+                    anchor_point_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in anchor_point_dict.items() if hasattr(AnchorPoint, key)}
+                    # Convert UUID strings to UUID objects
+                    if 'id' in valid_columns and isinstance(valid_columns['id'], str):
+                        valid_columns['id'] = uuid.UUID(valid_columns['id'])
+                    if 'created_by_id' in valid_columns and isinstance(valid_columns['created_by_id'], str):
+                        valid_columns['created_by_id'] = uuid.UUID(valid_columns['created_by_id'])
+                    if 'batch_id' in valid_columns and valid_columns['batch_id'] and isinstance(valid_columns['batch_id'], str):
+                        valid_columns['batch_id'] = uuid.UUID(valid_columns['batch_id'])
+                    new_anchor_point = AnchorPoint(**valid_columns)
+                    local_db.add(new_anchor_point)
+                
+                local_db.commit()
+                print("Anchor points synced successfully")
             
             # Sync anchor point layers
-            remote_cursor.execute("SELECT * FROM anchor_point_layers")
-            columns = [desc[0] for desc in remote_cursor.description]
-            anchor_point_layers_data = remote_cursor.fetchall()
-            print(f"Found {len(anchor_point_layers_data)} anchor point layer records")
-            
-            for row in anchor_point_layers_data:
-                anchor_point_layer_dict = dict(zip(columns, row))
-                valid_columns = {key: value for key, value in anchor_point_layer_dict.items() if hasattr(AnchorPointLayer, key)}
-                new_anchor_point_layer = AnchorPointLayer(**valid_columns)
-                local_db.add(new_anchor_point_layer)
-            
-            local_db.commit()
-            print("Anchor point layers synced successfully")
+            if not entities_to_reset or "anchor_point_layers" in entities_to_reset:
+                print("Syncing anchor point layers...")
+                remote_cursor.execute("SELECT * FROM anchor_point_layers")
+                columns = [desc[0] for desc in remote_cursor.description]
+                anchor_point_layers_data = remote_cursor.fetchall()
+                print(f"Found {len(anchor_point_layers_data)} anchor point layer records")
+                
+                for row in anchor_point_layers_data:
+                    anchor_point_layer_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in anchor_point_layer_dict.items() if hasattr(AnchorPointLayer, key)}
+                    new_anchor_point_layer = AnchorPointLayer(**valid_columns)
+                    local_db.add(new_anchor_point_layer)
+                
+                local_db.commit()
+                print("Anchor point layers synced successfully")
             
             return {"message": "Database reset completed successfully", "synced_records": {
                 "ammunition": len(ammunition_data),
@@ -1375,7 +1332,6 @@ def reset_database(
                 "test_sessions": len(test_sessions_data),
                 "shot_data": len(shot_data),
                 "model_runs": len(model_runs_data),
-                "predictions": len(predictions_data),
                 "protocols": len(protocols_data),
                 "locations": len(locations_data),
                 "anchor_points": len(anchor_points_data),

@@ -1630,6 +1630,71 @@ export function ModelTraining() {
               <p className="text-sm text-gray-600">No point data available for graphing.</p>
             )}
           </div>
+
+          {/* Raw Data Table for Debugging */}
+          <div className="bg-white rounded-lg shadow p-6 mt-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Raw Health Check Data</h2>
+              <button
+                onClick={() => {
+                  const data = filteredPointData.map((p: any) => ({
+                    shot_number: p.shot_number,
+                    vest_code: p.vest_code,
+                    protocol: p.protocol,
+                    protection_level: p.protection_level,
+                    caliber: p.caliber,
+                    velocity: p.velocity,
+                    actual_bfd: p.actual_bfd,
+                    predicted_bfd: p.predicted_bfd,
+                    percent_error: p.percent_error,
+                  }));
+                  const text = data.map(row =>
+                    `Shot: ${row.shot_number}, Vest: ${row.vest_code}, Protocol: ${row.protocol}, Level: ${row.protection_level}, Caliber: ${row.caliber}, Velocity: ${row.velocity?.toFixed(2)} m/s, Actual: ${row.actual_bfd?.toFixed(2)} mm, Predicted: ${row.predicted_bfd?.toFixed(2)} mm, Error: ${row.percent_error?.toFixed(2)}%`
+                  ).join('\n');
+                  navigator.clipboard.writeText(text);
+                }}
+                className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+              >
+                Copy All Data
+              </button>
+            </div>
+            {filteredPointData.length > 0 ? (
+              <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Shot #</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vest</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Protocol</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Level</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Caliber</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Velocity (m/s)</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actual BFD (mm)</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Predicted BFD (mm)</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Error %</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredPointData.map((p: any, index: number) => (
+                      <tr key={index}>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{p.shot_number}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{p.vest_code}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{p.protocol}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{p.protection_level}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{p.caliber}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{p.velocity?.toFixed(2)}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{p.actual_bfd?.toFixed(2)}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{p.predicted_bfd?.toFixed(2)}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{p.percent_error?.toFixed(2)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600">No point data available.</p>
+            )}
+          </div>
         </>
       )}
 

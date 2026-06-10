@@ -15,7 +15,8 @@ export function Layout({ children }: LayoutProps) {
   const { isViewerMode, setViewerMode } = useViewerMode();
   const location = useLocation();
   const [version, setVersion] = useState<string>('0.1.0');
-  
+  const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
+
   const effectiveIsAdmin = isAdmin && !isViewerMode;
   
   // Location management state
@@ -100,14 +101,36 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <div className="min-h-screen flex bg-gray-50">
-      <aside className="w-56 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
-        <div className="h-16 flex items-center px-4 border-b border-gray-200">
-          <h1 className="text-lg font-bold text-gray-900">DeltaDash</h1>
-          {effectiveIsAdmin && (
-            <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded-full">
-              Admin
-            </span>
+      <aside className={`${isSidebarMinimized ? 'w-16' : 'w-56'} flex-shrink-0 bg-white border-r border-gray-200 flex flex-col transition-all duration-300`}>
+        <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200">
+          {!isSidebarMinimized && (
+            <div className="flex items-center">
+              <h1 className="text-lg font-bold text-gray-900">DeltaDash</h1>
+              {effectiveIsAdmin && (
+                <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded-full">
+                  Admin
+                </span>
+              )}
+            </div>
           )}
+          <button
+            onClick={() => setIsSidebarMinimized(!isSidebarMinimized)}
+            className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
+            title={isSidebarMinimized ? 'Expand sidebar' : 'Minimize sidebar'}
+          >
+            <svg
+              className={`w-5 h-5 transition-transform duration-300 ${isSidebarMinimized ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              {isSidebarMinimized ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+              )}
+            </svg>
+          </button>
         </div>
         <nav className="flex-1 py-4 overflow-y-auto">
           {navItems.map((item) => {
@@ -116,7 +139,7 @@ export function Layout({ children }: LayoutProps) {
               <Link
                 key={item.path}
                 to={item.path}
-                className={`flex items-center px-4 py-2.5 text-sm font-medium transition-colors ${
+                className={`flex items-center ${isSidebarMinimized ? 'justify-center px-2' : 'px-4'} py-2.5 text-sm font-medium transition-colors ${
                   isActive(item.path)
                     ? isAdminTab
                       ? 'bg-red-200 text-gray-900 border-r-2 border-red-500'
@@ -125,14 +148,19 @@ export function Layout({ children }: LayoutProps) {
                       ? 'bg-red-50 text-gray-600 hover:bg-red-100'
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
+                title={isSidebarMinimized ? item.label : undefined}
               >
-                {item.label}
+                {!isSidebarMinimized && item.label}
               </Link>
             );
           })}
         </nav>
-        <div className="px-4 py-3 border-t border-gray-200">
-          <p className="text-xs text-gray-400">v{version}</p>
+        <div className={`${isSidebarMinimized ? 'px-2 text-center' : 'px-4'} py-3 border-t border-gray-200`}>
+          {!isSidebarMinimized ? (
+            <p className="text-xs text-gray-400">v{version}</p>
+          ) : (
+            <p className="text-xs text-gray-400 font-medium">v{version.split('.').slice(0, 2).join('.')}</p>
+          )}
         </div>
       </aside>
 

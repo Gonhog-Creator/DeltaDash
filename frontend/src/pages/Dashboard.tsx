@@ -25,8 +25,10 @@ export function Dashboard() {
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
   const [showSyncErrorModal, setShowSyncErrorModal] = useState(false);
   const [syncErrorMessage, setSyncErrorMessage] = useState('');
+  const [selectedResetEntities, setSelectedResetEntities] = useState<string[]>([]);
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [showBackupSuccessModal, setShowBackupSuccessModal] = useState(false);
   const [backupConfirmText, setBackupConfirmText] = useState('');
   const [restoreConfirmText, setRestoreConfirmText] = useState('');
   const [selectedBackup, setSelectedBackup] = useState<string | null>(null);
@@ -159,19 +161,47 @@ export function Dashboard() {
     setIsResetting(true);
     setShowResetConfirmModal(false);
     try {
-      const result = await apiClient.post('/api/v1/admin/reset-database');
+      const result = await apiClient.post('/api/v1/admin/reset-database', {
+        entities: selectedResetEntities.length > 0 ? selectedResetEntities : undefined
+      });
       setSyncResults(result);
       setShowSyncSuccessModal(true);
       // Refresh stats after reset
       const data = await apiClient.get<{ test_session_count: number; total_shots: number }>('/api/v1/test-sessions/stats');
       setStats({ test_session_count: data.test_session_count, total_shots: data.total_shots });
-    } catch (error) {
+      // Reset selection
+      setSelectedResetEntities([]);
+    } catch (error: any) {
       console.error('Failed to reset database:', error);
-      alert('Failed to reset database. Check console for details.');
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to reset database. Check console for details.';
+      setSyncErrorMessage(errorMessage);
+      setShowSyncErrorModal(true);
     } finally {
       setIsResetting(false);
     }
   };
+
+  const handleToggleResetEntity = (entity: string) => {
+    setSelectedResetEntities(prev => 
+      prev.includes(entity) 
+        ? prev.filter(e => e !== entity)
+        : [...prev, entity]
+    );
+  };
+
+  const resetEntities = [
+    { id: 'ammunition', label: 'Ammunition' },
+    { id: 'materials', label: 'Materials' },
+    { id: 'vests', label: 'Vests' },
+    { id: 'vest_layers', label: 'Vest Layers' },
+    { id: 'test_sessions', label: 'Test Sessions' },
+    { id: 'shot_data', label: 'Shot Data' },
+    { id: 'model_runs', label: 'Models' },
+    { id: 'protocols', label: 'Protocols' },
+    { id: 'locations', label: 'Locations' },
+    { id: 'anchor_points', label: 'Anchor Points' },
+    { id: 'anchor_point_layers', label: 'Anchor Point Layers' },
+  ];
 
   const handleBackup = async () => {
     setIsBackingUp(true);
@@ -201,7 +231,7 @@ export function Dashboard() {
 
       setShowBackupModal(false);
       setBackupConfirmText('');
-      alert('Backup created successfully');
+      setShowBackupSuccessModal(true);
     } catch (error) {
       console.error('Failed to create backup:', error);
       alert('Failed to create backup. Check console for details.');
@@ -750,15 +780,55 @@ export function Dashboard() {
           title="Reset Database"
           message={
             <div className="space-y-4">
-              <p className="text-sm text-gray-600 font-medium text-red-700">WARNING: This will delete ALL local data and replace it with data from the remote database.</p>
+              <p className="text-sm text-gray-600 font-medium text-red-700">WARNING: This will delete selected local data and replace it with data from the remote database.</p>
               <p className="text-sm text-gray-600">This action cannot be undone. All local changes will be lost.</p>
-              <p className="text-sm text-gray-600">Are you sure you want to continue?</p>
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-medium text-gray-700">Select entities to reset:</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSelectedResetEntities(resetEntities.map(e => e.id))}
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      onClick={() => setSelectedResetEntities([])}
+                      className="text-xs text-red-600 hover:text-red-800"
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
+                  {resetEntities.map((entity) => (
+                    <div key={entity.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded">
+                      <input
+                        type="checkbox"
+                        id={`reset-${entity.id}`}
+                        checked={selectedResetEntities.includes(entity.id)}
+                        onChange={() => handleToggleResetEntity(entity.id)}
+                        className="rounded border-gray-300"
+                      />
+                      <label htmlFor={`reset-${entity.id}`} className="text-sm text-gray-700 cursor-pointer">
+                        {entity.label}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+                {selectedResetEntities.length === 0 && (
+                  <p className="text-xs text-yellow-600 mt-2">No entities selected - all entities will be reset</p>
+                )}
+              </div>
             </div>
           }
           confirmLabel="Reset Database"
           variant="danger"
           onConfirm={handleReset}
-          onCancel={() => setShowResetConfirmModal(false)}
+          onCancel={() => {
+            setShowResetConfirmModal(false);
+            setSelectedResetEntities([]);
+          }}
         />
       )}
       {showBackupModal && (
@@ -892,6 +962,20 @@ export function Dashboard() {
             }
           }}
           disabled={restoreConfirmText !== 'confirm' || !selectedBackup || isRestoring}
+        />
+      )}
+      {showBackupSuccessModal && (
+        <ConfirmModal
+          title="Backup Successful"
+          message={
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600">Database backup created and downloaded successfully.</p>
+            </div>
+          }
+          confirmLabel="Close"
+          variant="default"
+          onConfirm={() => setShowBackupSuccessModal(false)}
+          onCancel={() => setShowBackupSuccessModal(false)}
         />
       )}
       {showAlembicModal && (

@@ -1705,8 +1705,14 @@ def predict_multi_shot(
         bfd_mae = bfd_metric.get("mae") if isinstance(bfd_metric, dict) else None
         bfd_p95 = bfd_metric.get("absolute_error_p95", bfd_mae) if isinstance(bfd_metric, dict) else bfd_mae
 
-        bfd_lower_95 = float(bfd_prediction - bfd_p95) if bfd_prediction is not None and bfd_p95 is not None else None
-        bfd_upper_95 = float(bfd_prediction + bfd_p95) if bfd_prediction is not None and bfd_p95 is not None else None
+        # If perforation probability is very high (>90%), don't report BFD (it's meaningless)
+        if perforation_probability is not None and perforation_probability > 0.9:
+            bfd_prediction = None
+            bfd_lower_95 = None
+            bfd_upper_95 = None
+        else:
+            bfd_lower_95 = float(bfd_prediction - bfd_p95) if bfd_prediction is not None and bfd_p95 is not None else None
+            bfd_upper_95 = float(bfd_prediction + bfd_p95) if bfd_prediction is not None and bfd_p95 is not None else None
 
         shot_predictions.append({
             "shot_number": shot_num,
@@ -1810,7 +1816,18 @@ def predict(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float
     recommendation = "No recommendation available"
     confidence_note = "Model not trained or insufficient data"
 
-    if bfd_prediction is not None:
+    # If perforation probability is very high (>90%), don't report BFD (it's meaningless)
+    if perforation_probability is not None and perforation_probability > 0.9:
+        bfd_prediction = None
+        bfd_lower_80 = None
+        bfd_upper_80 = None
+        bfd_lower_95 = None
+        bfd_upper_95 = None
+        bfd_upper = None
+        recommendation = "FAIL: High perforation probability predicted (>90%)"
+        training_count = metadata.get("training_data_count", "unknown")
+        confidence_note = f"Model trained on {training_count} data points. Perforation probability: {perforation_probability*100:.1f}%"
+    elif bfd_prediction is not None:
         if bfd_upper is not None and bfd_upper > 44:
             recommendation = "FAIL: Predicted backface deformation exceeds NIJ 44mm limit"
         elif bfd_upper is not None and bfd_upper > 40:
@@ -1821,7 +1838,7 @@ def predict(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float
         training_count = metadata.get("training_data_count", "unknown")
         confidence_note = f"Model trained on {training_count} data points. 95% confidence interval: {bfd_lower_95:.1f} - {bfd_upper_95:.1f} mm"
 
-    if perforation_probability is not None and perforation_probability > 0.5:
+    if perforation_probability is not None and perforation_probability > 0.5 and perforation_probability <= 0.9:
         recommendation = "FAIL: High perforation probability predicted"
 
     return {
@@ -2082,6 +2099,7 @@ def evaluate_model_on_test_sessions(
                 "shot_number": meta["shot_number"],
                 "protection_level": meta["protection_level"],
                 "caliber": meta["caliber"],
+                "velocity": batch_rows[i]["impact_velocity_mps"],
             })
     except Exception as e:
         print(f"ERROR: Batch prediction failed: {e}")

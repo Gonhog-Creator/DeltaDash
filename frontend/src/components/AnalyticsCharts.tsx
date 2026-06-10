@@ -767,16 +767,8 @@ export function MaterialVsBfdChart({
           </div>
         ) : (
           <div className="flex items-center justify-center h-96">
-            <div className="text-gray-500 text-center">{noDataMessage || 'No data available for selected category'}</div>
+            <div className="text-gray-500 text-center">No data available for selected category</div>
           </div>
-        )}
-
-        {isAdmin && (
-          <DebugInfo
-            analyticsData={analyticsData}
-            filteredPoints={filteredPoints}
-            debugStats={{ xLabel: selectedCategory ? 'material' : 'material category', yLabel: 'BFD' }}
-          />
         )}
       </div>
     </div>

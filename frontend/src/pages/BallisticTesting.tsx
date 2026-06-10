@@ -489,19 +489,19 @@ export function BallisticTesting() {
               <div className="grid grid-cols-4 gap-4 text-sm">
                 <div>
                   <span className="text-gray-600">Mean BFD (first 3):</span>
-                  <span className="ml-2 font-medium">{prediction.summary.mean_bfd_mm.toFixed(2)} mm</span>
+                  <span className="ml-2 font-medium">{prediction.summary.mean_bfd_mm !== null ? prediction.summary.mean_bfd_mm.toFixed(2) + ' mm' : 'N/A (all perforated)'}</span>
                 </div>
                 <div>
                   <span className="text-gray-600">Max BFD:</span>
-                  <span className="ml-2 font-medium">{prediction.summary.max_bfd_mm.toFixed(2)} mm</span>
+                  <span className="ml-2 font-medium">{prediction.summary.max_bfd_mm !== null ? prediction.summary.max_bfd_mm.toFixed(2) + ' mm' : 'N/A (all perforated)'}</span>
                 </div>
                 <div>
                   <span className="text-gray-600">Min BFD:</span>
-                  <span className="ml-2 font-medium">{prediction.summary.min_bfd_mm.toFixed(2)} mm</span>
+                  <span className="ml-2 font-medium">{prediction.summary.min_bfd_mm !== null ? prediction.summary.min_bfd_mm.toFixed(2) + ' mm' : 'N/A (all perforated)'}</span>
                 </div>
                 <div>
                   <span className="text-gray-600">Std Dev:</span>
-                  <span className="ml-2 font-medium">{prediction.summary.std_bfd_mm.toFixed(2)} mm</span>
+                  <span className="ml-2 font-medium">{prediction.summary.std_bfd_mm !== null ? prediction.summary.std_bfd_mm.toFixed(2) + ' mm' : 'N/A (all perforated)'}</span>
                 </div>
               </div>
             </div>
@@ -511,61 +511,111 @@ export function BallisticTesting() {
               <h3 className="font-semibold text-blue-800 mb-2">Detailed Predictions</h3>
               <div className="overflow-x-auto">
                 {(() => {
-                  // Group predictions by ammunition, then by side
+                  // Group predictions by ammunition, then by side, then by shot number
                   const groupedByAmmo = prediction.predictions.reduce((acc, shot) => {
                     if (!acc[shot.ammunition_name]) {
                       acc[shot.ammunition_name] = {};
                     }
                     if (!acc[shot.ammunition_name][shot.side]) {
-                      acc[shot.ammunition_name][shot.side] = [];
+                      acc[shot.ammunition_name][shot.side] = {};
                     }
-                    acc[shot.ammunition_name][shot.side].push(shot);
+                    if (!acc[shot.ammunition_name][shot.side][shot.shot_number]) {
+                      acc[shot.ammunition_name][shot.side][shot.shot_number] = [];
+                    }
+                    acc[shot.ammunition_name][shot.side][shot.shot_number].push(shot);
                     return acc;
-                  }, {} as Record<string, Record<string, typeof prediction.predictions>>);
+                  }, {} as Record<string, Record<string, Record<number, typeof prediction.predictions>>>);
 
                   return Object.entries(groupedByAmmo).map(([ammoName, sides]) => (
                     <div key={ammoName} className="mb-6">
                       <h4 className="text-md font-medium text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">{ammoName}</h4>
-                      {Object.entries(sides).map(([side, shots]) => {
-                        const maxBfd = Math.max(...shots.map(s => s.predicted_bfd_mm));
-                        return (
-                          <div key={side} className="mb-4">
-                            <h5 className="text-sm font-medium text-gray-700 mb-2 ml-2 capitalize">{side}</h5>
-                            <table className="min-w-full border border-gray-200">
-                              <thead className="bg-gray-50">
-                                <tr>
-                                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Shot #</th>
-                                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Conditioning</th>
-                                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Velocity (m/s)</th>
-                                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Predicted BFD (mm)</th>
-                                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Perf. Prob.</th>
-                                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">95% CI (mm)</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {shots.map((shot) => (
-                                  <tr key={`${shot.shot_number}-${shot.conditioning}`} className="border-b">
-                                    <td className="px-4 py-2 text-sm">{shot.shot_number}</td>
-                                    <td className={`px-4 py-2 text-sm capitalize ${shot.conditioning === 'dry' ? 'bg-orange-50' : 'bg-blue-50'}`}>
-                                      {shot.conditioning}
-                                    </td>
-                                    <td className="px-4 py-2 text-sm">{Math.round(shot.reference_velocity_m_s)}</td>
-                                    <td className={`px-4 py-2 text-sm font-medium ${shot.predicted_bfd_mm === maxBfd ? 'font-black' : ''}`}>
-                                      {shot.predicted_bfd_mm.toFixed(2)}
-                                    </td>
-                                    <td className="px-4 py-2 text-sm">
-                                      {shot.perforation_probability !== null && shot.perforation_probability !== undefined
-                                        ? `${(shot.perforation_probability * 100).toFixed(1)}%`
-                                        : 'N/A'}
-                                    </td>
-                                    <td className="px-4 py-2 text-sm">{shot.confidence_interval_low_mm.toFixed(2)} - {shot.confidence_interval_high_mm.toFixed(2)}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        );
-                      })}
+                      {Object.entries(sides).map(([side, shotsByNumber]) => (
+                        <div key={side} className="mb-4">
+                          <h5 className="text-sm font-medium text-gray-700 mb-2 ml-2 capitalize">{side}</h5>
+                          <table className="min-w-full border border-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Shot #</th>
+                                <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Conditioning</th>
+                                <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Velocity (m/s)</th>
+                                <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Min BFD (mm)</th>
+                                <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Target BFD (mm)</th>
+                                <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Max BFD (mm)</th>
+                                <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Perf. Prob.</th>
+                                <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">95% CI (mm)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(() => {
+                                // Flatten all shots for this side
+                                const allShots = Object.entries(shotsByNumber).flatMap(([shotNum, velocityVariants]) => {
+                                  const byConditioning = velocityVariants.reduce((acc, shot) => {
+                                    if (!acc[shot.conditioning]) {
+                                      acc[shot.conditioning] = [];
+                                    }
+                                    acc[shot.conditioning].push(shot);
+                                    return acc;
+                                  }, {} as Record<string, typeof velocityVariants>);
+
+                                  return Object.entries(byConditioning).map(([conditioning, condVariants]) => ({
+                                    shotNum,
+                                    conditioning,
+                                    condVariants,
+                                  }));
+                                });
+
+                                // Sort by conditioning (dry first), then by shot number
+                                allShots.sort((a, b) => {
+                                  if (a.conditioning !== b.conditioning) {
+                                    return a.conditioning === 'dry' ? -1 : 1;
+                                  }
+                                  return parseInt(a.shotNum) - parseInt(b.shotNum);
+                                });
+
+                                return allShots.map(({ shotNum, conditioning, condVariants }) => {
+                                  const minShot = condVariants.find(s => s.velocity_label === 'min') || condVariants[0];
+                                  const targetShot = condVariants.find(s => s.velocity_label === 'target') || condVariants[0];
+                                  const maxShot = condVariants.find(s => s.velocity_label === 'max') || condVariants[0];
+                                  const validBfdValues = condVariants.map(s => s.predicted_bfd_mm).filter(v => v !== null);
+                                  const maxBfd = validBfdValues.length > 0 ? Math.max(...validBfdValues) : null;
+                                  const tolerance = targetShot.velocity_m_s - minShot.velocity_m_s;
+
+                                  return (
+                                    <tr key={`${shotNum}-${conditioning}`} className="border-b">
+                                      <td className="px-4 py-2 text-sm">{shotNum}</td>
+                                      <td className={`px-4 py-2 text-sm capitalize ${conditioning === 'dry' ? 'bg-orange-50' : 'bg-blue-50'}`}>
+                                        {conditioning}
+                                      </td>
+                                      <td className="px-4 py-2 text-sm text-xs text-gray-500">
+                                        {Math.round(targetShot.velocity_m_s)} ± {tolerance > 0 ? Math.round(tolerance) : 0}
+                                      </td>
+                                      <td className={`px-4 py-2 text-sm font-medium ${minShot.predicted_bfd_mm !== null && minShot.predicted_bfd_mm === maxBfd ? 'font-black' : ''}`}>
+                                        {minShot.predicted_bfd_mm !== null ? minShot.predicted_bfd_mm.toFixed(2) : 'PERFORATED'}
+                                      </td>
+                                      <td className={`px-4 py-2 text-sm font-medium ${targetShot.predicted_bfd_mm !== null && targetShot.predicted_bfd_mm === maxBfd ? 'font-black' : ''}`}>
+                                        {targetShot.predicted_bfd_mm !== null ? targetShot.predicted_bfd_mm.toFixed(2) : 'PERFORATED'}
+                                      </td>
+                                      <td className={`px-4 py-2 text-sm font-medium ${maxShot.predicted_bfd_mm !== null && maxShot.predicted_bfd_mm === maxBfd ? 'font-black' : ''}`}>
+                                        {maxShot.predicted_bfd_mm !== null ? maxShot.predicted_bfd_mm.toFixed(2) : 'PERFORATED'}
+                                      </td>
+                                      <td className="px-4 py-2 text-sm">
+                                        {targetShot.perforation_probability !== null && targetShot.perforation_probability !== undefined
+                                          ? `${(targetShot.perforation_probability * 100).toFixed(1)}%`
+                                          : 'N/A'}
+                                      </td>
+                                      <td className="px-4 py-2 text-sm">
+                                        {targetShot.confidence_interval_low_mm !== null && targetShot.confidence_interval_high_mm !== null
+                                          ? `${targetShot.confidence_interval_low_mm.toFixed(2)} - ${targetShot.confidence_interval_high_mm.toFixed(2)}`
+                                            : 'N/A'}
+                                      </td>
+                                    </tr>
+                                  );
+                                });
+                              })()}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
                     </div>
                   ));
                 })()}
@@ -573,46 +623,64 @@ export function BallisticTesting() {
             </div>
 
             {/* BFD vs Velocity Chart */}
-            {prediction.velocity_curves && (
-              <div className="mb-6">
-                <h3 className="font-semibold text-blue-800 mb-2">BFD vs Velocity Curve (All Shots)</h3>
-                <div className="border border-gray-200 rounded p-4">
-                  <Plot
-                    data={Object.entries(prediction.velocity_curves).map(([shotNum, curve]) => ({
-                      x: curve.map(p => p.velocity_mps),
-                      y: curve.map(p => p.predicted_bfd_mm),
-                      type: 'scatter',
-                      mode: 'lines+markers',
-                      marker: { size: 6 },
-                      line: { width: 2 },
-                      name: `Shot ${shotNum}`,
-                    }))}
-                    layout={{
-                      width: undefined,
-                      height: 400,
-                      margin: { t: 20, r: 20, b: 50, l: 60 },
-                      xaxis: {
-                        title: 'Velocity (m/s)',
-                        titlefont: { size: 14 },
-                        tickfont: { size: 12 },
-                      },
-                      yaxis: {
-                        title: 'Predicted BFD (mm)',
-                        titlefont: { size: 14 },
-                        tickfont: { size: 12 },
-                      },
-                      hovermode: 'closest',
-                      legend: {
-                        x: 0,
-                        y: 1,
-                        bgcolor: 'rgba(255,255,255,0.8)',
-                      },
-                    }}
-                    config={{ responsive: true, displayModeBar: false }}
-                  />
-                </div>
-              </div>
-            )}
+            {prediction.velocity_curves && (() => {
+              // Group velocity curves by ammunition
+              const curvesByAmmo: Record<string, Record<string, any[]>> = {};
+              Object.entries(prediction.velocity_curves).forEach(([shotNum, curve]) => {
+                if (curve.length > 0 && curve[0].ammunition_name) {
+                  const ammoName = curve[0].ammunition_name;
+                  if (!curvesByAmmo[ammoName]) {
+                    curvesByAmmo[ammoName] = {};
+                  }
+                  curvesByAmmo[ammoName][shotNum] = curve;
+                }
+              });
+
+              const ammoGraphs: JSX.Element[] = [];
+              Object.entries(curvesByAmmo).forEach(([ammoName, shots]) => {
+                ammoGraphs.push(
+                  <div key={ammoName} className="mb-6">
+                    <h3 className="font-semibold text-blue-800 mb-2 bg-gray-100 px-3 py-2 rounded">{ammoName} - BFD vs Velocity Curve</h3>
+                    <div className="border border-gray-200 rounded p-4">
+                      <Plot
+                        data={Object.entries(shots).map(([shotNum, curve]) => ({
+                          x: curve.map(p => p.velocity_mps),
+                          y: curve.map(p => p.predicted_bfd_mm),
+                          type: 'scatter',
+                          mode: 'lines+markers',
+                          marker: { size: 6 },
+                          line: { width: 2 },
+                          name: `Shot ${shotNum}`,
+                        }))}
+                        layout={{
+                          width: undefined,
+                          height: 400,
+                          margin: { t: 20, r: 20, b: 50, l: 60 },
+                          xaxis: {
+                            title: 'Velocity (m/s)',
+                            titlefont: { size: 14 },
+                            tickfont: { size: 12 },
+                          },
+                          yaxis: {
+                            title: 'Predicted BFD (mm)',
+                            titlefont: { size: 14 },
+                            tickfont: { size: 12 },
+                          },
+                          hovermode: 'closest',
+                          legend: {
+                            x: 0,
+                            y: 1,
+                            bgcolor: 'rgba(255,255,255,0.8)',
+                          },
+                        }}
+                        config={{ responsive: true, displayModeBar: false }}
+                      />
+                    </div>
+                  </div>
+                );
+              });
+              return ammoGraphs;
+            })()}
           </div>
         )}
 

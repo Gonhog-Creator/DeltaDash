@@ -167,12 +167,13 @@ class PredictionService:
         for level in levels_to_process:
             level_name = level.get('level_name', 'Unknown Level')
             ammunition_config = level.get('ammunition_config', [])
-            
+
             for ammo_config in ammunition_config:
                 ammo_id = ammo_config.get('ammunition_id')
                 reference_velocity = ammo_config.get('reference_velocity_m_s')
+                velocity_window = ammo_config.get('velocity_window_m_s', 0)  # Default 0 if not specified
                 shots_per_panel = ammo_config.get('shots_per_panel', 6)
-                
+
                 # Get ammunition
                 ammo = self.db.query(Ammunition).filter(Ammunition.id == ammo_id).first()
                 if not ammo:
@@ -185,109 +186,172 @@ class PredictionService:
                     {'side': 'back', 'conditioning': 'dry'},
                     {'side': 'back', 'conditioning': 'wet'},
                 ]
-                
+
+                # Generate velocity variants based on velocity window
+                velocity_variants = []
+                if velocity_window > 0:
+                    velocity_variants = [
+                        {'velocity': reference_velocity - velocity_window, 'label': 'min'},
+                        {'velocity': reference_velocity, 'label': 'target'},
+                        {'velocity': reference_velocity + velocity_window, 'label': 'max'},
+                    ]
+                else:
+                    velocity_variants = [
+                        {'velocity': reference_velocity, 'label': 'target'},
+                    ]
+
                 for condition in conditions:
-                    for shot_num in range(shots_per_panel):
-                        # Create a feature dictionary matching training format
-                        import pandas as pd
-                        
-                        # Get material properties for feature engineering
-                        material_properties = fetch_material_properties(self.db)
-                        
-                        # Build vest composition string from vest layers
-                        vest_layers = self.db.query(VestLayer).filter(VestLayer.vest_id == vest.id).all()
-                        composition_parts = []
-                        for layer in sorted(vest_layers, key=lambda x: x.layer_index or 0):
-                            material = self.db.query(Material).filter(Material.id == layer.material_id).first()
-                            if material:
-                                count = layer.layer_count or 1
-                                composition_parts.append(f"{count} {material.name}")
-                        
-                        vest_composition = " + ".join(composition_parts) if composition_parts else ""
-                        
-                        # Create feature row matching training format
-                        features = {
-                            'vest_composition': vest_composition,
-                            'material_thickness_mm': float(vest.total_thickness_mm) if vest.total_thickness_mm else 0,
-                            'material_weight_g_m2': 0,  # Will be calculated from composition
-                            'number_of_layers': vest.total_layers if vest.total_layers else 0,
-                            'ammunition_used': ammo.name if ammo else ammo.caliber,
-                            'threat_level': vest.threat_level if vest else None,
-                            'shot_number': shot_num + 1,
-                            'impact_velocity_mps': reference_velocity,
-                            'impact_angle_deg': 0.0,
+                    for velocity_variant in velocity_variants:
+                        velocity = velocity_variant['velocity']
+                        velocity_label = velocity_variant['label']
+                        for shot_num in range(shots_per_panel):
+                            # Create a feature dictionary matching training format
+                            import pandas as pd
+
+                            # Get material properties for feature engineering
+                            material_properties = fetch_material_properties(self.db)
+
+                            # Build vest composition string from vest layers
+                            vest_layers = self.db.query(VestLayer).filter(VestLayer.vest_id == vest.id).all()
+                            composition_parts = []
+                            for layer in sorted(vest_layers, key=lambda x: x.layer_index or 0):
+                                material = self.db.query(Material).filter(Material.id == layer.material_id).first()
+                                if material:
+                                    count = layer.layer_count or 1
+                                    composition_parts.append(f"{count} {material.name}")
+
+                            vest_composition = " + ".join(composition_parts) if composition_parts else ""
+
+                            # Calculate material_weight_g_m2 from vest layers
+                            material_weight_g_m2 = 0
+                            for layer in vest_layers:
+                                material = self.db.query(Material).filter(Material.id == layer.material_id).first()
+                                if material and material.areal_density_g_m2:
+                                    material_weight_g_m2 += material.areal_density_g_m2 * (layer.layer_count or 1)
+
+                            # Create feature row matching training format (same as health check)
+                            # Use same fallback hierarchy as health check for threat_level
+                            threat_level = (level.get('level_name') or vest.threat_level if vest else None)
+                            features = {
+                                'vest_composition': vest_composition,
+                                'number_of_layers': vest.total_layers if vest.total_layers else 0,
+                                'ammunition_used': ammo.name if ammo else ammo.caliber,
+                                'threat_level': threat_level,
+                                'shot_number': shot_num + 1,
+                                'impact_velocity_mps': velocity,
+                                'impact_angle_deg': 0.0,
                             'bullet_mass_g': float(ammo.projectile_mass_grams) if ammo and ammo.projectile_mass_grams else 0,
-                            'temperature_c': 20.0,
-                            'humidity_pct': 50.0,
-                            'condition': condition['conditioning'],
-                            'panel_side': condition['side'],
-                            'material_type': None,  # Will be extracted from composition
-                        }
+                                'temperature_c': 20.0,
+                                'humidity_pct': 50.0,
+                                'condition': condition['conditioning'],
+                                'panel_side': condition['side'],
+                                'caliber_diameter_mm': float(ammo.caliber_diameter_mm) if ammo and ammo.caliber_diameter_mm else None,
+                                'caliber_length_mm': float(ammo.caliber_length_mm) if ammo and ammo.caliber_length_mm else None,
+                                'vest_type': vest.vest_type if vest else None,
+                                'is_female': vest.is_female if vest and hasattr(vest, 'is_female') else False,
+                                'ply_orientations': None,
+                            }
                         
-                        # Convert to DataFrame and apply engineering features
-                        df = pd.DataFrame([features])
-                        df = add_engineered_features(df, material_properties, validate=False)
-                        
-                        # Encode categorical features (simple label encoding)
-                        categorical_cols = df.select_dtypes(include=['object']).columns
-                        for col in categorical_cols:
-                            df[col] = pd.factorize(df[col].astype(str))[0]
-                        
-                        # Ensure all required features are present
-                        for col in feature_columns:
-                            if col not in df.columns:
-                                df[col] = 0
-                        
-                        # Reorder columns to match training data
-                        df = df[feature_columns]
-                        
-                        # Scale features
-                        features_scaled = scaler.transform(df)
+                            # Convert to DataFrame and apply engineering features
+                            df = pd.DataFrame([features])
+                            df = add_engineered_features(df, material_properties, validate=False)
 
-                        # Make prediction
-                        prediction = model.predict(features_scaled)[0]
+                            # Encode categorical features (simple label encoding)
+                            categorical_cols = df.select_dtypes(include=['object']).columns
+                            for col in categorical_cols:
+                                df[col] = pd.factorize(df[col].astype(str))[0]
 
-                        # Apply inverse transform if log transform was used
-                        if use_log_transform:
-                            prediction = float(np.expm1(prediction))
+                            # Ensure all required features are present
+                            for col in feature_columns:
+                                if col not in df.columns:
+                                    df[col] = 0
 
-                        # Predict perforation if classifier is available
-                        perforation_probability = None
-                        if perforation_model:
-                            perforation_probability = float(perforation_model.predict_proba(features_scaled)[0, 1])
+                            # Reorder columns to match training data
+                            df = df[feature_columns]
 
-                        # Calculate confidence interval
-                        confidence_interval = 2.0  # ±2mm
+                            # Scale features
+                            features_scaled = scaler.transform(df)
 
-                        # Check domain of applicability
-                        comparable_shot_count = self._count_comparable_shots(features)
-                        extrapolation_warning = comparable_shot_count < 10
+                            # Make prediction
+                            prediction = model.predict(features_scaled)[0]
 
-                        prediction_result = {
-                            'shot_number': shot_num + 1,
-                            'level_name': level_name,
-                            'side': condition['side'],
-                            'conditioning': condition['conditioning'],
-                            'ammunition_id': ammo_id,
-                            'ammunition_name': ammo.name if ammo.name else ammo.caliber,
-                            'reference_velocity_m_s': reference_velocity,
-                            'predicted_bfd_mm': float(prediction),
-                            'perforation_probability': perforation_probability,
-                            'confidence_interval_low_mm': float(prediction - confidence_interval),
-                            'confidence_interval_high_mm': float(prediction + confidence_interval),
-                            'comparable_shot_count': comparable_shot_count,
-                            'extrapolation_warning': extrapolation_warning,
-                        }
-                        
-                        all_predictions.append(prediction_result)
+                            # Apply inverse transform if log transform was used
+                            if use_log_transform:
+                                prediction = float(np.expm1(prediction))
+
+                            # Predict perforation if classifier is available
+                            perforation_probability = None
+                            if perforation_model:
+                                perforation_probability = float(perforation_model.predict_proba(features_scaled)[0, 1])
+
+                            # Determine perforation status
+                            perforation_status = None
+                            if perforation_probability is not None and perforation_probability > 0.9:
+                                perforation_status = 'perforated'
+
+                            # Calculate confidence interval
+                            confidence_interval = 2.0  # ±2mm
+                            confidence_interval_low_mm = float(prediction - confidence_interval)
+                            confidence_interval_high_mm = float(prediction + confidence_interval)
+
+                            # Check domain of applicability
+                            comparable_shot_count = self._count_comparable_shots(features)
+                            extrapolation_warning = comparable_shot_count < 10
+
+                            prediction_result = {
+                                'shot_number': shot_num + 1,
+                                'level_name': level_name,
+                                'side': condition['side'],
+                                'conditioning': condition['conditioning'],
+                                'ammunition_id': ammo_id,
+                                'ammunition_name': ammo.name if ammo.name else ammo.caliber,
+                                'reference_velocity_m_s': reference_velocity,
+                                'velocity_m_s': velocity,
+                                'velocity_label': velocity_label,
+                                'predicted_bfd_mm': float(prediction),
+                                'perforation_probability': perforation_probability,
+                                'perforation_status': perforation_status,
+                                'confidence_interval_low_mm': confidence_interval_low_mm,
+                                'confidence_interval_high_mm': confidence_interval_high_mm,
+                                'comparable_shot_count': comparable_shot_count,
+                                'extrapolation_warning': extrapolation_warning,
+                            }
+
+                            all_predictions.append(prediction_result)
         
         # Calculate summary statistics
-        all_bfd_values = [p['predicted_bfd_mm'] for p in all_predictions]
-        first_3_bfd_values = all_bfd_values[:3] if len(all_bfd_values) >= 3 else all_bfd_values
+        all_bfd_values = [p['predicted_bfd_mm'] for p in all_predictions if p['predicted_bfd_mm'] is not None]
+        
+        # Handle case where all predictions are perforated (no BFD values)
+        if all_bfd_values:
+            first_3_bfd_values = all_bfd_values[:3] if len(all_bfd_values) >= 3 else all_bfd_values
+            summary_stats = {
+                'mean_bfd_mm': float(np.mean(first_3_bfd_values)),
+                'max_bfd_mm': float(np.max(all_bfd_values)),
+                'min_bfd_mm': float(np.min(all_bfd_values)),
+                'std_bfd_mm': float(np.std(all_bfd_values)),
+            }
+        else:
+            first_3_bfd_values = []
+            summary_stats = {
+                'mean_bfd_mm': None,
+                'max_bfd_mm': None,
+                'min_bfd_mm': None,
+                'std_bfd_mm': None,
+            }
 
         # Generate velocity curves for each shot number
         velocity_curves = {}
-        velocity_range = [200, 250, 300, 350, 400, 450, 500]  # m/s
+        # Use velocity window range with 1 m/s increments
+        if velocity_window > 0:
+            velocity_range = list(range(
+                int(reference_velocity - velocity_window),
+                int(reference_velocity + velocity_window) + 1,
+                1
+            ))
+        else:
+            # Fallback to default range if no velocity window specified
+            velocity_range = list(range(int(reference_velocity - 10), int(reference_velocity + 10) + 1, 1))
         
         # Use a representative bullet mass from ammunition (assumed constant for a given ammo type)
         bullet_mass = 0
@@ -315,14 +379,14 @@ class PredictionService:
             for velocity in velocity_range:
                 # Re-run prediction for this velocity
                 try:
-                    # Re-extract features with new velocity
+                    # Re-extract features with new velocity (same as health check)
+                    # Use same fallback hierarchy as health check for threat_level
+                    threat_level = (level.get('level_name') or vest.threat_level if vest else None)
                     features = {
                         'vest_composition': vest_composition,
-                        'material_thickness_mm': float(vest.total_thickness_mm) if vest.total_thickness_mm else 0,
-                        'material_weight_g_m2': 0,
                         'number_of_layers': vest.total_layers if vest.total_layers else 0,
                         'ammunition_used': ammo.name if ammo else ammo.caliber,
-                        'threat_level': vest.threat_level if vest else None,
+                        'threat_level': threat_level,
                         'shot_number': base_pred['shot_number'],
                         'impact_velocity_mps': velocity,
                         'impact_angle_deg': 0.0,
@@ -331,7 +395,11 @@ class PredictionService:
                         'humidity_pct': 50.0,
                         'condition': base_pred['conditioning'],
                         'panel_side': base_pred['side'],
-                        'material_type': None,
+                        'caliber_diameter_mm': float(ammo.caliber_diameter_mm) if ammo and ammo.caliber_diameter_mm else None,
+                        'caliber_length_mm': float(ammo.caliber_length_mm) if ammo and ammo.caliber_length_mm else None,
+                        'vest_type': vest.vest_type if vest else None,
+                        'is_female': vest.is_female if vest and hasattr(vest, 'is_female') else False,
+                        'ply_orientations': None,
                     }
                     
                     df = pd.DataFrame([features])
@@ -355,7 +423,9 @@ class PredictionService:
 
                     curve_data.append({
                         'velocity_mps': velocity,
-                        'predicted_bfd_mm': float(prediction)
+                        'predicted_bfd_mm': float(prediction),
+                        'ammunition_name': ammo.name if ammo.name else ammo.caliber,
+                        'ammunition_id': ammo_id,
                     })
                 except Exception as e:
                     print(f"Error generating velocity curve point: {e}")
@@ -374,12 +444,7 @@ class PredictionService:
             'level_name': level_name,
             'total_shots': len(all_predictions),
             'predictions': all_predictions,
-            'summary': {
-                'mean_bfd_mm': float(np.mean(first_3_bfd_values)),
-                'max_bfd_mm': float(np.max(all_bfd_values)),
-                'min_bfd_mm': float(np.min(all_bfd_values)),
-                'std_bfd_mm': float(np.std(all_bfd_values)),
-            },
+            'summary': summary_stats,
             'model_version': model_data.get('version', 'unknown'),
             'velocity_curves': velocity_curves,
         }
@@ -477,14 +542,14 @@ class PredictionService:
                         # Get material properties for feature engineering
                         material_properties = fetch_material_properties(self.db)
 
-                        # Create feature row matching training format
+                        # Create feature row matching training format (same as health check)
+                        # Use same fallback hierarchy as health check for threat_level
+                        threat_level = (level.get('level_name') or custom_vest.get('threat_level'))
                         features = {
                             'vest_composition': vest_composition,
-                            'material_thickness_mm': float(custom_vest.get('total_thickness_mm', 0)),
-                            'material_weight_g_m2': float(custom_vest.get('material_areal_density_g_m2', 0)),
                             'number_of_layers': int(custom_vest.get('total_layers', 0)),
                             'ammunition_used': ammo.name if ammo else ammo.caliber,
-                            'threat_level': None,  # Custom vest doesn't have threat level
+                            'threat_level': threat_level,
                             'shot_number': shot_num + 1,
                             'impact_velocity_mps': reference_velocity,
                             'impact_angle_deg': 0.0,
@@ -493,7 +558,11 @@ class PredictionService:
                             'humidity_pct': 50.0,
                             'condition': condition['conditioning'],
                             'panel_side': condition['side'],
-                            'material_type': None,  # Will be extracted from composition
+                            'caliber_diameter_mm': float(ammo.caliber_diameter_mm) if ammo and ammo.caliber_diameter_mm else None,
+                            'caliber_length_mm': float(ammo.caliber_length_mm) if ammo and ammo.caliber_length_mm else None,
+                            'vest_type': custom_vest.get('vest_type'),
+                            'is_female': custom_vest.get('is_female', False),
+                            'ply_orientations': None,
                         }
 
                         # Convert to DataFrame and apply engineering features
@@ -528,8 +597,15 @@ class PredictionService:
                         if perforation_model:
                             perforation_probability = float(perforation_model.predict_proba(features_scaled)[0, 1])
 
+                        # Determine perforation status
+                        perforation_status = None
+                        if perforation_probability is not None and perforation_probability > 0.9:
+                            perforation_status = 'perforated'
+
                         # Calculate confidence interval
                         confidence_interval = 2.0  # ±2mm
+                        confidence_interval_low_mm = float(prediction - confidence_interval)
+                        confidence_interval_high_mm = float(prediction + confidence_interval)
 
                         # Check domain of applicability
                         comparable_shot_count = self._count_comparable_shots(features)
@@ -543,10 +619,13 @@ class PredictionService:
                             'ammunition_id': ammo_id,
                             'ammunition_name': ammo.name if ammo.name else ammo.caliber,
                             'reference_velocity_m_s': reference_velocity,
+                            'velocity_m_s': velocity,
+                            'velocity_label': velocity_label,
                             'predicted_bfd_mm': float(prediction),
                             'perforation_probability': perforation_probability,
-                            'confidence_interval_low_mm': float(prediction - confidence_interval),
-                            'confidence_interval_high_mm': float(prediction + confidence_interval),
+                            'perforation_status': perforation_status,
+                            'confidence_interval_low_mm': confidence_interval_low_mm,
+                            'confidence_interval_high_mm': confidence_interval_high_mm,
                             'comparable_shot_count': comparable_shot_count,
                             'extrapolation_warning': extrapolation_warning,
                         }
@@ -554,12 +633,38 @@ class PredictionService:
                         all_predictions.append(prediction_result)
 
         # Calculate summary statistics
-        all_bfd_values = [p['predicted_bfd_mm'] for p in all_predictions]
-        first_3_bfd_values = all_bfd_values[:3] if len(all_bfd_values) >= 3 else all_bfd_values
+        all_bfd_values = [p['predicted_bfd_mm'] for p in all_predictions if p['predicted_bfd_mm'] is not None]
+        
+        # Handle case where all predictions are perforated (no BFD values)
+        if all_bfd_values:
+            first_3_bfd_values = all_bfd_values[:3] if len(all_bfd_values) >= 3 else all_bfd_values
+            summary_stats = {
+                'mean_bfd_mm': float(np.mean(first_3_bfd_values)),
+                'max_bfd_mm': float(np.max(all_bfd_values)),
+                'min_bfd_mm': float(np.min(all_bfd_values)),
+                'std_bfd_mm': float(np.std(all_bfd_values)),
+            }
+        else:
+            first_3_bfd_values = []
+            summary_stats = {
+                'mean_bfd_mm': None,
+                'max_bfd_mm': None,
+                'min_bfd_mm': None,
+                'std_bfd_mm': None,
+            }
 
         # Generate velocity curves for each shot number
         velocity_curves = {}
-        velocity_range = [200, 250, 300, 350, 400, 450, 500]  # m/s
+        # Use velocity window range with 1 m/s increments
+        if velocity_window > 0:
+            velocity_range = list(range(
+                int(reference_velocity - velocity_window),
+                int(reference_velocity + velocity_window) + 1,
+                1
+            ))
+        else:
+            # Fallback to default range if no velocity window specified
+            velocity_range = list(range(int(reference_velocity - 10), int(reference_velocity + 10) + 1, 1))
 
         # Use a representative bullet mass from ammunition (assumed constant for a given ammo type)
         bullet_mass = 0
@@ -587,14 +692,14 @@ class PredictionService:
             for velocity in velocity_range:
                 # Re-run prediction for this velocity
                 try:
-                    # Re-extract features with new velocity
+                    # Re-extract features with new velocity (same as health check)
+                    # Use same fallback hierarchy as health check for threat_level
+                    threat_level = (level.get('level_name') or custom_vest.get('threat_level'))
                     features = {
                         'vest_composition': vest_composition,
-                        'material_thickness_mm': float(custom_vest.get('total_thickness_mm', 0)),
-                        'material_weight_g_m2': float(custom_vest.get('material_areal_density_g_m2', 0)),
                         'number_of_layers': int(custom_vest.get('total_layers', 0)),
                         'ammunition_used': ammo.name if ammo else ammo.caliber,
-                        'threat_level': None,
+                        'threat_level': threat_level,
                         'shot_number': base_pred['shot_number'],
                         'impact_velocity_mps': velocity,
                         'impact_angle_deg': 0.0,
@@ -603,7 +708,11 @@ class PredictionService:
                         'humidity_pct': 50.0,
                         'condition': base_pred['conditioning'],
                         'panel_side': base_pred['side'],
-                        'material_type': None,
+                        'caliber_diameter_mm': float(ammo.caliber_diameter_mm) if ammo and ammo.caliber_diameter_mm else None,
+                        'caliber_length_mm': float(ammo.caliber_length_mm) if ammo and ammo.caliber_length_mm else None,
+                        'vest_type': custom_vest.get('vest_type'),
+                        'is_female': custom_vest.get('is_female', False),
+                        'ply_orientations': None,
                     }
 
                     df = pd.DataFrame([features])
@@ -627,7 +736,9 @@ class PredictionService:
 
                     curve_data.append({
                         'velocity_mps': velocity,
-                        'predicted_bfd_mm': float(prediction)
+                        'predicted_bfd_mm': float(prediction),
+                        'ammunition_name': ammo.name if ammo.name else ammo.caliber,
+                        'ammunition_id': ammo_id,
                     })
                 except Exception as e:
                     print(f"Error generating velocity curve point: {e}")
@@ -646,12 +757,7 @@ class PredictionService:
             'level_name': level_name,
             'total_shots': len(all_predictions),
             'predictions': all_predictions,
-            'summary': {
-                'mean_bfd_mm': float(np.mean(first_3_bfd_values)),
-                'max_bfd_mm': float(np.max(all_bfd_values)),
-                'min_bfd_mm': float(np.min(all_bfd_values)),
-                'std_bfd_mm': float(np.std(all_bfd_values)),
-            },
+            'summary': summary_stats,
             'model_version': model_data.get('version', 'unknown'),
             'velocity_curves': velocity_curves,
         }
