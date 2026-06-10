@@ -102,20 +102,7 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
     )
 
     if not query:
-        print(f"DEBUG: Query returned no results")
         return pd.DataFrame(), warnings_list
-
-    print(f"DEBUG: Query returned {len(query)} shot data records")
-
-    # Count records per vest
-    vest_counts = {}
-    for shot_data_record, test_session, vest in query:
-        vest_code = vest.vest_code if vest else "No Vest"
-        vest_counts[vest_code] = vest_counts.get(vest_code, 0) + 1
-
-    print(f"DEBUG: Records per vest:")
-    for vest_code, count in sorted(vest_counts.items(), key=lambda x: x[1], reverse=True)[:10]:
-        print(f"  {vest_code}: {count}")
     
     # Build DataFrame
     rows = []
@@ -207,40 +194,19 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
         aramid_counts.append(aramid_layers)
 
     df = pd.DataFrame(rows)
-    
-    # Print layer count statistics
-    print(f"DEBUG: Layer count statistics:")
-    print(f"  Min: {min(layer_counts) if layer_counts else 0}")
-    print(f"  Max: {max(layer_counts) if layer_counts else 0}")
-    print(f"  Mean: {sum(layer_counts) / len(layer_counts) if layer_counts else 0:.1f}")
-    print(f"  Median: {sorted(layer_counts)[len(layer_counts) // 2] if layer_counts else 0}")
-    
-    # Print aramid layer statistics
-    print(f"DEBUG: Aramid layer statistics:")
-    print(f"  Min: {min(aramid_counts) if aramid_counts else 0}")
-    print(f"  Max: {max(aramid_counts) if aramid_counts else 0}")
-    print(f"  Mean: {sum(aramid_counts) / len(aramid_counts) if aramid_counts else 0:.1f}")
-    print(f"  Records with >20 aramid layers: {sum(1 for c in aramid_counts if c > 20)}")
-    print(f"  Records with >30 aramid layers: {sum(1 for c in aramid_counts if c > 30)}")
-    print(f"  Records with >40 aramid layers: {sum(1 for c in aramid_counts if c > 40)}")
-    
-    # Add statistics to warnings
-    warnings_list.append(f"Layer count range: {min(layer_counts) if layer_counts else 0} - {max(layer_counts) if layer_counts else 0} (mean: {sum(layer_counts) / len(layer_counts) if layer_counts else 0:.1f})")
 
     # Fetch and merge anchor points (unless explicitly disabled)
     anchor_df = pd.DataFrame()
     anchor_metadata = {"anchor_point_count": 0, "anchor_point_training_rows": 0}
-    
+
     if not ignore_anchor_points:
         anchor_df, anchor_metadata = fetch_anchor_points_as_training_data(db)
         if not anchor_df.empty:
             if verbose:
-                print(f"DEBUG: Adding {len(anchor_df)} anchor points to training data")
                 warnings_list.append(f"Added {len(anchor_df)} anchor points to training data")
             df = pd.concat([df, anchor_df], ignore_index=True)
     else:
         if verbose:
-            print("DEBUG: Anchor points are being ignored (ignore_anchor_points=True)")
             warnings_list.append("Anchor points were excluded from training data")
 
     # Build metadata

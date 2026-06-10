@@ -18,6 +18,7 @@ class ModelRun(Base):
     training_avg_error = Column(Float, nullable=True)
     formula = Column(String)
     metrics_json = Column(JSONB)
+    hyperparameters_json = Column(JSONB, nullable=True)
     artifact_path = Column(String)
     model_file = Column(LargeBinary, nullable=True)
     preprocessor_file = Column(LargeBinary, nullable=True)

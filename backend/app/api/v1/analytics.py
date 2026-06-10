@@ -10,10 +10,16 @@ from app.schemas.analytics import AnalyticsData, AnalyticsPoint
 from app.db.models.user import User as UserModel
 from app.utils.equations import grams_to_kg, grains_to_kg, calculate_kinetic_energy
 from app.services.test_session_service import normalize_caliber
+from pydantic import BaseModel
 
 # Create a self-referential alias for parent test session
 from sqlalchemy.orm import aliased
 ParentTestSession = aliased(TestSessionModel)
+
+
+class MaterialAnalyticsData(BaseModel):
+    material_classes: List[dict]
+    materials: List[dict]
 
 
 router = APIRouter(redirect_slashes=False)
@@ -28,6 +34,7 @@ def get_velocity_vs_bfd(
     Get analytics data for Velocity vs Trauma (Back Face Deformation).
     
     Queries ShotData table where test session library data is stored.
+    Returns one data point per shot (not per material) for efficiency.
     """
     # Query shot data with test session names and vest information
     shot_data = db.query(ShotDataModel, TestSessionModel, ParentTestSession, VestModel).outerjoin(
@@ -128,80 +135,102 @@ def get_velocity_vs_bfd(
         
         angle_degrees_value = float(shot.angle_degrees) if shot.angle_degrees is not None else None
         
-        # Get all materials from vest layers - create one data point per material
-        materials_found = []
-        if vest:
-            vest_layers = db.query(VestLayerModel, MaterialModel).outerjoin(
-                MaterialModel, VestLayerModel.material_id == MaterialModel.id
-            ).filter(VestLayerModel.vest_id == vest.id).all()
-            
-            if vest_layers:
-                for layer, material in vest_layers:
-                    if material and material.name:
-                        materials_found.append({
-                            'name': material.name,
-                            'class': material.material_class
-                        })
-        else:
-            # Fallback: try to find vest by vest_number if vest not linked via vest_id
-            if shot.vest_number:
-                matching_vest = db.query(VestModel).filter(VestModel.vest_code == shot.vest_number).first()
-                if matching_vest:
-                    vest_layers = db.query(VestLayerModel, MaterialModel).outerjoin(
-                        MaterialModel, VestLayerModel.material_id == MaterialModel.id
-                    ).filter(VestLayerModel.vest_id == matching_vest.id).all()
-                    
-                    if vest_layers:
-                        for layer, material in vest_layers:
-                            if material and material.name:
-                                materials_found.append({
-                                    'name': material.name,
-                                    'class': material.material_class
-                                })
-        
-        # Create a data point for each material found in the vest layers
-        if materials_found:
-            for mat in materials_found:
-                point = AnalyticsPoint(
-                    velocity=float(shot.velocity_m_s) if shot.velocity_m_s else None,
-                    bullet_energy=bullet_energy,
-                    bfd_mm=float(shot.trauma_mm) if shot.trauma_mm else None,
-                    caliber=ammunition.name if ammunition and ammunition.name else standardized_caliber,
-                    protection_level=normalize_protection_level(shot.protection_level),
-                    test_session_id=str(shot.test_session_id) if shot.test_session_id else None,
-                    test_session_name=test_session.name if test_session else None,
-                    parent_test_session_name=parent_session.name if parent_session else None,
-                    vest_number=shot.vest_number,
-                    side=shot.side,
-                    shot_number=shot.shot_number,
-                    angle_degrees=angle_degrees_value,
-                    trauma_qualitative=shot.trauma_qualitative,
-                    is_official=test_session.is_official if test_session else None,
-                    material_name=mat['name'],
-                    material_class=mat['class'],
-                )
-                points.append(point)
-        else:
-            # If no materials found, still add the point with null material info
-            point = AnalyticsPoint(
-                velocity=float(shot.velocity_m_s) if shot.velocity_m_s else None,
-                bullet_energy=bullet_energy,
-                bfd_mm=float(shot.trauma_mm) if shot.trauma_mm else None,
-                caliber=ammunition.name if ammunition and ammunition.name else standardized_caliber,
-                protection_level=normalize_protection_level(shot.protection_level),
-                test_session_id=str(shot.test_session_id) if shot.test_session_id else None,
-                test_session_name=test_session.name if test_session else None,
-                parent_test_session_name=parent_session.name if parent_session else None,
-                vest_number=shot.vest_number,
-                side=shot.side,
-                shot_number=shot.shot_number,
-                angle_degrees=angle_degrees_value,
-                trauma_qualitative=shot.trauma_qualitative,
-                is_official=test_session.is_official if test_session else None,
-                material_name=None,
-                material_class=None,
-            )
-            points.append(point)
+        # Create one data point per shot (not per material) for efficiency
+        point = AnalyticsPoint(
+            velocity=float(shot.velocity_m_s) if shot.velocity_m_s else None,
+            bullet_energy=bullet_energy,
+            bfd_mm=float(shot.trauma_mm) if shot.trauma_mm else None,
+            caliber=ammunition.name if ammunition and ammunition.name else standardized_caliber,
+            protection_level=normalize_protection_level(shot.protection_level),
+            test_session_id=str(shot.test_session_id) if shot.test_session_id else None,
+            test_session_name=test_session.name if test_session else None,
+            parent_test_session_name=parent_session.name if parent_session else None,
+            vest_number=shot.vest_number,
+            side=shot.side,
+            shot_number=shot.shot_number,
+            angle_degrees=angle_degrees_value,
+            trauma_qualitative=shot.trauma_qualitative,
+            is_official=test_session.is_official if test_session else None,
+            material_name=None,
+            material_class=None,
+        )
+        points.append(point)
     
     analytics_data = AnalyticsData(points=points)
     return analytics_data
+
+
+@router.get("/material-analytics", response_model=MaterialAnalyticsData)
+def get_material_analytics(
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user)
+):
+    """
+    Get aggregated material analytics data.
+    Returns counts and average BFD by material class and material name.
+    """
+    # Query shot data with vest information
+    shot_data = db.query(ShotDataModel, TestSessionModel, VestModel).outerjoin(
+        TestSessionModel, ShotDataModel.test_session_id == TestSessionModel.id
+    ).outerjoin(
+        VestModel, TestSessionModel.vest_id == VestModel.id
+    ).all()
+    
+    # Aggregate material data
+    material_class_data = {}
+    material_data = {}
+    
+    for shot, test_session, vest in shot_data:
+        if not vest or not shot.trauma_mm:
+            continue
+            
+        # Get vest layers with materials
+        vest_layers = db.query(VestLayerModel, MaterialModel).outerjoin(
+            MaterialModel, VestLayerModel.material_id == MaterialModel.id
+        ).filter(VestLayerModel.vest_id == vest.id).all()
+        
+        for layer, material in vest_layers:
+            if not material:
+                continue
+                
+            # Aggregate by material class
+            material_class = material.material_class or 'Unknown'
+            if material_class not in material_class_data:
+                material_class_data[material_class] = {'sum': 0, 'count': 0}
+            material_class_data[material_class]['sum'] += float(shot.trauma_mm)
+            material_class_data[material_class]['count'] += 1
+            
+            # Aggregate by material name
+            material_name = material.name or 'Unknown'
+            material_key = f"{material_class}::{material_name}"
+            if material_key not in material_data:
+                material_data[material_key] = {
+                    'material_class': material_class,
+                    'material_name': material_name,
+                    'sum': 0,
+                    'count': 0
+                }
+            material_data[material_key]['sum'] += float(shot.trauma_mm)
+            material_data[material_key]['count'] += 1
+    
+    # Calculate averages
+    material_classes = [
+        {
+            'material_class': mc,
+            'avg_bfd': data['sum'] / data['count'],
+            'count': data['count']
+        }
+        for mc, data in material_class_data.items()
+    ]
+    
+    materials = [
+        {
+            'material_class': data['material_class'],
+            'material_name': data['material_name'],
+            'avg_bfd': data['sum'] / data['count'],
+            'count': data['count']
+        }
+        for data in material_data.values()
+    ]
+    
+    return MaterialAnalyticsData(material_classes=material_classes, materials=materials)

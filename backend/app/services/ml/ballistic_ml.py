@@ -679,12 +679,21 @@ def train_from_dataframe(
     hyperparameters: Optional[Dict[str, Any]] = None,
     feature_toggles: Optional[Dict[str, bool]] = None,
 ) -> Dict[str, Any]:
-    print(f"DEBUG: Initial training data shape: {df.shape}")
-    print(f"DEBUG: Columns in initial data: {df.columns.tolist()}")
+    # Capture default hyperparameters if none provided
+    if hyperparameters is None:
+        hyperparameters = {
+            'n_estimators': 800,
+            'max_depth': 6,
+            'learning_rate': 0.05,
+            'subsample': 0.9,
+            'colsample_bytree': 0.9,
+            'min_child_weight': 2,
+            'reg_lambda': 1.0,
+            'reg_alpha': 0.1,
+            'gamma': 0,
+        }
 
     df = add_engineered_features(df, material_properties, feature_toggles=feature_toggles)
-
-    print(f"DEBUG: After feature engineering shape: {df.shape}")
 
     # Clean classification target labels if needed.
     for target in CLASSIFICATION_TARGETS:
@@ -693,9 +702,6 @@ def train_from_dataframe(
 
     available_regression_targets = [t for t in REGRESSION_TARGETS if t in df.columns]
     available_classification_targets = [t for t in CLASSIFICATION_TARGETS if t in df.columns]
-
-    print(f"DEBUG: Available regression targets: {available_regression_targets}")
-    print(f"DEBUG: Available classification targets: {available_classification_targets}")
 
     all_targets = available_regression_targets + available_classification_targets
 
@@ -706,12 +712,7 @@ def train_from_dataframe(
         )
 
     # Drop rows that do not have any target value at all.
-    print(f"DEBUG: Before dropping NaN targets, shape: {df.shape}")
-    for target in all_targets:
-        non_null_count = df[target].notna().sum()
-        print(f"DEBUG: {target}: {non_null_count} non-null values")
     df = df.dropna(subset=all_targets, how="all").copy()
-    print(f"DEBUG: After dropping NaN targets, shape: {df.shape}")
 
     # Do not train on ID/source columns. They can accidentally cause memorization.
     columns_to_exclude_from_features = set(all_targets + [
@@ -776,9 +777,6 @@ def train_from_dataframe(
             X_valid = X[valid_idx]
             y_valid = y[valid_idx]
 
-            print(f"DEBUG: Training regression model for {target}")
-            print(f"DEBUG: Valid records for {target}: {len(X_valid)}")
-            print(f"DEBUG: X shape: {X_valid.shape}, y shape: {y_valid.shape}")
 
             if len(X_valid) == 0:
                 continue
@@ -843,7 +841,6 @@ def train_from_dataframe(
             # Check if there are at least 2 classes for classification
             unique_classes = y_valid.unique()
             if len(unique_classes) < 2:
-                print(f"DEBUG: Skipping classification target {target} - only {len(unique_classes)} unique class(es)")
                 continue
 
             X_processed = preprocessor.transform(X_valid)
@@ -975,6 +972,7 @@ def train_from_dataframe(
             **{f"{k}_regression": v for k, v in regression_metrics.items()},
             **{f"{k}_classification": v for k, v in classification_metrics.items()},
         },
+        "hyperparameters": hyperparameters,
         "material_properties": material_properties,
         "warnings": warnings or [],
         "training_data_count": len(df),
@@ -1078,6 +1076,7 @@ def train_from_database(
             model_run.training_completed_at = training_started_at
             model_run.training_row_count = training_row_count
             model_run.metrics_json = metadata["metrics"]
+            model_run.hyperparameters_json = hyperparameters if hyperparameters else None
             model_run.preprocessor_file = preprocessor_bytes
             model_run.model_file = model_files.get("backface_deformation_mm.pkl") if model_files else None
         else:
@@ -1090,6 +1089,7 @@ def train_from_database(
                 training_completed_at=training_started_at,
                 training_row_count=training_row_count,
                 metrics_json=metadata["metrics"],
+                hyperparameters_json=hyperparameters if hyperparameters else None,
                 artifact_path=f"ballistic/versions/{metadata['version']}",
                 created_at=datetime.now(),
                 preprocessor_file=preprocessor_bytes,
@@ -1189,6 +1189,7 @@ def load_model_version(version: str, db_session=None) -> Dict[str, Any]:
             "model_name": model_run.model_name,
             "trained_at": model_run.training_completed_at.isoformat() if model_run.training_completed_at else model_run.created_at.isoformat(),
             "metrics": model_run.metrics_json,
+            "hyperparameters": model_run.hyperparameters_json,
             "regression_targets": ["backface_deformation_mm"],
             "classification_targets": [],
             "training_data_count": model_run.training_row_count,
@@ -1314,6 +1315,18 @@ def delete_model_version(version: str, db_session=None) -> Dict[str, Any]:
         if os.path.exists(version_dir):
             import shutil
             shutil.rmtree(version_dir)
+        
+        # Remove from file registry
+        registry = []
+        if os.path.exists(REGISTRY_PATH):
+            with open(REGISTRY_PATH, "r") as f:
+                registry = json.load(f)
+        
+        # Remove the version from registry
+        registry = [v for v in registry if v["version"] != version]
+        
+        with open(REGISTRY_PATH, "w") as f:
+            json.dump(registry, f, indent=2)
         
         return {
             "version": version,

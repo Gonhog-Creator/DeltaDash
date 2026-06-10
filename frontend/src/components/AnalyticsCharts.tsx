@@ -538,27 +538,27 @@ export function EnergyVsBfdChart({
 }
 
 interface MaterialVsBfdChartProps {
-  filteredPoints: AnalyticsPoint[];
+  materialAnalyticsData: {
+    material_classes: Array<{
+      material_class: string;
+      avg_bfd: number;
+      count: number;
+    }>;
+    materials: Array<{
+      material_class: string;
+      material_name: string;
+      avg_bfd: number;
+      count: number;
+    }>;
+  } | undefined;
+  isLoading: boolean;
   isAdmin: boolean;
-  analyticsData: AnalyticsData | undefined;
-  uniqueCalibers: string[];
-  uniqueProtectionLevels: string[];
-  selectedCalibers: string[];
-  selectedProtectionLevels: string[];
-  setSelectedCalibers: (calibers: string[]) => void;
-  setSelectedProtectionLevels: (levels: string[]) => void;
 }
 
 export function MaterialVsBfdChart({
-  filteredPoints,
+  materialAnalyticsData,
+  isLoading,
   isAdmin,
-  analyticsData,
-  uniqueCalibers,
-  uniqueProtectionLevels,
-  selectedCalibers,
-  selectedProtectionLevels,
-  setSelectedCalibers,
-  setSelectedProtectionLevels,
 }: MaterialVsBfdChartProps) {
   const navigate = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -573,49 +573,45 @@ export function MaterialVsBfdChart({
       .join(' ');
   };
 
-  const categoryBfdData = filteredPoints
-    .filter(p => p.material_class && p.bfd_mm !== null)
-    .reduce((acc, point) => {
-      const category = point.material_class!;
-      if (!acc[category]) {
-        acc[category] = { sum: 0, count: 0, materials: new Map<string, { sum: number; count: number }>() };
-      }
-      acc[category].sum += point.bfd_mm!;
-      acc[category].count += 1;
-      
-      const materialName = point.material_name || 'Unknown';
-      if (!acc[category].materials.has(materialName)) {
-        acc[category].materials.set(materialName, { sum: 0, count: 0 });
-      }
-      acc[category].materials.get(materialName)!.sum += point.bfd_mm!;
-      acc[category].materials.get(materialName)!.count += 1;
-      
-      return acc;
-    }, {} as Record<string, { sum: number; count: number; materials: Map<string, { sum: number; count: number }> }>);
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-gray-500">Loading material analytics...</div>
+      </div>
+    );
+  }
 
-  const categories = Object.keys(categoryBfdData).sort();
-  const normalizedCategories = categories.map(normalizeCategoryName);
+  if (!materialAnalyticsData || materialAnalyticsData.material_classes.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-gray-500">No material data available</div>
+      </div>
+    );
+  }
+
   let chartData: { x: string[]; y: number[]; counts: number[]; names: string[] };
-  let noDataMessage = '';
 
   if (selectedCategory) {
-    const categoryData = categoryBfdData[selectedCategory];
-    if (categoryData && categoryData.materials.size > 0) {
-      const materials = Array.from(categoryData.materials.keys()).sort();
-      const avgBfds = materials.map(m => categoryData.materials.get(m)!.sum / categoryData.materials.get(m)!.count);
-      const counts = materials.map(m => categoryData.materials.get(m)!.count);
-      chartData = { x: materials, y: avgBfds, counts, names: materials };
+    const categoryMaterials = materialAnalyticsData.materials.filter(
+      m => m.material_class === selectedCategory
+    );
+    if (categoryMaterials.length > 0) {
+      chartData = {
+        x: categoryMaterials.map(m => m.material_name),
+        y: categoryMaterials.map(m => m.avg_bfd),
+        counts: categoryMaterials.map(m => m.count),
+        names: categoryMaterials.map(m => m.material_name)
+      };
     } else {
       chartData = { x: [], y: [], counts: [], names: [] };
-      const allMaterials = Array.from(
-        new Set(filteredPoints.filter(p => p.material_name).map(p => p.material_name))
-      ).sort();
-      noDataMessage = `No materials found in "${selectedCategory}" category. Available categories: ${categories.join(', ')}`;
     }
   } else {
-    const avgBfds = categories.map(c => categoryBfdData[c].sum / categoryBfdData[c].count);
-    const counts = categories.map(c => categoryBfdData[c].count);
-    chartData = { x: normalizedCategories, y: avgBfds, counts, names: normalizedCategories };
+    chartData = {
+      x: materialAnalyticsData.material_classes.map(m => normalizeCategoryName(m.material_class)),
+      y: materialAnalyticsData.material_classes.map(m => m.avg_bfd),
+      counts: materialAnalyticsData.material_classes.map(m => m.count),
+      names: materialAnalyticsData.material_classes.map(m => normalizeCategoryName(m.material_class))
+    };
   }
 
   return (
@@ -635,16 +631,16 @@ export function MaterialVsBfdChart({
               />
               <span className="text-sm text-gray-700">All Categories</span>
             </label>
-            {categories.map(category => (
-              <label key={category} className="flex items-center space-x-2">
+            {materialAnalyticsData.material_classes.map(mc => (
+              <label key={mc.material_class} className="flex items-center space-x-2">
                 <input
                   type="radio"
                   name="category"
-                  checked={selectedCategory === category}
-                  onChange={() => setSelectedCategory(category)}
+                  checked={selectedCategory === mc.material_class}
+                  onChange={() => setSelectedCategory(mc.material_class)}
                   className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                 />
-                <span className="text-sm text-gray-700">{normalizeCategoryName(category)}</span>
+                <span className="text-sm text-gray-700">{normalizeCategoryName(mc.material_class)}</span>
               </label>
             ))}
           </div>

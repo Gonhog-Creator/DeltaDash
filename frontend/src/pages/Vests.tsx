@@ -15,7 +15,7 @@ interface ProtocolThreatLevel {
 }
 
 export function Vests() {
-  const { data: vests, isLoading, error } = useVests();
+  const { data: vests, isLoading, error, refetch } = useVests();
   const { data: materials, refetch: refetchMaterials } = useMaterials();
   const createMutation = useCreateVest();
   const updateMutation = useUpdateVest();
@@ -217,6 +217,7 @@ export function Vests() {
     try {
       const result = await vestsApi.recalculateThickness(true);
       alert(result.message);
+      refetch();
     } catch (err) {
       console.error('Failed to recalculate thickness:', err);
       alert('Failed to recalculate thickness. See console for details.');

@@ -181,6 +181,16 @@ def delete_material(
             layer.material_id = None
         db.commit()
     
+    # Check if material is referenced by any anchor point layers
+    from app.db.models.anchor_point import AnchorPointLayer as AnchorPointLayerModel
+    anchor_point_layers = db.query(AnchorPointLayerModel).filter(AnchorPointLayerModel.material_id == material_id).all()
+    
+    if anchor_point_layers:
+        # Delete all anchor point layers that reference this material (material_id is NOT NULL)
+        for layer in anchor_point_layers:
+            db.delete(layer)
+        db.commit()
+    
     db.delete(material)
     db.commit()
 

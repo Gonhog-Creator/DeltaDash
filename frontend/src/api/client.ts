@@ -123,9 +123,24 @@ class ApiClient {
         throw new Error('Unauthorized');
       }
       const error = await response.json().catch(() => ({ detail: 'An error occurred' }));
+      
+      // Extract error message from validation errors (422) or other error formats
+      let errorMessage = 'An error occurred';
+      if (typeof error.detail === 'string') {
+        errorMessage = error.detail;
+      } else if (Array.isArray(error.detail)) {
+        // FastAPI validation errors return an array of error objects
+        errorMessage = error.detail
+          .map((e: any) => e.msg || JSON.stringify(e))
+          .join('; ');
+      } else if (typeof error.detail === 'object' && error.detail !== null) {
+        // Handle single validation error object
+        errorMessage = error.detail.msg || JSON.stringify(error.detail);
+      }
+      
       // Create an error object that preserves the detail
-      const errorObj = new Error(typeof error.detail === 'string' ? error.detail : 'An error occurred') as any;
-      errorObj.detail = error.detail;
+      const errorObj = new Error(errorMessage) as any;
+      errorObj.detail = errorMessage;
       throw errorObj;
     }
 

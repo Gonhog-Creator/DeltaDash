@@ -59,6 +59,11 @@ export function ModelTraining() {
   const [protocolThreatLevels, setProtocolThreatLevels] = useState<ProtocolThreatLevel[]>([]);
   const [healthCheckStatus, setHealthCheckStatus] = useState<any>(null);
   const [useLogTransform, setUseLogTransform] = useState(true);
+  
+  // Mass delete state
+  const [selectedVersions, setSelectedVersions] = useState<Set<string>>(new Set());
+  const [showMassDeleteModal, setShowMassDeleteModal] = useState(false);
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false);
 
   // Advanced Training Controls
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -106,6 +111,14 @@ export function ModelTraining() {
   // Feature Analysis state
   const [featureAnalysisLoading, setFeatureAnalysisLoading] = useState(false);
   const [featureAnalysisResults, setFeatureAnalysisResults] = useState<any>(null);
+  const [showFeatureAnalysisResults, setShowFeatureAnalysisResults] = useState(false);
+
+  // Hyperparameter Optimization state
+  const [optimizationLoading, setOptimizationLoading] = useState(false);
+  const [optimizationResults, setOptimizationResults] = useState<any>(null);
+  const [showOptimizationResults, setShowOptimizationResults] = useState(false);
+  const [showOptimizationModal, setShowOptimizationModal] = useState(false);
+  const [trialResults, setTrialResults] = useState<Array<{trial: number, error: number}>>([]);
 
   // Fetch protocol threat levels on mount
   useEffect(() => {
@@ -180,10 +193,66 @@ export function ModelTraining() {
       };
       const result = await apiClient.post<any>('/api/v1/ballistic/analyze-features', requestBody);
       setFeatureAnalysisResults(result);
+      setShowFeatureAnalysisResults(true);
     } catch (err: any) {
       setError(err.detail || 'Feature analysis failed');
     } finally {
       setFeatureAnalysisLoading(false);
+    }
+  };
+
+  const handleOptimizeHyperparameters = async () => {
+    setOptimizationLoading(true);
+    setShowOptimizationModal(true);
+    setTrialResults([]);
+    setError(null);
+    try {
+      const requestBody = {
+        use_log_transform: useLogTransform,
+        feature_toggles: featureToggles,
+        ignore_anchor_points: ignoreAnchorPoints,
+      };
+
+      // Start polling for status
+      const interval = setInterval(async () => {
+        try {
+          const status = await apiClient.get<any>('/api/v1/ballistic/optimization-status');
+          if (status.trial_results) {
+            setTrialResults(status.trial_results);
+          }
+          // Stop polling if optimization is no longer running
+          if (!status.running) {
+            clearInterval(interval);
+          }
+        } catch (err) {
+          console.error('Failed to fetch optimization status:', err);
+        }
+      }, 1000);
+
+      const result = await apiClient.post<any>('/api/v1/ballistic/optimize-hyperparameters', requestBody);
+      setOptimizationResults(result);
+      setShowOptimizationResults(true);
+
+      // Auto-apply the best parameters
+      if (result.best_hyperparameters) {
+        setHyperparameters(result.best_hyperparameters);
+      }
+
+      clearInterval(interval);
+    } catch (err: any) {
+      setError(err.detail || 'Hyperparameter optimization failed');
+    } finally {
+      setOptimizationLoading(false);
+      setShowOptimizationModal(false);
+    }
+  };
+
+  const handleStopOptimization = async () => {
+    try {
+      await apiClient.post<any>('/api/v1/ballistic/stop-optimization');
+      setShowOptimizationModal(false);
+    } catch (err) {
+      console.error('Failed to stop optimization:', err);
     }
   };
 
@@ -193,6 +262,7 @@ export function ModelTraining() {
       const result = await apiClient.get<any>(`/api/v1/ballistic/health/version/${version}`);
       setHealthStatus(result);
       setShowHealthModal(true);
+      setShowHealthSection(false); // Hide the health status section when showing modal
     } catch (err: any) {
       setError(err.detail || 'Failed to load model details');
     }
@@ -287,6 +357,45 @@ export function ModelTraining() {
       handleListVersions(); // Refresh versions list
     } catch (err: any) {
       setError(err.detail || 'Failed to update model name');
+    }
+  };
+
+  const handleToggleVersionSelection = (version: string) => {
+    setSelectedVersions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(version)) {
+        newSet.delete(version);
+      } else {
+        newSet.add(version);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAllVersions = () => {
+    if (selectedVersions.size === modelVersions.length) {
+      setSelectedVersions(new Set());
+    } else {
+      setSelectedVersions(new Set(modelVersions.map(v => v.version)));
+    }
+  };
+
+  const handleMassDeleteConfirm = async () => {
+    setIsDeletingSelected(true);
+    setError(null);
+    try {
+      const deletePromises = Array.from(selectedVersions).map(version => 
+        apiClient.delete<any>(`/api/v1/ballistic/versions/${version}`)
+      );
+      await Promise.all(deletePromises);
+      setShowMassDeleteModal(false);
+      setSelectedVersions(new Set());
+      handleListVersions(); // Refresh versions list
+      setError(`Deleted ${selectedVersions.size} model versions`);
+    } catch (err: any) {
+      setError(err.detail || 'Failed to delete selected versions');
+    } finally {
+      setIsDeletingSelected(false);
     }
   };
 
@@ -531,8 +640,8 @@ export function ModelTraining() {
                     <label className="block text-xs text-gray-600">Trees (n_estimators)</label>
                     <input
                       type="number"
-                      min={50}
-                      max={2000}
+                      min={10}
+                      max={10000}
                       value={hyperparameters.n_estimators}
                       onChange={(e) => setHyperparameters({...hyperparameters, n_estimators: parseInt(e.target.value)})}
                       className="w-full border rounded p-1 text-sm"
@@ -542,8 +651,8 @@ export function ModelTraining() {
                     <label className="block text-xs text-gray-600">Max Depth</label>
                     <input
                       type="number"
-                      min={2}
-                      max={15}
+                      min={1}
+                      max={30}
                       value={hyperparameters.max_depth}
                       onChange={(e) => setHyperparameters({...hyperparameters, max_depth: parseInt(e.target.value)})}
                       className="w-full border rounded p-1 text-sm"
@@ -553,9 +662,9 @@ export function ModelTraining() {
                     <label className="block text-xs text-gray-600">Learning Rate</label>
                     <input
                       type="number"
-                      step={0.01}
-                      min={0.001}
-                      max={0.5}
+                      step={0.0001}
+                      min={0.0001}
+                      max={2.0}
                       value={hyperparameters.learning_rate}
                       onChange={(e) => setHyperparameters({...hyperparameters, learning_rate: parseFloat(e.target.value)})}
                       className="w-full border rounded p-1 text-sm"
@@ -567,7 +676,7 @@ export function ModelTraining() {
                       type="number"
                       step={0.1}
                       min={0}
-                      max={10}
+                      max={100}
                       value={hyperparameters.reg_lambda}
                       onChange={(e) => setHyperparameters({...hyperparameters, reg_lambda: parseFloat(e.target.value)})}
                       className="w-full border rounded p-1 text-sm"
@@ -626,13 +735,47 @@ export function ModelTraining() {
                   Trains model with all features, then without each feature group. Higher MAE impact = more important feature.
                 </p>
               </div>
+
+              {/* Hyperparameter Optimization Button */}
+              <div className="border-t border-gray-200 pt-4">
+                <button
+                  onClick={handleOptimizeHyperparameters}
+                  disabled={optimizationLoading}
+                  className="w-full bg-purple-600 text-white py-2 px-4 rounded hover:bg-purple-700 disabled:bg-gray-400"
+                >
+                  {optimizationLoading ? 'Optimizing Hyperparameters (trains 50 models)...' : 'Optimize Hyperparameters'}
+                </button>
+                <p className="text-xs text-gray-500 mt-1">
+                  Uses Bayesian optimization to find best hyperparameters. Runs 50 trials and auto-applies the best parameters.
+                </p>
+              </div>
             </div>
           )}
 
           {/* Feature Analysis Results */}
-          {featureAnalysisResults && (
+          {featureAnalysisResults && showFeatureAnalysisResults && (
             <div className="border border-indigo-200 rounded p-4 bg-indigo-50">
-              <h4 className="font-semibold text-indigo-800 mb-3">Feature Importance Results</h4>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-2">
+                  <h4 className="font-semibold text-indigo-800">Feature Importance Results</h4>
+                  <div className="group relative cursor-help">
+                    <span className="text-indigo-400 hover:text-indigo-600">?</span>
+                    <div className="absolute left-0 top-6 w-64 p-2 bg-gray-800 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                      <p className="mb-1"><strong>Impact</strong> shows how much MAE changed when this feature was removed:</p>
+                      <ul className="list-disc pl-4 space-y-1">
+                        <li><span className="text-green-400">Green (positive)</span>: Feature helps reduce error - keep enabled</li>
+                        <li><span className="text-red-400">Red (zero/negative)</span>: Feature doesn't help - consider disabling</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowFeatureAnalysisResults(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  ✕
+                </button>
+              </div>
               <div className="text-sm mb-2">
                 <span className="font-medium">Baseline MAE: </span>
                 <span className="font-mono">{featureAnalysisResults.baseline?.mae?.toFixed(4) || 'N/A'} mm</span>
@@ -661,14 +804,65 @@ export function ModelTraining() {
                         <span>{displayNames[feature] || feature}</span>
                       </div>
                       <div className="flex items-center space-x-4">
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${featureToggles[feature] ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                          {featureToggles[feature] ? 'Active' : 'Inactive'}
+                        </span>
                         <span className="text-gray-600">MAE: {data?.mae?.toFixed(4)}</span>
-                        <span className={`font-mono font-medium ${impact > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        <span className={`font-mono font-medium ${impact > 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {impact > 0 ? '+' : ''}{impact?.toFixed(4)} mm
                         </span>
                       </div>
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Hyperparameter Optimization Results */}
+          {optimizationResults && showOptimizationResults && (
+            <div className="border border-purple-200 rounded p-4 bg-purple-50">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-semibold text-purple-800">Hyperparameter Optimization Results</h4>
+                <button
+                  onClick={() => setShowOptimizationResults(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="text-sm mb-3">
+                <span className="font-medium">Health Check Error: </span>
+                <span className="font-mono">{optimizationResults.health_check_error?.toFixed(2) || 'N/A'}%</span>
+                <span className="text-gray-600 ml-2">({optimizationResults.n_trials} trials)</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-sm mb-2">
+                <div>
+                  <span className="font-medium">Training MAE: </span>
+                  <span className="font-mono">{optimizationResults.training_mae?.toFixed(4) || 'N/A'} mm</span>
+                </div>
+                <div>
+                  <span className="font-medium">R²: </span>
+                  <span className="font-mono">{optimizationResults.r2_score?.toFixed(4) || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="font-medium">RMSE: </span>
+                  <span className="font-mono">{optimizationResults.rmse?.toFixed(4) || 'N/A'} mm</span>
+                </div>
+              </div>
+              <div className="text-xs text-gray-600 mb-2">
+                Best parameters have been auto-applied to the hyperparameter inputs above.
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="font-medium">Trees:</span> {optimizationResults.best_hyperparameters?.n_estimators}</div>
+                <div><span className="font-medium">Max Depth:</span> {optimizationResults.best_hyperparameters?.max_depth}</div>
+                <div><span className="font-medium">Learning Rate:</span> {optimizationResults.best_hyperparameters?.learning_rate?.toFixed(4)}</div>
+                <div><span className="font-medium">Subsample:</span> {optimizationResults.best_hyperparameters?.subsample?.toFixed(2)}</div>
+                <div><span className="font-medium">Colsample:</span> {optimizationResults.best_hyperparameters?.colsample_bytree?.toFixed(2)}</div>
+                <div><span className="font-medium">Min Child Weight:</span> {optimizationResults.best_hyperparameters?.min_child_weight}</div>
+                <div><span className="font-medium">L2 (lambda):</span> {optimizationResults.best_hyperparameters?.reg_lambda?.toFixed(2)}</div>
+                <div><span className="font-medium">L1 (alpha):</span> {optimizationResults.best_hyperparameters?.reg_alpha?.toFixed(2)}</div>
+                <div><span className="font-medium">Gamma:</span> {optimizationResults.best_hyperparameters?.gamma?.toFixed(2)}</div>
               </div>
             </div>
           )}
@@ -777,6 +971,14 @@ export function ModelTraining() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">Model Versions</h2>
           <div className="flex space-x-2">
+            {selectedVersions.size > 0 && (
+              <button
+                onClick={() => setShowMassDeleteModal(true)}
+                className="px-4 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+              >
+                Delete Selected ({selectedVersions.size})
+              </button>
+            )}
             <button
               onClick={handleCalculateMissingMetrics}
               disabled={calculatingMetrics}
@@ -799,6 +1001,14 @@ export function ModelTraining() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      checked={selectedVersions.size === modelVersions.length && modelVersions.length > 0}
+                      onChange={handleSelectAllVersions}
+                      className="rounded"
+                    />
+                  </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model Name</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Version</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trained At</th>
@@ -810,6 +1020,14 @@ export function ModelTraining() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {modelVersions.map((version) => (
                   <tr key={version.version}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <input
+                        type="checkbox"
+                        checked={selectedVersions.has(version.version)}
+                        onChange={() => handleToggleVersionSelection(version.version)}
+                        className="rounded"
+                      />
+                    </td>
                     <td className="px-6 py-4 text-sm font-medium text-gray-900 max-w-xs break-words">
                       {version.model_name || version.version}
                     </td>
@@ -1858,11 +2076,107 @@ export function ModelTraining() {
             </div>
           }
           confirmLabel="OK"
+          cancelLabel={undefined}
           onConfirm={() => {
             setShowSuccessModal(false);
             setHealthCheckStatus(null);
           }}
+          onCancel={() => {
+            setShowSuccessModal(false);
+            setHealthCheckStatus(null);
+          }}
         />
+      )}
+
+      {/* Optimization Progress Modal */}
+      {showOptimizationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Hyperparameter Optimization in Progress</h3>
+            <div>
+              <p className="mb-4 text-sm text-gray-600">Running Bayesian optimization to find the best hyperparameters...</p>
+              {trialResults.length > 0 && (
+                <div className="mt-4">
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="font-medium">Trials completed: {trialResults.length}</span>
+                    <span className="font-medium">Best error: {Math.min(...trialResults.map(r => r.error)).toFixed(2)}%</span>
+                  </div>
+                  <div className="h-48 bg-white border rounded p-2">
+                    <svg width="100%" height="100%" viewBox="0 0 400 150" preserveAspectRatio="none">
+                      {(() => {
+                        const maxTrial = Math.max(...trialResults.map(r => r.trial), 1);
+                        const maxError = Math.max(...trialResults.map(r => r.error), 1);
+                        const minError = Math.min(...trialResults.map(r => r.error), 0);
+                        const width = 400;
+                        const height = 150;
+                        const padding = 30;
+
+                        const xScale = (trial: number) => padding + (trial / maxTrial) * (width - 2 * padding);
+                        const yScale = (error: number) => height - padding - ((error - minError) / (maxError - minError || 1)) * (height - 2 * padding);
+
+                        return (
+                          <>
+                            {/* Grid lines */}
+                            {[0, 0.25, 0.5, 0.75, 1].map((p) => (
+                              <line
+                                key={p}
+                                x1={padding}
+                                y1={height - padding - p * (height - 2 * padding)}
+                                x2={width - padding}
+                                y2={height - padding - p * (height - 2 * padding)}
+                                stroke="#e5e7eb"
+                                strokeWidth="1"
+                              />
+                            ))}
+
+                            {/* X axis */}
+                            <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#374151" strokeWidth="1" />
+                            <text x={padding} y={height - 10} fontSize="10" fill="#374151">0</text>
+                            <text x={width - padding} y={height - 10} fontSize="10" fill="#374151">{maxTrial}</text>
+
+                            {/* Y axis */}
+                            <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#374151" strokeWidth="1" />
+                            <text x={5} y={padding + 5} fontSize="10" fill="#374151">{maxError.toFixed(1)}%</text>
+                            <text x={5} y={height - padding} fontSize="10" fill="#374151">{minError.toFixed(1)}%</text>
+
+                            {/* Line */}
+                            <polyline
+                              points={trialResults.map(r => `${xScale(r.trial)},${yScale(r.error)}`).join(' ')}
+                              fill="none"
+                              stroke="#8b5cf6"
+                              strokeWidth="2"
+                            />
+
+                            {/* Points */}
+                            {trialResults.map((r, i) => (
+                              <circle
+                                key={i}
+                                cx={xScale(r.trial)}
+                                cy={yScale(r.error)}
+                                r="3"
+                                fill="#8b5cf6"
+                              />
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </svg>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                type="button"
+                onClick={handleStopOptimization}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-md text-sm text-white"
+              >
+                Stop Optimization
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Delete Confirmation Modal */}
@@ -1878,6 +2192,19 @@ export function ModelTraining() {
             setShowDeleteModal(false);
             setDeleteVersion(null);
           }}
+        />
+      )}
+
+      {/* Mass Delete Confirmation Modal */}
+      {showMassDeleteModal && (
+        <ConfirmModal
+          title="Delete Selected Models"
+          message={`Are you sure you want to delete ${selectedVersions.size} selected model versions? This action cannot be undone.`}
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          variant="danger"
+          onConfirm={handleMassDeleteConfirm}
+          onCancel={() => setShowMassDeleteModal(false)}
         />
       )}
 
@@ -1965,6 +2292,18 @@ export function ModelTraining() {
                   <h4 className="font-medium mb-2">Data Health</h4>
                   <div className="text-sm text-gray-600">
                     <div>Total Data Points: {healthStatus.data_health.total_data_points}</div>
+                  </div>
+                </div>
+              )}
+              {healthStatus.hyperparameters && (
+                <div className="mt-4 pt-4 border-t">
+                  <h4 className="font-medium mb-2">Hyperparameters</h4>
+                  <div className="text-sm text-gray-600 space-y-1">
+                    {Object.entries(healthStatus.hyperparameters).map(([key, value]) => (
+                      <div key={key}>
+                        <span className="font-medium">{key}:</span> {typeof value === 'number' ? value.toFixed(4) : value}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

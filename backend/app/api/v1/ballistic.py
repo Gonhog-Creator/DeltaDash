@@ -4,7 +4,7 @@ Ballistic ML API endpoints - database-driven training and prediction.
 from typing import Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 import os
@@ -12,6 +12,8 @@ import json
 import zipfile
 import tempfile
 import shutil
+import asyncio
+import queue
 
 from app.db.session import get_db
 from app.services.ml.ballistic_ml import train_from_database, predict, load_metadata, fetch_material_properties, list_model_versions, load_model_version, predict_with_version, predict_with_version_multi_shot, delete_model_version, update_model_name, evaluate_model_on_test_sessions, VERSIONS_DIR
@@ -21,6 +23,13 @@ from app.db.models.user import User
 
 
 router = APIRouter(prefix="/ballistic", tags=["ballistic"])
+
+
+# =============================================================================
+# Global optimization state
+# =============================================================================
+trial_results = []
+stop_optimization_flag = False
 
 
 # =============================================================================
@@ -52,15 +61,15 @@ class BallisticInput(BaseModel):
 
 class Hyperparameters(BaseModel):
     """XGBoost hyperparameters for model training."""
-    n_estimators: int = Field(800, ge=50, le=2000, description="Number of trees")
-    max_depth: int = Field(6, ge=2, le=15, description="Maximum tree depth")
-    learning_rate: float = Field(0.05, ge=0.001, le=0.5, description="Learning rate (eta)")
-    subsample: float = Field(0.9, ge=0.1, le=1.0, description="Subsample ratio")
-    colsample_bytree: float = Field(0.9, ge=0.1, le=1.0, description="Column subsample ratio")
-    min_child_weight: int = Field(2, ge=1, le=20, description="Minimum child weight")
-    reg_lambda: float = Field(1.0, ge=0.0, le=10.0, description="L2 regularization")
-    reg_alpha: float = Field(0.1, ge=0.0, le=10.0, description="L1 regularization")
-    gamma: float = Field(0.0, ge=0.0, le=10.0, description="Minimum loss reduction for split")
+    n_estimators: int = Field(800, ge=10, le=10000, description="Number of trees")
+    max_depth: int = Field(6, ge=1, le=30, description="Maximum tree depth")
+    learning_rate: float = Field(0.05, ge=0.0001, le=2.0, description="Learning rate (eta)")
+    subsample: float = Field(0.9, ge=0.01, le=1.0, description="Subsample ratio")
+    colsample_bytree: float = Field(0.9, ge=0.01, le=1.0, description="Column subsample ratio")
+    min_child_weight: int = Field(2, ge=0, le=100, description="Minimum child weight")
+    reg_lambda: float = Field(1.0, ge=0.0, le=100.0, description="L2 regularization")
+    reg_alpha: float = Field(0.1, ge=0.0, le=100.0, description="L1 regularization")
+    gamma: float = Field(0.0, ge=0.0, le=100.0, description="Minimum loss reduction for split")
 
 
 class FeatureToggles(BaseModel):
@@ -164,6 +173,7 @@ class HealthResponse(BaseModel):
     vest_layer_count: int
     anchor_point_count: Optional[int] = None
     data_health: Optional[dict] = None
+    hyperparameters: Optional[dict] = None
 
 
 # =============================================================================
@@ -263,7 +273,7 @@ def analyze_features(db: Session = Depends(get_db), request: Optional[TrainReque
         }
 
         # Track temporary analysis models for cleanup
-        analysis_model_names = []
+        analysis_model_versions = []
 
         # Train baseline with all features
         print("Training baseline with all features...")
@@ -274,7 +284,8 @@ def analyze_features(db: Session = Depends(get_db), request: Optional[TrainReque
             hyperparameters=hyperparameters,
             feature_toggles=all_features,
         )
-        analysis_model_names.append("analysis_baseline")
+        if baseline_metadata and baseline_metadata.get('version'):
+            analysis_model_versions.append(baseline_metadata['version'])
 
         # Get baseline accuracy (use MAE as metric)
         baseline_mae = baseline_metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', None)
@@ -302,7 +313,8 @@ def analyze_features(db: Session = Depends(get_db), request: Optional[TrainReque
                 hyperparameters=hyperparameters,
                 feature_toggles=test_toggles,
             )
-            analysis_model_names.append(f"analysis_no_{feature}")
+            if test_metadata and test_metadata.get('version'):
+                analysis_model_versions.append(test_metadata['version'])
 
             test_mae = test_metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', None)
             test_r2 = test_metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('r2', None)
@@ -326,13 +338,374 @@ def analyze_features(db: Session = Depends(get_db), request: Optional[TrainReque
         )
         results['ranked_by_importance'] = [item[0] for item in sorted_by_impact]
 
-        # Note: Temporary analysis models are not automatically cleaned up
-        # since ModelVersion model doesn't exist. Manual cleanup may be needed.
+        # Clean up temporary analysis models
+        for version in analysis_model_versions:
+            try:
+                delete_model_version(version, db)
+                print(f"Cleaned up temporary analysis model version: {version}")
+            except Exception as cleanup_error:
+                print(f"Failed to clean up analysis model version {version}: {str(cleanup_error)}")
 
         return results
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/optimization-status")
+def get_optimization_status():
+    """Get current optimization status and trial results."""
+    return {
+        "running": True,
+        "stop_requested": stop_optimization_flag,
+        "trial_results": trial_results
+    }
+
+
+@router.post("/stop-optimization")
+def stop_optimization():
+    """Request to stop the current optimization."""
+    global stop_optimization_flag
+    stop_optimization_flag = True
+    return {"status": "stop_requested"}
+
+
+@router.post("/optimize-hyperparameters")
+def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[TrainRequest] = None):
+    """
+    Optimize hyperparameters using Bayesian optimization (Optuna).
+    Runs multiple trials to find the best hyperparameters for the model.
+    Returns the best parameters found and their performance.
+    """
+    try:
+        import optuna
+        from sklearn.model_selection import cross_val_score
+        from app.services.ml.ballistic_ml import train_from_database, fetch_training_data, fetch_material_properties
+
+        print("Starting hyperparameter optimization...")
+
+        # Get base parameters from request
+        use_log_transform = request.use_log_transform if request else True
+        feature_toggles = request.feature_toggles.dict() if request and request.feature_toggles else None
+        ignore_anchor_points = request.ignore_anchor_points if request else False
+        n_trials = 50  # Number of optimization trials
+
+        # Track temporary optimization models for cleanup
+        optimization_model_names = []
+        best_trial_metadata = None  # Store metadata from best trial
+
+        # Reset stop flag and trial results
+        global stop_optimization_flag, trial_results
+        stop_optimization_flag = False
+        trial_results = []
+
+        # Find model with lowest avg error from model library as starting point
+        # Prefer models with hyperparameters when there's a tie
+        best_existing_model = db.query(ModelRun).filter(
+            ModelRun.training_avg_error.isnot(None)
+        ).order_by(
+            ModelRun.training_avg_error.asc(),
+            ModelRun.hyperparameters_json.isnot(None).desc()
+        ).first()
+
+        # List all models for debugging
+        all_models = db.query(ModelRun).filter(ModelRun.model_type == "ballistic").all()
+        print(f"All ballistic models in database: {len(all_models)}")
+        for m in all_models:
+            print(f"  - {m.version}: training_avg_error={m.training_avg_error}, hyperparameters_json={'present' if m.hyperparameters_json else 'None'}")
+
+        starting_hyperparams = None
+        if best_existing_model:
+            print(f"Found best existing model: {best_existing_model.version} with {best_existing_model.training_avg_error:.2f}% avg error")
+            print(f"Best model hyperparameters_json: {best_existing_model.hyperparameters_json}")
+            # Load its hyperparameters as starting point
+            try:
+                version_metadata = load_model_version(best_existing_model.version)
+                print(f"Loaded version metadata: {version_metadata is not None}")
+                if version_metadata:
+                    print(f"Version metadata keys: {list(version_metadata.keys())}")
+                    if version_metadata.get('hyperparameters'):
+                        starting_hyperparams = version_metadata['hyperparameters']
+                        print(f"Using hyperparameters from best model as starting point")
+                    else:
+                        print("No hyperparameters in version metadata, trying filesystem")
+                        # Try to load from filesystem metadata as fallback
+                        from app.services.ml.ballistic_ml import load_metadata
+                        fs_metadata = load_metadata()
+                        if fs_metadata and fs_metadata.get('hyperparameters'):
+                            starting_hyperparams = fs_metadata['hyperparameters']
+                            print(f"Using hyperparameters from filesystem metadata as starting point")
+                        else:
+                            print("No hyperparameters in filesystem metadata either")
+            except Exception as e:
+                print(f"Could not load hyperparameters from best model: {str(e)}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print("No existing model with training_avg_error found")
+
+        # Fetch training data once
+        print("Fetching training data...")
+        material_properties = fetch_material_properties(db)
+        df, _, _ = fetch_training_data(db, verbose=False, ignore_anchor_points=ignore_anchor_points)
+        print(f"Training data fetched: {len(df)} samples")
+
+        if len(df) < 50:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient data for optimization: {len(df)} samples. Need at least 50 samples."
+            )
+
+        # Simple hill-climbing optimization if starting hyperparameters available
+        if starting_hyperparams:
+            print("Using hill-climbing optimization around best hyperparameters")
+            current_best_hyperparams = starting_hyperparams.copy()
+            current_best_value = float('inf')
+            best_trial_metadata = None
+            
+            # First, evaluate the starting point
+            print("Evaluating starting hyperparameters...")
+            try:
+                metadata, health_result = train_from_database(
+                    db,
+                    model_name=f"optuna_trial_0",
+                    use_log_transform=use_log_transform,
+                    hyperparameters=current_best_hyperparams,
+                    feature_toggles=feature_toggles,
+                    ignore_anchor_points=ignore_anchor_points,
+                )
+                # Track version for cleanup
+                if metadata and metadata.get('version'):
+                    optimization_model_names.append(metadata['version'])
+                
+                # Get training_avg_error from database for consistency
+                if metadata and metadata.get('version'):
+                    model_run = db.query(ModelRun).filter(ModelRun.version == metadata['version']).first()
+                    if model_run and model_run.training_avg_error is not None:
+                        mae = model_run.training_avg_error
+                    else:
+                        mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
+                else:
+                    mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
+                
+                current_best_value = mae
+                trial_results.append({"trial": 0, "error": mae})
+                best_trial_metadata = metadata
+                best_trial_metadata['health_check_error'] = mae
+                print(f"Starting point: {mae:.2f}%")
+            except Exception as e:
+                print(f"Failed to evaluate starting point: {str(e)}")
+                current_best_value = float('inf')
+            
+            # Hill-climbing loop
+            for trial_num in range(1, n_trials + 1):
+                if stop_optimization_flag:
+                    print("Stop requested, halting optimization")
+                    break
+                
+                print(f"Trial {trial_num}...")
+                
+                # Generate very small random variations around current best
+                import random
+                h = current_best_hyperparams
+                hyperparams = {
+                    'n_estimators': max(10, int(h['n_estimators'] * random.uniform(0.98, 1.02))),
+                    'max_depth': max(1, h['max_depth'] + random.choice([-1, 0, 1]) if random.random() < 0.3 else h['max_depth']),
+                    'learning_rate': h['learning_rate'] * random.uniform(0.95, 1.05),
+                    'subsample': max(0.1, min(1.0, h['subsample'] + random.uniform(-0.01, 0.01))),
+                    'colsample_bytree': max(0.1, min(1.0, h['colsample_bytree'] + random.uniform(-0.01, 0.01))),
+                    'min_child_weight': max(0, h['min_child_weight'] + random.choice([-1, 0, 1]) if random.random() < 0.3 else h['min_child_weight']),
+                    'reg_lambda': max(0.0, h['reg_lambda'] + random.uniform(-0.1, 0.1)),
+                    'reg_alpha': max(0.0, h['reg_alpha'] + random.uniform(-0.1, 0.1)),
+                    'gamma': max(0.0, h['gamma'] + random.uniform(-0.1, 0.1)),
+                }
+                
+                try:
+                    metadata, health_result = train_from_database(
+                        db,
+                        model_name=f"optuna_trial_{trial_num}",
+                        use_log_transform=use_log_transform,
+                        hyperparameters=hyperparams,
+                        feature_toggles=feature_toggles,
+                        ignore_anchor_points=ignore_anchor_points,
+                    )
+                    # Track version for cleanup
+                    if metadata and metadata.get('version'):
+                        optimization_model_names.append(metadata['version'])
+                    
+                    # Get training_avg_error from database for consistency
+                    if metadata and metadata.get('version'):
+                        model_run = db.query(ModelRun).filter(ModelRun.version == metadata['version']).first()
+                        if model_run and model_run.training_avg_error is not None:
+                            mae = model_run.training_avg_error
+                        else:
+                            mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
+                    else:
+                        mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
+                    
+                    print(f"Trial {trial_num}: {mae:.2f}%")
+                    trial_results.append({"trial": trial_num, "error": mae})
+                    
+                    # If better, update best and continue from there
+                    if mae < current_best_value:
+                        current_best_value = mae
+                        current_best_hyperparams = hyperparams.copy()
+                        best_trial_metadata = metadata
+                        best_trial_metadata['health_check_error'] = mae
+                        print(f"New best found: {mae:.2f}%")
+                except Exception as e:
+                    print(f"Trial {trial_num} failed: {str(e)}")
+                    trial_results.append({"trial": trial_num, "error": float('inf')})
+            
+            print("Hill-climbing optimization completed")
+            best_params = current_best_hyperparams
+            best_value = current_best_value
+            best_hyperparameters = best_params
+        else:
+            # Use Optuna when no starting point
+            sampler = optuna.samplers.TPESampler(multivariate=True, n_startup_trials=10)
+            study = optuna.create_study(direction='minimize', sampler=sampler)
+
+            def objective(trial):
+                """Optuna objective function to minimize."""
+                # Check if stop was requested
+                global stop_optimization_flag
+                if stop_optimization_flag:
+                    print("Stop requested, raising exception to halt optimization")
+                    raise optuna.TrialPruned()
+
+                print(f"Trial {trial.number}...")
+
+                # Use wide bounds when no starting point
+                hyperparams = {
+                    'n_estimators': trial.suggest_int('n_estimators', 10, 10000),
+                    'max_depth': trial.suggest_int('max_depth', 1, 30),
+                    'learning_rate': trial.suggest_float('learning_rate', 0.0001, 2.0, log=True),
+                    'subsample': trial.suggest_float('subsample', 0.01, 1.0),
+                    'colsample_bytree': trial.suggest_float('colsample_bytree', 0.01, 1.0),
+                    'min_child_weight': trial.suggest_int('min_child_weight', 0, 100),
+                    'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 100.0),
+                    'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 100.0),
+                    'gamma': trial.suggest_float('gamma', 0.0, 100.0),
+                }
+
+                # Train model with these hyperparameters
+                try:
+                    metadata, health_result = train_from_database(
+                        db,
+                        model_name=f"optuna_trial_{trial.number}",
+                        use_log_transform=use_log_transform,
+                        hyperparameters=hyperparams,
+                        feature_toggles=feature_toggles,
+                        ignore_anchor_points=ignore_anchor_points,
+                    )
+
+                    # Track version for cleanup
+                    if metadata and metadata.get('version'):
+                        optimization_model_names.append(metadata['version'])
+
+                    # Get health check % avg error from ModelRun
+                    health_check_error = None
+                    if metadata and metadata.get('version'):
+                        model_run = db.query(ModelRun).filter(ModelRun.version == metadata['version']).first()
+                        if model_run and model_run.training_avg_error is not None:
+                            health_check_error = model_run.training_avg_error
+
+                    # Use health check error as objective, fall back to MAE if not available
+                    if health_check_error is not None:
+                        objective_value = health_check_error
+                    else:
+                        mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
+                        objective_value = mae
+
+                    print(f"Trial {trial.number}: {objective_value:.2f}%")
+
+                    # Add trial result to global list
+                    global trial_results
+                    trial_results.append({
+                        "trial": trial.number,
+                        "error": objective_value
+                    })
+
+                    # Store metadata if this is the best trial so far
+                    nonlocal best_trial_metadata
+                    if best_trial_metadata is None or objective_value < (best_trial_metadata.get('health_check_error', float('inf')) if best_trial_metadata.get('health_check_error') else best_trial_metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))):
+                        best_trial_metadata = metadata
+                        best_trial_metadata['health_check_error'] = health_check_error
+
+                    return objective_value
+                except Exception as e:
+                    print(f"Trial {trial.number} failed: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    return float('inf')  # Return worst score on failure
+
+            print(f"Starting optimization with {n_trials} trials...")
+            try:
+                study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+            except optuna.TrialPruned:
+                print("Optimization stopped by user")
+            print("Optimization completed")
+
+            # Get best parameters
+            best_params = study.best_params
+            best_value = study.best_value
+
+            # Convert to expected format
+            best_hyperparameters = {
+                'n_estimators': best_params['n_estimators'],
+                'max_depth': best_params['max_depth'],
+                'learning_rate': best_params['learning_rate'],
+                'subsample': best_params['subsample'],
+                'colsample_bytree': best_params['colsample_bytree'],
+                'min_child_weight': best_params['min_child_weight'],
+                'reg_lambda': best_params['reg_lambda'],
+                'reg_alpha': best_params['reg_alpha'],
+                'gamma': best_params['gamma'],
+            }
+
+        # Extract additional metrics from best trial
+        best_metrics = best_trial_metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}) if best_trial_metadata else {}
+        health_check_error = best_trial_metadata.get('health_check_error', None)
+        training_mae = best_metrics.get('mae', None)
+        r2_score = best_metrics.get('r2', None)
+        rmse = best_metrics.get('rmse', None)
+
+        return {
+            'status': 'success',
+            'best_hyperparameters': best_hyperparameters,
+            'best_mae': best_value,
+            'health_check_error': health_check_error,
+            'training_mae': training_mae,
+            'r2_score': r2_score,
+            'rmse': rmse,
+            'n_trials': n_trials,
+            'message': f'Found best parameters with health check error: {health_check_error:.2f}% after {n_trials} trials' if health_check_error else f'Found best parameters with MAE: {best_value:.4f} mm after {n_trials} trials'
+        }
+
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="Optuna not installed. Run: pip install optuna"
+        )
+    except HTTPException as he:
+        # Re-raise HTTPExceptions (like the insufficient data error) with their original detail
+        raise he
+    except Exception as e:
+        error_msg = str(e)
+        print(f"ERROR: Exception during hyperparameter optimization: {error_msg}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Optimization failed: {error_msg}")
+    finally:
+        # Delete optimization trial models from the library
+        print(f"Deleting {len(optimization_model_names)} optimization trial models from library")
+        for version in optimization_model_names:
+            try:
+                delete_model_version(version, db)
+                print(f"Deleted optimization trial model version: {version}")
+            except Exception as cleanup_error:
+                print(f"Failed to delete optimization trial model version {version}: {str(cleanup_error)}")
 
 
 @router.post("/train")
@@ -520,6 +893,7 @@ def health_version(version: str, db: Session = Depends(get_db)):
         vest_count=vest_count,
         vest_layer_count=vest_layer_count,
         data_health=metadata.get("data_health"),
+        hyperparameters=metadata.get("hyperparameters"),
     )
 
 
@@ -545,43 +919,44 @@ def list_versions(db: Session = Depends(get_db)):
 
 
 @router.get("/versions-with-metrics")
-def list_versions_with_metrics(db: Session = Depends(get_db)):
+def list_versions_with_metrics(db: Session = Depends(get_db), limit: int = 20):
     """List all available model versions with training metrics from database."""
-    # Get versions from file registry
+    # Get recent models from database (source of truth), limited to avoid memory issues
+    model_runs = db.query(ModelRun).filter(
+        ModelRun.model_type == "ballistic"
+    ).order_by(ModelRun.created_at.desc()).limit(limit).all()
+    
+    # Get file versions as fallback/additional info
     file_versions = list_model_versions()
-    file_version_set = {v["version"] for v in file_versions}
+    file_version_dict = {v["version"]: v for v in file_versions}
     
-    # Get metrics from database
-    model_runs = db.query(ModelRun).filter(ModelRun.model_type == "ballistic").all()
-    
-    # Merge file versions with database metrics
+    # Build versions list from database records
     versions_with_metrics = []
-    for version in file_versions:
-        version_str = version["version"]
-        model_run = db.query(ModelRun).filter(
-            ModelRun.version == version_str,
-            ModelRun.model_type == "ballistic"
-        ).first()
+    for model_run in model_runs:
+        file_version = file_version_dict.get(model_run.version)
         
         versions_with_metrics.append({
-            **version,
-            "training_row_count": model_run.training_row_count if model_run else None,
-            "training_avg_error": model_run.training_avg_error if model_run else None,
-            "has_files": True,
-            "created_at": model_run.created_at.isoformat() if model_run else version.get("trained_at"),
+            "version": model_run.version,
+            "model_name": model_run.model_name or model_run.version,
+            "trained_at": model_run.training_completed_at.isoformat() if model_run.training_completed_at else model_run.created_at.isoformat(),
+            "training_row_count": model_run.training_row_count,
+            "training_avg_error": model_run.training_avg_error,
+            "has_files": model_run.model_file is not None and model_run.preprocessor_file is not None,
+            "created_at": model_run.created_at.isoformat(),
         })
     
-    # Also include models from database that aren't in file registry
-    for model_run in model_runs:
-        if model_run.version not in file_version_set:
+    # Also include file versions that aren't in database (legacy models)
+    file_version_set = {v["version"] for v in file_versions}
+    db_version_set = {model_run.version for model_run in model_runs}
+    
+    for version in file_versions:
+        if version["version"] not in db_version_set:
             versions_with_metrics.append({
-                "version": model_run.version,
-                "model_name": model_run.model_name or model_run.version,
-                "trained_at": model_run.training_completed_at.isoformat() if model_run.training_completed_at else model_run.created_at.isoformat(),
-                "training_row_count": model_run.training_row_count,
-                "training_avg_error": model_run.training_avg_error,
-                "has_files": False,
-                "created_at": model_run.created_at.isoformat(),
+                **version,
+                "training_row_count": None,
+                "training_avg_error": None,
+                "has_files": True,
+                "created_at": version.get("trained_at"),
             })
     
     # Sort by created_at (newest first)

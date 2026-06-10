@@ -166,16 +166,17 @@ export const AnchorPointsTab: React.FC<AnchorPointsTabProps> = ({ onError }) => 
           batch_id: batchId
         };
 
+        const bulkPayloads: any[] = [];
+
         if (batchMode) {
           // Multiple materials with range: create anchor points for each material x each layer count
           for (const layer of anchorForm.layers) {
             for (let layerCount = anchorForm.layer_range_min; layerCount <= anchorForm.layer_range_max; layerCount++) {
-              const payload = {
+              bulkPayloads.push({
                 ...basePayload,
                 name: `${anchorForm.name} - ${layerCount}x ${layer.layer_count} ${layer.material_id}`,
                 layers: [{ material_id: layer.material_id, layer_count: layerCount * layer.layer_count, layer_index: 0 }]
-              };
-              await apiClient.post<any>('/api/v1/anchor-points', payload);
+              });
             }
           }
         } else {
@@ -188,14 +189,16 @@ export const AnchorPointsTab: React.FC<AnchorPointsTabProps> = ({ onError }) => 
           }
 
           for (let layerCount = anchorForm.layer_range_min; layerCount <= anchorForm.layer_range_max; layerCount++) {
-            const payload = {
+            bulkPayloads.push({
               ...basePayload,
               name: `${anchorForm.name} - ${layerCount} layers`,
               layers: [{ material_id: materialId, layer_count: layerCount, layer_index: 0 }]
-            };
-            await apiClient.post<any>('/api/v1/anchor-points', payload);
+            });
           }
         }
+
+        // Send all at once using bulk endpoint
+        await apiClient.post<any>('/api/v1/anchor-points/bulk', { anchor_points: bulkPayloads });
       } else {
         // Convert empty strings to None for numeric fields
         const payload = {
@@ -448,7 +451,6 @@ export const AnchorPointsTab: React.FC<AnchorPointsTabProps> = ({ onError }) => 
                 value={anchorForm.name}
                 onChange={(e) => setAnchorForm({ ...anchorForm, name: e.target.value })}
                 className="w-full border rounded p-2"
-                placeholder="e.g., 10,000 layers absolute stop"
               />
             </div>
             <div>
@@ -563,19 +565,14 @@ export const AnchorPointsTab: React.FC<AnchorPointsTabProps> = ({ onError }) => 
                       <select
                         value={anchorForm.layers[0]?.material_id || ''}
                         onChange={(e) => {
-                          if (e.target.value === 'ALL_MATERIALS') {
-                            handleAddAllMaterials(anchorForm.layers[0]?.layer_count || 1);
-                          } else {
-                            if (anchorForm.layers.length === 0) {
-                              handleAddLayer();
-                            }
-                            handleLayerChange(0, 'material_id', e.target.value);
+                          if (anchorForm.layers.length === 0) {
+                            handleAddLayer();
                           }
+                          handleLayerChange(0, 'material_id', e.target.value);
                         }}
                         className="flex-1 border rounded p-2"
                       >
                         <option value="">Select material</option>
-                        <option value="ALL_MATERIALS">All Materials</option>
                         {materials.map((mat) => (
                           <option key={mat.id} value={mat.id}>{mat.name}</option>
                         ))}

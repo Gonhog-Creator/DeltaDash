@@ -18,7 +18,13 @@ export function Dashboard() {
   const [isResetting, setIsResetting] = useState(false);
   const [showSyncSuccessModal, setShowSyncSuccessModal] = useState(false);
   const [syncResults, setSyncResults] = useState<any>(null);
+  const [showSyncPreviewModal, setShowSyncPreviewModal] = useState(false);
+  const [syncPreview, setSyncPreview] = useState<any>(null);
+  const [selectedChanges, setSelectedChanges] = useState<Record<string, Record<string, string[]>>>({});
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
+  const [showSyncErrorModal, setShowSyncErrorModal] = useState(false);
+  const [syncErrorMessage, setSyncErrorMessage] = useState('');
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [backupConfirmText, setBackupConfirmText] = useState('');
@@ -67,17 +73,83 @@ export function Dashboard() {
   }, [showRestoreModal]);
 
   const handleSync = async () => {
+    setIsPreviewLoading(true);
+    try {
+      const preview = await apiClient.get('/api/v1/admin/preview-sync');
+      setSyncPreview(preview);
+      
+      // Initialize selected changes with all changes selected by default
+      const initialSelection: Record<string, Record<string, string[]>> = {};
+      preview.changes.forEach((entity: any) => {
+        initialSelection[entity.entity_name] = {
+          new: entity.new_records.map((r: any) => String(r.id)),
+          updated: entity.updated_records.map((r: any) => String(r.id)),
+          deleted: entity.deleted_records.map((r: any) => String(r.id))
+        };
+      });
+      setSelectedChanges(initialSelection);
+      
+      setShowSyncPreviewModal(true);
+    } catch (error) {
+      console.error('Failed to preview sync:', error);
+      alert('Failed to preview sync. Check console for details.');
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
+
+  const handleToggleChange = (entityName: string, changeType: string, recordId: string) => {
+    setSelectedChanges(prev => {
+      const newSelection = { ...prev };
+      if (!newSelection[entityName]) {
+        newSelection[entityName] = { new: [], updated: [], deleted: [] };
+      }
+      const currentList = newSelection[entityName][changeType] || [];
+      if (currentList.includes(recordId)) {
+        newSelection[entityName][changeType] = currentList.filter(id => id !== recordId);
+      } else {
+        newSelection[entityName][changeType] = [...currentList, recordId];
+      }
+      return newSelection;
+    });
+  };
+
+  const handleToggleEntity = (entityName: string, changeType: string, selectAll: boolean) => {
+    setSelectedChanges(prev => {
+      const newSelection = { ...prev };
+      if (!newSelection[entityName]) {
+        newSelection[entityName] = { new: [], updated: [], deleted: [] };
+      }
+      
+      if (syncPreview) {
+        const entity = syncPreview.changes.find((e: any) => e.entity_name === entityName);
+        if (entity) {
+          newSelection[entityName][changeType] = selectAll 
+            ? entity[`${changeType}_records`].map((r: any) => String(r.id))
+            : [];
+        }
+      }
+      return newSelection;
+    });
+  };
+
+  const handleApplySync = async () => {
+    setShowSyncPreviewModal(false);
     setIsSyncing(true);
     try {
-      const result = await apiClient.post('/api/v1/admin/sync-database');
+      const result = await apiClient.post('/api/v1/admin/sync-database', {
+        confirmed_changes: selectedChanges
+      });
       setSyncResults(result);
       setShowSyncSuccessModal(true);
       // Refresh stats after sync
       const data = await apiClient.get<{ test_session_count: number; total_shots: number }>('/api/v1/test-sessions/stats');
       setStats({ test_session_count: data.test_session_count, total_shots: data.total_shots });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to sync database:', error);
-      alert('Failed to sync database. Check console for details.');
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to sync database. Check console for details.';
+      setSyncErrorMessage(errorMessage);
+      setShowSyncErrorModal(true);
     } finally {
       setIsSyncing(false);
     }
@@ -375,10 +447,10 @@ export function Dashboard() {
           <div className="flex space-x-3">
             <button
               onClick={handleSync}
-              disabled={isSyncing}
+              disabled={isSyncing || isPreviewLoading}
               className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSyncing ? 'Syncing...' : 'Sync Database (Pull)'}
+              {isSyncing ? 'Syncing...' : isPreviewLoading ? 'Loading Preview...' : 'Preview & Sync Database'}
             </button>
             <button
               onClick={() => setShowResetConfirmModal(true)}
@@ -472,19 +544,21 @@ export function Dashboard() {
         </div>
       </div>
 
-      {showSyncSuccessModal && syncResults && (
+      {showSyncSuccessModal && syncResults && syncResults.applied_changes && (
         <ConfirmModal
           title="Database Sync Complete"
           message={
             <div className="space-y-2">
-              <p className="text-sm text-gray-600">Database sync completed successfully. Records synced:</p>
+              <p className="text-sm text-gray-600">Database sync completed successfully. Applied changes:</p>
               <div className="bg-gray-50 p-3 rounded-md">
-                {Object.entries(syncResults.synced_records).map(([key, value]) => (
-                  <div key={key} className="flex justify-between text-sm">
-                    <span className="text-gray-700">{normalizeString(key)}:</span>
-                    <span className="font-medium text-gray-900">{value as number}</span>
-                  </div>
-                ))}
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-700">New records:</span>
+                  <span className="font-medium text-green-600">{syncResults.applied_changes.new}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-700">Updated records:</span>
+                  <span className="font-medium text-blue-600">{syncResults.applied_changes.updated}</span>
+                </div>
               </div>
             </div>
           }
@@ -492,6 +566,183 @@ export function Dashboard() {
           variant="default"
           onConfirm={() => setShowSyncSuccessModal(false)}
           onCancel={() => setShowSyncSuccessModal(false)}
+        />
+      )}
+      {showSyncErrorModal && (
+        <ConfirmModal
+          title="Sync Failed"
+          message={
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600">Failed to sync database:</p>
+              <div className="bg-red-50 border border-red-200 p-3 rounded-md">
+                <p className="text-sm text-red-800 font-mono break-all">{syncErrorMessage}</p>
+              </div>
+            </div>
+          }
+          confirmLabel="Close"
+          variant="danger"
+          onConfirm={() => setShowSyncErrorModal(false)}
+          onCancel={() => setShowSyncErrorModal(false)}
+        />
+      )}
+      {showSyncPreviewModal && syncPreview && (
+        <ConfirmModal
+          title="Preview Database Sync Changes"
+          message={
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                <p className="text-sm text-blue-800">
+                  Summary: <span className="font-semibold">{syncPreview.summary.new}</span> new, 
+                  <span className="font-semibold"> {syncPreview.summary.updated}</span> updated, 
+                  <span className="font-semibold"> {syncPreview.summary.deleted}</span> deleted
+                </p>
+              </div>
+              
+              {syncPreview.changes.length === 0 ? (
+                <p className="text-sm text-gray-600">No changes detected.</p>
+              ) : (
+                <div className="space-y-4 max-h-96 overflow-y-auto">
+                  {syncPreview.changes.map((entity: any) => (
+                    <div key={entity.entity_name} className="border rounded-md p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-sm font-semibold text-gray-900 capitalize">{normalizeString(entity.entity_name)}</h3>
+                      </div>
+                      
+                      {entity.new_records.length > 0 && (
+                        <div className="mb-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-green-700">New Records ({entity.new_records.length})</span>
+                            <button
+                              onClick={() => handleToggleEntity(entity.entity_name, 'new', true)}
+                              className="text-xs text-blue-600 hover:text-blue-800"
+                            >
+                              Select All
+                            </button>
+                            <button
+                              onClick={() => handleToggleEntity(entity.entity_name, 'new', false)}
+                              className="text-xs text-red-600 hover:text-red-800"
+                            >
+                              Deselect All
+                            </button>
+                          </div>
+                          <div className="space-y-1 max-h-32 overflow-y-auto">
+                            {entity.new_records.map((record: any) => (
+                              <div key={record.id} className="flex items-start gap-2 text-xs p-1 hover:bg-gray-50 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedChanges[entity.entity_name]?.new?.includes(String(record.id)) || false}
+                                  onChange={() => handleToggleChange(entity.entity_name, 'new', String(record.id))}
+                                  className="mt-0.5"
+                                />
+                                <div className="flex-1">
+                                  <span className="font-medium text-green-600">NEW:</span> {record.record_data?.name || record.id}
+                                  {record.record_data && (
+                                    <div className="ml-4 text-gray-500">
+                                      {Object.entries(record.record_data).slice(0, 3).map(([key, value]) => (
+                                        <div key={key}>{key}: {String(value).slice(0, 30)}</div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {entity.updated_records.length > 0 && (
+                        <div className="mb-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-blue-700">Updated Records ({entity.updated_records.length})</span>
+                            <button
+                              onClick={() => handleToggleEntity(entity.entity_name, 'updated', true)}
+                              className="text-xs text-blue-600 hover:text-blue-800"
+                            >
+                              Select All
+                            </button>
+                            <button
+                              onClick={() => handleToggleEntity(entity.entity_name, 'updated', false)}
+                              className="text-xs text-red-600 hover:text-red-800"
+                            >
+                              Deselect All
+                            </button>
+                          </div>
+                          <div className="space-y-1 max-h-32 overflow-y-auto">
+                            {entity.updated_records.map((record: any) => (
+                              <div key={record.id} className="flex items-start gap-2 text-xs p-1 hover:bg-gray-50 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedChanges[entity.entity_name]?.updated?.includes(String(record.id)) || false}
+                                  onChange={() => handleToggleChange(entity.entity_name, 'updated', String(record.id))}
+                                  className="mt-0.5"
+                                />
+                                <div className="flex-1">
+                                  <span className="font-medium text-blue-600">UPDATE:</span> {record.record_data?.name || record.id}
+                                  {record.changes && (
+                                    <div className="ml-4 text-gray-600">
+                                      {record.changes.map((change: any, idx: number) => (
+                                        <div key={idx} className="text-red-600">
+                                          {change.field}: {String(change.old_value).slice(0, 20)} → {String(change.new_value).slice(0, 20)}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {entity.deleted_records.length > 0 && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-red-700">Deleted Records ({entity.deleted_records.length})</span>
+                            <button
+                              onClick={() => handleToggleEntity(entity.entity_name, 'deleted', true)}
+                              className="text-xs text-blue-600 hover:text-blue-800"
+                            >
+                              Select All
+                            </button>
+                            <button
+                              onClick={() => handleToggleEntity(entity.entity_name, 'deleted', false)}
+                              className="text-xs text-red-600 hover:text-red-800"
+                            >
+                              Deselect All
+                            </button>
+                          </div>
+                          <div className="space-y-1 max-h-32 overflow-y-auto">
+                            {entity.deleted_records.map((record: any) => (
+                              <div key={record.id} className="flex items-start gap-2 text-xs p-1 hover:bg-gray-50 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedChanges[entity.entity_name]?.deleted?.includes(String(record.id)) || false}
+                                  onChange={() => handleToggleChange(entity.entity_name, 'deleted', String(record.id))}
+                                  className="mt-0.5"
+                                />
+                                <div className="flex-1">
+                                  <span className="font-medium text-red-600">DELETE:</span> {record.id}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          }
+          confirmLabel="Apply Selected Changes"
+          variant="default"
+          onConfirm={handleApplySync}
+          onCancel={() => {
+            setShowSyncPreviewModal(false);
+            setSyncPreview(null);
+            setSelectedChanges({});
+          }}
+          disabled={isPreviewLoading}
         />
       )}
       {showResetConfirmModal && (

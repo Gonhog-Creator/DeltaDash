@@ -47,6 +47,10 @@ class AnchorPointUpdate(BaseModel):
     batch_id: Optional[str] = None
 
 
+class AnchorPointBulkCreate(BaseModel):
+    anchor_points: List[AnchorPointCreate] = Field(..., description="List of anchor points to create")
+
+
 class AnchorPointLayerResponse(BaseModel):
     id: str
     material_id: str
@@ -173,6 +177,125 @@ def get_anchor_point(
     )
 
 
+@router.post("/bulk", response_model=List[AnchorPointResponse], status_code=status.HTTP_201_CREATED)
+def create_anchor_points_bulk(
+    bulk_data: AnchorPointBulkCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_write_access)
+):
+    """Create multiple anchor points in a single request."""
+    created_anchors = []
+
+    for anchor_point in bulk_data.anchor_points:
+        # Validate ammunition scope
+        if anchor_point.ammunition_scope not in ['all', 'calibers']:
+            raise HTTPException(status_code=400, detail="ammunition_scope must be 'all' or 'calibers'")
+
+        # Validate that calibers scope has caliber_ids
+        if anchor_point.ammunition_scope == 'calibers' and not anchor_point.caliber_ids:
+            raise HTTPException(status_code=400, detail="caliber_ids required for 'calibers' scope")
+
+        # Validate that perforated=True doesn't have BFD
+        if anchor_point.expected_perforated and anchor_point.expected_bfd_mm is not None:
+            raise HTTPException(status_code=400, detail="expected_bfd_mm should be None when expected_perforated is True")
+
+        # Validate that perforated=False has BFD
+        if not anchor_point.expected_perforated and anchor_point.expected_bfd_mm is None:
+            raise HTTPException(status_code=400, detail="expected_bfd_mm required when expected_perforated is False")
+
+        # Validate materials exist
+        material_ids = [layer.material_id for layer in anchor_point.layers if layer.material_id]
+        if not material_ids:
+            raise HTTPException(status_code=400, detail="At least one material must be selected")
+        # Convert material IDs to UUIDs, handling both string and UUID formats
+        uuid_material_ids = []
+        for mid in material_ids:
+            try:
+                uuid_material_ids.append(uuid.UUID(mid) if isinstance(mid, str) else mid)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid material ID format: {mid}")
+        materials = db.query(Material).filter(Material.id.in_(uuid_material_ids)).all()
+        if len(materials) != len(material_ids):
+            raise HTTPException(status_code=400, detail="One or more materials not found")
+
+        # Validate caliber ids exist for calibers scope
+        if anchor_point.ammunition_scope == 'calibers':
+            unique_calibers = db.query(Ammunition.caliber).distinct().filter(Ammunition.caliber.in_(anchor_point.caliber_ids)).all()
+            if len(unique_calibers) != len(anchor_point.caliber_ids):
+                raise HTTPException(status_code=400, detail="One or more calibers not found")
+        elif anchor_point.ammunition_scope == 'all':
+            # Populate caliber_ids with all current calibers
+            all_calibers = db.query(Ammunition.caliber).distinct().all()
+            anchor_point.caliber_ids = [c[0] for c in all_calibers if c[0]]
+
+        # Create anchor point
+        db_anchor_point = AnchorPoint(
+            name=anchor_point.name,
+            description=anchor_point.description,
+            ammunition_scope=anchor_point.ammunition_scope,
+            caliber_ids=anchor_point.caliber_ids,
+            expected_perforated=anchor_point.expected_perforated,
+            expected_bfd_mm=anchor_point.expected_bfd_mm,
+            custom_velocity_mps=anchor_point.custom_velocity_mps,
+            created_by_id=current_user.id,
+            batch_id=anchor_point.batch_id
+        )
+        db.add(db_anchor_point)
+        db.flush()  # Get the ID before creating layers
+
+        # Create layers
+        for layer_data in anchor_point.layers:
+            if not layer_data.material_id:
+                continue  # Skip empty layers
+            material = next((m for m in materials if str(m.id) == layer_data.material_id), None)
+            if not material:
+                continue  # Skip if material not found
+
+            db_layer = AnchorPointLayer(
+                anchor_point_id=db_anchor_point.id,
+                material_id=material.id,
+                layer_count=layer_data.layer_count,
+                layer_index=layer_data.layer_index
+            )
+            db.add(db_layer)
+
+        db.commit()
+
+        # Build response
+        layers_response = []
+        for layer_data in anchor_point.layers:
+            if not layer_data.material_id:
+                continue
+            material = next((m for m in materials if str(m.id) == layer_data.material_id), None)
+            if material:
+                layers_response.append(AnchorPointLayerResponse(
+                    id=str(uuid.uuid4()),  # Temporary ID for response
+                    material_id=str(material.id),
+                    material_name=material.name,
+                    layer_count=layer_data.layer_count,
+                    layer_index=layer_data.layer_index
+                ))
+
+        created_anchors.append(AnchorPointResponse(
+            id=str(db_anchor_point.id),
+            name=db_anchor_point.name,
+            description=db_anchor_point.description,
+            ammunition_scope=db_anchor_point.ammunition_scope,
+            caliber_ids=db_anchor_point.caliber_ids,
+            expected_perforated=db_anchor_point.expected_perforated,
+            expected_bfd_mm=db_anchor_point.expected_bfd_mm,
+            custom_velocity_mps=db_anchor_point.custom_velocity_mps,
+            layers=layers_response,
+            created_by_id=str(db_anchor_point.created_by_id),
+            created_by_username=current_user.username,
+            created_at=db_anchor_point.created_at.isoformat(),
+            updated_at=db_anchor_point.updated_at.isoformat(),
+            batch_id=str(db_anchor_point.batch_id) if db_anchor_point.batch_id else None
+        ))
+
+    return created_anchors
+
+
 @router.post("/batch", response_model=List[AnchorPointResponse], status_code=status.HTTP_201_CREATED)
 def create_anchor_points_batch(
     anchor_point: AnchorPointCreate,
@@ -221,7 +344,9 @@ def create_anchor_points_batch(
     elif anchor_point.ammunition_scope == 'all':
         # Populate caliber_ids with all current calibers
         all_calibers = db.query(Ammunition.caliber).distinct().all()
-        anchor_point.caliber_ids = [c[0] for c in all_calibers if c[0]]
+        caliber_ids = [c[0] for c in all_calibers if c[0]]
+    else:
+        caliber_ids = anchor_point.caliber_ids
     
     # Create a separate anchor point for each material layer
     created_anchors = []
@@ -240,7 +365,7 @@ def create_anchor_points_batch(
             name=f"{anchor_point.name} - {layer.layer_count}x {material.name}",
             description=anchor_point.description,
             ammunition_scope=anchor_point.ammunition_scope,
-            caliber_ids=anchor_point.caliber_ids,
+            caliber_ids=caliber_ids,
             expected_perforated=anchor_point.expected_perforated,
             expected_bfd_mm=anchor_point.expected_bfd_mm,
             custom_velocity_mps=anchor_point.custom_velocity_mps,

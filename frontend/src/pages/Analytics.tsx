@@ -35,6 +35,20 @@ interface AnalyticsData {
   points: AnalyticsPoint[];
 }
 
+interface MaterialAnalyticsData {
+  material_classes: Array<{
+    material_class: string;
+    avg_bfd: number;
+    count: number;
+  }>;
+  materials: Array<{
+    material_class: string;
+    material_name: string;
+    avg_bfd: number;
+    count: number;
+  }>;
+}
+
 type AxisOption = 'velocity' | 'bullet_energy' | 'bfd_mm' | 'ballistic_limit';
 type ColorGroupingOption = 'test_session' | 'side' | 'shot_number' | 'result' | 'protection_level' | 'vest' | 'material';
 
@@ -62,6 +76,10 @@ export function Analytics() {
   const { data: analyticsData, isLoading, error } = useQuery<AnalyticsData>({
     queryKey: ['analytics', 'velocity-vs-bfd'],
     queryFn: () => apiClient.get<AnalyticsData>('/api/v1/analytics/velocity-vs-bfd'),
+  });
+  const { data: materialAnalyticsData, isLoading: materialLoading } = useQuery<MaterialAnalyticsData>({
+    queryKey: ['analytics', 'material-analytics'],
+    queryFn: () => apiClient.get<MaterialAnalyticsData>('/api/v1/analytics/material-analytics'),
   });
 
   const [activeTab, setActiveTab] = useState<'builder' | 'velocity-bfd' | 'energy-velocity' | 'energy-bfd' | 'material-bfd'>('builder');
@@ -663,15 +681,9 @@ export function Analytics() {
         />
       ) : activeTab === 'material-bfd' ? (
         <MaterialVsBfdChart
-          filteredPoints={filteredPoints}
+          materialAnalyticsData={materialAnalyticsData}
+          isLoading={materialLoading}
           isAdmin={isAdmin}
-          analyticsData={analyticsData}
-          uniqueCalibers={uniqueCalibers}
-          uniqueProtectionLevels={uniqueProtectionLevels}
-          selectedCalibers={selectedCalibers}
-          selectedProtectionLevels={selectedProtectionLevels}
-          setSelectedCalibers={setSelectedCalibers}
-          setSelectedProtectionLevels={setSelectedProtectionLevels}
         />
       ) : (
         <VelocityVsBfdChart
