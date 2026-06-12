@@ -383,12 +383,21 @@ def sync_database(
                 
                 # If confirmation contains the special "count" marker, sync all records of this type
                 if "count" in confirmed_ids:
-                    print(f"  [should_sync_record] Entity '{entity_name}' has 'count' marker, syncing all records")
                     return True
                 
-                result = str(record_id) in confirmed_ids
-                print(f"  [should_sync_record] Entity '{entity_name}', record '{record_id}', type '{change_type}': {result}")
-                return result
+                return str(record_id) in confirmed_ids
+            
+            # Helper function to check if an entity should sync all records of a type
+            def should_sync_all(entity_name: str, change_type: str) -> bool:
+                if confirmation is None:
+                    return False
+                if entity_name not in confirmation.confirmed_changes:
+                    return False
+                if change_type not in confirmation.confirmed_changes[entity_name]:
+                    return False
+                
+                confirmed_ids = confirmation.confirmed_changes[entity_name][change_type]
+                return "count" in confirmed_ids
             
             # Sync ammunition
             print("Syncing ammunition...")
@@ -401,6 +410,10 @@ def sync_database(
             if not ammunition_data:
                 print("  No ammunition records to sync")
             else:
+                # Check if we should sync all records (count-based)
+                sync_all_new = should_sync_all("ammunition", "new")
+                sync_all_updated = should_sync_all("ammunition", "updated")
+                
                 # Get existing records as hash map for O(1) lookups
                 existing_ammunition = {}
                 for item in local_db.query(Ammunition).all():
@@ -414,10 +427,10 @@ def sync_database(
                     existing = existing_ammunition.get(str(ammo_dict['id']))
                     
                     if not existing:
-                        if should_sync_record("ammunition", ammo_dict['id'], "new"):
+                        if sync_all_new or should_sync_record("ammunition", ammo_dict['id'], "new"):
                             new_ammunition.append(ammo_dict)
                     else:
-                        if should_sync_record("ammunition", ammo_dict['id'], "updated"):
+                        if sync_all_updated or should_sync_record("ammunition", ammo_dict['id'], "updated"):
                             updated_ammunition.append(ammo_dict)
                 
                 # Bulk insert new records
@@ -446,6 +459,10 @@ def sync_database(
             if not materials_data:
                 print("  No material records to sync")
             else:
+                # Check if we should sync all records (count-based)
+                sync_all_new = should_sync_all("materials", "new")
+                sync_all_updated = should_sync_all("materials", "updated")
+                
                 # Get existing records as hash map for O(1) lookups
                 existing_materials = {}
                 for item in local_db.query(Material).all():
@@ -461,10 +478,10 @@ def sync_database(
                     existing = existing_materials.get(str(valid_columns['id']))
                     
                     if not existing:
-                        if should_sync_record("materials", valid_columns['id'], "new"):
+                        if sync_all_new or should_sync_record("materials", valid_columns['id'], "new"):
                             new_materials.append(valid_columns)
                     else:
-                        if should_sync_record("materials", valid_columns['id'], "updated"):
+                        if sync_all_updated or should_sync_record("materials", valid_columns['id'], "updated"):
                             updated_materials.append(valid_columns)
                 
                 # Bulk insert new records
@@ -493,6 +510,10 @@ def sync_database(
             if not vests_data:
                 print("  No vest records to sync")
             else:
+                # Check if we should sync all records (count-based)
+                sync_all_new = should_sync_all("vests", "new")
+                sync_all_updated = should_sync_all("vests", "updated")
+                
                 # Get existing records as hash map for O(1) lookups
                 existing_vests = {}
                 for item in local_db.query(Vest).all():
@@ -507,10 +528,10 @@ def sync_database(
                     valid_columns = {key: value for key, value in vest_dict.items() if hasattr(Vest, key)}
                     existing = existing_vests.get(str(valid_columns['id']))
                     if not existing:
-                        if should_sync_record("vests", valid_columns['id'], "new"):
+                        if sync_all_new or should_sync_record("vests", valid_columns['id'], "new"):
                             new_vests.append(valid_columns)
                     else:
-                        if should_sync_record("vests", valid_columns['id'], "updated"):
+                        if sync_all_updated or should_sync_record("vests", valid_columns['id'], "updated"):
                             updated_vests.append(valid_columns)
                 
                 if new_vests:
@@ -537,6 +558,10 @@ def sync_database(
             if not vest_layers_data:
                 print("  No vest layer records to sync")
             else:
+                # Check if we should sync all records (count-based)
+                sync_all_new = should_sync_all("vest_layers", "new")
+                sync_all_updated = should_sync_all("vest_layers", "updated")
+                
                 # Get existing records as hash map for O(1) lookups
                 existing_vest_layers = {}
                 for item in local_db.query(VestLayer).all():
@@ -551,10 +576,10 @@ def sync_database(
                     valid_columns = {key: value for key, value in layer_dict.items() if hasattr(VestLayer, key)}
                     existing = existing_vest_layers.get(str(valid_columns['id']))
                     if not existing:
-                        if should_sync_record("vest_layers", valid_columns['id'], "new"):
+                        if sync_all_new or should_sync_record("vest_layers", valid_columns['id'], "new"):
                             new_vest_layers.append(valid_columns)
                     else:
-                        if should_sync_record("vest_layers", valid_columns['id'], "updated"):
+                        if sync_all_updated or should_sync_record("vest_layers", valid_columns['id'], "updated"):
                             updated_vest_layers.append(valid_columns)
                 
                 if new_vest_layers:
@@ -581,6 +606,10 @@ def sync_database(
             if not test_sessions_data:
                 print("  No test session records to sync")
             else:
+                # Check if we should sync all records (count-based)
+                sync_all_new = should_sync_all("test_sessions", "new")
+                sync_all_updated = should_sync_all("test_sessions", "updated")
+                
                 # Get existing records as hash map for O(1) lookups
                 existing_test_sessions = {}
                 for item in local_db.query(TestSession).all():
@@ -617,10 +646,10 @@ def sync_database(
                             })
                     
                     if not existing:
-                        if should_sync_record("test_sessions", valid_columns['id'], "new"):
+                        if sync_all_new or should_sync_record("test_sessions", valid_columns['id'], "new"):
                             new_test_sessions.append(valid_columns)
                     else:
-                        if should_sync_record("test_sessions", valid_columns['id'], "updated"):
+                        if sync_all_updated or should_sync_record("test_sessions", valid_columns['id'], "updated"):
                             updated_test_sessions.append(valid_columns)
                 
                 if new_test_sessions:
@@ -662,6 +691,10 @@ def sync_database(
             if not shot_data:
                 print("  No shot data records to sync")
             else:
+                # Check if we should sync all records (count-based)
+                sync_all_new = should_sync_all("shot_data", "new")
+                sync_all_updated = should_sync_all("shot_data", "updated")
+                
                 # Get existing records as hash map for O(1) lookups
                 existing_shot_data = {}
                 for item in local_db.query(ShotData).all():
@@ -696,10 +729,10 @@ def sync_database(
                             })
                     
                     if not existing:
-                        if should_sync_record("shot_data", valid_columns['id'], "new"):
+                        if sync_all_new or should_sync_record("shot_data", valid_columns['id'], "new"):
                             new_shot_data.append(valid_columns)
                     else:
-                        if should_sync_record("shot_data", valid_columns['id'], "updated"):
+                        if sync_all_updated or should_sync_record("shot_data", valid_columns['id'], "updated"):
                             updated_shot_data.append(valid_columns)
                 
                 if new_shot_data:
@@ -742,6 +775,10 @@ def sync_database(
             if not model_runs_data:
                 print("  No model run records to sync")
             else:
+                # Check if we should sync all records (count-based)
+                sync_all_new = should_sync_all("model_runs", "new")
+                sync_all_updated = should_sync_all("model_runs", "updated")
+                
                 # Get existing records as hash map for O(1) lookups
                 existing_model_runs = {}
                 for item in local_db.query(ModelRun).all():
@@ -773,10 +810,10 @@ def sync_database(
                         existing = existing_model_runs.get(str(valid_columns['id']))
                     
                     if not existing:
-                        if should_sync_record("model_runs", str(valid_columns['id']), "new"):
+                        if sync_all_new or should_sync_record("model_runs", str(valid_columns['id']), "new"):
                             new_model_runs.append(valid_columns)
                     else:
-                        if should_sync_record("model_runs", str(valid_columns['id']), "updated"):
+                        if sync_all_updated or should_sync_record("model_runs", str(valid_columns['id']), "updated"):
                             updated_model_runs.append(valid_columns)
 
                 if new_model_runs:
@@ -804,6 +841,10 @@ def sync_database(
             if not protocols_data:
                 print("  No protocol records to sync")
             else:
+                # Check if we should sync all records (count-based)
+                sync_all_new = should_sync_all("protocols", "new")
+                sync_all_updated = should_sync_all("protocols", "updated")
+                
                 # Get existing records as hash map for O(1) lookups
                 existing_protocols = {}
                 for item in local_db.query(Protocol).all():
@@ -818,10 +859,10 @@ def sync_database(
                     existing = existing_protocols.get(str(valid_columns['id']))
                     
                     if not existing:
-                        if should_sync_record("protocols", valid_columns['id'], "new"):
+                        if sync_all_new or should_sync_record("protocols", valid_columns['id'], "new"):
                             new_protocols.append(valid_columns)
                     else:
-                        if should_sync_record("protocols", valid_columns['id'], "updated"):
+                        if sync_all_updated or should_sync_record("protocols", valid_columns['id'], "updated"):
                             updated_protocols.append(valid_columns)
                 
                 if new_protocols:
@@ -848,6 +889,10 @@ def sync_database(
             if not locations_data:
                 print("  No location records to sync")
             else:
+                # Check if we should sync all records (count-based)
+                sync_all_new = should_sync_all("locations", "new")
+                sync_all_updated = should_sync_all("locations", "updated")
+                
                 # Get existing records as hash map for O(1) lookups
                 existing_locations = {}
                 for item in local_db.query(Location).all():
@@ -862,10 +907,10 @@ def sync_database(
                     existing = existing_locations.get(str(valid_columns['id']))
                     
                     if not existing:
-                        if should_sync_record("locations", valid_columns['id'], "new"):
+                        if sync_all_new or should_sync_record("locations", valid_columns['id'], "new"):
                             new_locations.append(valid_columns)
                     else:
-                        if should_sync_record("locations", valid_columns['id'], "updated"):
+                        if sync_all_updated or should_sync_record("locations", valid_columns['id'], "updated"):
                             updated_locations.append(valid_columns)
                 
                 if new_locations:
@@ -892,6 +937,10 @@ def sync_database(
             if not anchor_points_data:
                 print("  No anchor point records to sync")
             else:
+                # Check if we should sync all records (count-based)
+                sync_all_new = should_sync_all("anchor_points", "new")
+                sync_all_updated = should_sync_all("anchor_points", "updated")
+                
                 # Get existing records as hash map for O(1) lookups
                 existing_anchor_points = {}
                 for item in local_db.query(AnchorPoint).all():
@@ -912,10 +961,10 @@ def sync_database(
                         valid_columns['batch_id'] = uuid.UUID(valid_columns['batch_id'])
                     existing = existing_anchor_points.get(str(valid_columns['id']))
                     if not existing:
-                        if should_sync_record("anchor_points", str(valid_columns['id']), "new"):
+                        if sync_all_new or should_sync_record("anchor_points", str(valid_columns['id']), "new"):
                             new_anchor_points.append(valid_columns)
                     else:
-                        if should_sync_record("anchor_points", str(valid_columns['id']), "updated"):
+                        if sync_all_updated or should_sync_record("anchor_points", str(valid_columns['id']), "updated"):
                             updated_anchor_points.append(valid_columns)
                 
                 if new_anchor_points:
@@ -942,6 +991,10 @@ def sync_database(
             if not anchor_point_layers_data:
                 print("  No anchor point layer records to sync")
             else:
+                # Check if we should sync all records (count-based)
+                sync_all_new = should_sync_all("anchor_point_layers", "new")
+                sync_all_updated = should_sync_all("anchor_point_layers", "updated")
+                
                 # Get existing records as hash map for O(1) lookups
                 existing_anchor_point_layers = {}
                 for item in local_db.query(AnchorPointLayer).all():
@@ -955,10 +1008,10 @@ def sync_database(
                     valid_columns = {key: value for key, value in anchor_point_layer_dict.items() if hasattr(AnchorPointLayer, key)}
                     existing = existing_anchor_point_layers.get(str(valid_columns['id']))
                     if not existing:
-                        if should_sync_record("anchor_point_layers", valid_columns['id'], "new"):
+                        if sync_all_new or should_sync_record("anchor_point_layers", valid_columns['id'], "new"):
                             new_anchor_point_layers.append(valid_columns)
                     else:
-                        if should_sync_record("anchor_point_layers", valid_columns['id'], "updated"):
+                        if sync_all_updated or should_sync_record("anchor_point_layers", valid_columns['id'], "updated"):
                             updated_anchor_point_layers.append(valid_columns)
                 
                 if new_anchor_point_layers:
@@ -994,16 +1047,60 @@ def sync_database(
                 if entity_name in confirmation.confirmed_changes and "deleted" in confirmation.confirmed_changes[entity_name]:
                     deleted_ids = confirmation.confirmed_changes[entity_name]["deleted"]
                     if deleted_ids:
-                        print(f"Processing {len(deleted_ids)} deletions for {entity_name}")
+                        # Check if "count" marker is present - means delete all local records not on remote
+                        if "count" in deleted_ids:
+                            print(f"Processing bulk deletions for {entity_name} (local has more than remote)")
+                            # Get all local record IDs
+                            local_ids = set(str(item.id) for item in local_db.query(model_class).all())
+                            # Get all remote record IDs
+                            remote_ids = set()
+                            if entity_name == "ammunition":
+                                remote_cursor.execute("SELECT id FROM ammunition")
+                            elif entity_name == "materials":
+                                remote_cursor.execute("SELECT id FROM materials")
+                            elif entity_name == "vests":
+                                remote_cursor.execute("SELECT id FROM vests")
+                            elif entity_name == "vest_layers":
+                                remote_cursor.execute("SELECT id FROM vest_layers")
+                            elif entity_name == "test_sessions":
+                                remote_cursor.execute("SELECT id FROM test_sessions")
+                            elif entity_name == "shot_data":
+                                remote_cursor.execute("SELECT id FROM shot_data")
+                            elif entity_name == "model_runs":
+                                remote_cursor.execute("SELECT id FROM model_runs")
+                            elif entity_name == "protocols":
+                                remote_cursor.execute("SELECT id FROM protocols")
+                            elif entity_name == "locations":
+                                remote_cursor.execute("SELECT id FROM locations")
+                            elif entity_name == "anchor_points":
+                                remote_cursor.execute("SELECT id FROM anchor_points")
+                            elif entity_name == "anchor_point_layers":
+                                remote_cursor.execute("SELECT id FROM anchor_point_layers")
+                            
+                            for row in remote_cursor.fetchall():
+                                remote_ids.add(str(row[0]))
+                            
+                            # Find IDs to delete (local but not remote)
+                            actual_deleted_ids = list(local_ids - remote_ids)
+                            print(f"  Found {len(actual_deleted_ids)} local records not on remote")
+                        else:
+                            # Filter out "count" marker which is used for syncing all records
+                            actual_deleted_ids = [id for id in deleted_ids if id != "count"]
+                        
+                        if not actual_deleted_ids:
+                            continue
+                        print(f"Processing {len(actual_deleted_ids)} deletions for {entity_name}")
                         # For test_sessions, handle self-referential FK by setting parent_test_group_id to NULL
                         if entity_name == "test_sessions":
                             # Set parent_test_group_id to NULL for any test_sessions that reference deleted ones
-                            local_db.query(TestSession).filter(TestSession.parent_test_group_id.in_(deleted_ids)).update({"parent_test_group_id": None}, synchronize_session=False)
+                            local_db.query(TestSession).filter(TestSession.parent_test_group_id.in_(actual_deleted_ids)).update({"parent_test_group_id": None}, synchronize_session=False)
                             local_db.commit()
-                        for record_id in deleted_ids:
-                            # Skip "count" marker which is used for syncing all records
-                            if record_id == "count":
-                                continue
+                        # For vests, handle vest_id FK in test_sessions by setting vest_id to NULL
+                        if entity_name == "vests":
+                            # Set vest_id to NULL for any test_sessions that reference deleted vests
+                            local_db.query(TestSession).filter(TestSession.vest_id.in_(actual_deleted_ids)).update({"vest_id": None}, synchronize_session=False)
+                            local_db.commit()
+                        for record_id in actual_deleted_ids:
                             existing = local_db.query(model_class).filter(model_class.id == record_id).first()
                             if existing:
                                 local_db.delete(existing)

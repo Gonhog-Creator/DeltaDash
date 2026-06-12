@@ -32,10 +32,10 @@ class PredictionService:
     def load_model(self, version: str = None) -> Optional[Dict]:
         """
         Load the current trained model from file system
-        
+
         Args:
             version: Optional version string to load a specific model version
-        
+
         Returns:
             Dictionary with model, scaler, and metadata
         """
@@ -43,22 +43,23 @@ class PredictionService:
         import json
         import joblib
         import sys
-        
+
         # Model directory - prediction_service.py is in backend/ml, so we need to go up to backend
         backend_dir = os.path.dirname(os.path.dirname(__file__))
         model_dir = os.path.join(backend_dir, "storage", "model_artifacts", "ballistic")
-        
+
         # Load metadata
         metadata_path = os.path.join(model_dir, "metadata.json")
-        
+
         # If metadata doesn't exist on filesystem, try to load from database
+        loaded_from_db = False
         if not os.path.exists(metadata_path):
             try:
                 # Add backend to path to import app modules
                 if backend_dir not in sys.path:
                     sys.path.insert(0, backend_dir)
                 from app.services.ml.ballistic_ml import load_model_version
-                
+
                 # If version is specified, load that version from database
                 if version:
                     load_model_version(version, db_session=self.db)
@@ -70,19 +71,21 @@ class PredictionService:
                     ).order_by(ModelRun.created_at.desc()).first()
                     if most_recent:
                         load_model_version(most_recent.version, db_session=self.db)
+                loaded_from_db = True
             except Exception as e:
                 print(f"Failed to load model from database: {e}")
                 return None
-        
+
         # Check again if metadata exists after attempting database load
         if not os.path.exists(metadata_path):
             return None
-        
+
         with open(metadata_path, "r") as f:
             metadata = json.load(f)
-        
-        # If version is specified, load that version
-        if version:
+
+        # If version is specified and model was NOT loaded from database, try version directory
+        # If loaded from database, the files are already in the current location
+        if version and not loaded_from_db:
             version_dir = os.path.join(model_dir, "versions", version)
             if not os.path.exists(version_dir):
                 return None
@@ -92,7 +95,7 @@ class PredictionService:
             preprocessor_path = os.path.join(version_dir, "preprocessor.pkl")
             model_path = os.path.join(version_dir, "backface_deformation_mm.pkl")
         else:
-            # Load current model
+            # Load current model (either from filesystem or after database load)
             preprocessor_path = os.path.join(model_dir, "preprocessor.pkl")
             model_path = os.path.join(model_dir, "backface_deformation_mm.pkl")
         

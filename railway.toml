@@ -3,7 +3,7 @@ dockerfilePath = "backend/Dockerfile"
 
 [deploy]
 healthcheckPath = "/health"
-healthcheckTimeout = 300
+healthcheckTimeout = 60
 restartPolicyType = "on_failure"
 
 # Railway volumes for persistent storage

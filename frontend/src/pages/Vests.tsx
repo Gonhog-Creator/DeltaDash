@@ -42,6 +42,7 @@ export function Vests() {
   const [editingVest, setEditingVest] = useState<Vest | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Vest | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<keyof Vest>('vest_code');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [filterField, setFilterField] = useState<'vest_type' | 'threat_level' | null>(null);
@@ -229,8 +230,9 @@ export function Vests() {
     if (!deleteTarget) return;
     try {
       await deleteMutation.mutateAsync(deleteTarget.id);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to delete vest:', err);
+      setDeleteError(err.message || 'Failed to delete vest');
     } finally {
       setDeleteTarget(null);
     }
@@ -804,6 +806,16 @@ export function Vests() {
           variant="info"
           onConfirm={() => setValidationError(null)}
           onCancel={() => setValidationError(null)}
+        />
+      )}
+      {deleteError && (
+        <ConfirmModal
+          title="Cannot Delete Vest"
+          message={deleteError}
+          confirmLabel="OK"
+          variant="danger"
+          onConfirm={() => setDeleteError(null)}
+          onCancel={() => setDeleteError(null)}
         />
       )}
       {filterField && (

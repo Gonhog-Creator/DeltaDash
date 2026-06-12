@@ -165,6 +165,27 @@ def delete_vest(
     if not vest:
         raise HTTPException(status_code=404, detail="Vest not found")
     
+    # Check if vest is referenced by any test sessions (including child sessions)
+    from sqlalchemy import cast, UUID as SQLUUID
+    test_sessions = db.query(TestSession).filter(TestSession.vest_id == cast(vest_id, SQLUUID)).all()
+    if test_sessions:
+        # Separate parent and child sessions for clearer error message
+        parent_sessions = [s for s in test_sessions if s.parent_test_group_id is None]
+        child_sessions = [s for s in test_sessions if s.parent_test_group_id is not None]
+        
+        msg_parts = []
+        if parent_sessions:
+            parent_names = [f"{s.name} (id: {s.id})" for s in parent_sessions]
+            msg_parts.append(f"{len(parent_sessions)} parent test session(s): {', '.join(parent_names)}")
+        if child_sessions:
+            child_names = [f"{s.name} (id: {s.id}, parent: {s.parent_test_group_id})" for s in child_sessions]
+            msg_parts.append(f"{len(child_sessions)} child test session(s): {', '.join(child_names)}")
+        
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete vest: it is referenced by {', '.join(msg_parts)}. Delete the test sessions first."
+        )
+    
     db.delete(vest)
     db.commit()
 

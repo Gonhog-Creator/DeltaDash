@@ -87,6 +87,7 @@ export function BallisticTesting() {
     panel_protects_front: true,
     panel_protects_back: true,
     panel_protects_sides: false,
+    stitch_pattern: null as 'stitched' | null,
   });
 
   // Calculate derived values from layers
@@ -314,7 +315,7 @@ export function BallisticTesting() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-2">Panel Protection</label>
+                    <label className="block text-sm font-medium mb-2">Panel Details</label>
                     <div className="flex space-x-3 text-sm">
                       <label className="flex items-center space-x-1">
                         <input
@@ -333,6 +334,15 @@ export function BallisticTesting() {
                           className="rounded"
                         />
                         <span>Back</span>
+                      </label>
+                      <label className="flex items-center space-x-1">
+                        <input
+                          type="checkbox"
+                          checked={customVestBase.stitch_pattern === 'stitched'}
+                          onChange={(e) => setCustomVestBase({...customVestBase, stitch_pattern: e.target.checked ? 'stitched' : null})}
+                          className="rounded"
+                        />
+                        <span>Stitched</span>
                       </label>
                     </div>
                   </div>
@@ -443,7 +453,7 @@ export function BallisticTesting() {
 
             {/* Level Selection (only shown when protocol is selected) */}
             {selectedProtocolId && (
-              <div className="lg:col-span-2">
+              <div>
                 <label className="block text-sm font-medium mb-1">Protocol Level</label>
                 <select
                   value={selectedLevelIndex}
