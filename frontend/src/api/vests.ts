@@ -67,10 +67,14 @@ export interface VestListItem {
   id: string;
   vest_code: string;
   vest_type: string | null;
+  is_female: boolean | null;
   threat_level: string | null;
+  protection_class: string | null;
   total_layers: number | null;
   total_thickness_mm: number | null;
   sizes: Record<string, number> | null;
+  construction_notes: string | null;
+  stitch_pattern: string | null;
   created_by_username: string | null;
   composition: string | null;
 }

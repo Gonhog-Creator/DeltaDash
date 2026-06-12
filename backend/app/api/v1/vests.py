@@ -73,11 +73,14 @@ def list_vests(
             "id": vest.id,
             "vest_code": vest.vest_code,
             "vest_type": vest.vest_type,
+            "is_female": vest.is_female,
             "threat_level": vest.threat_level,
             "protection_class": vest.protection_class,
             "total_layers": vest.total_layers,
             "total_thickness_mm": vest.total_thickness_mm,
             "sizes": vest.sizes,
+            "construction_notes": vest.construction_notes,
+            "stitch_pattern": vest.stitch_pattern,
             "created_by_username": vest.created_by_username if hasattr(vest, 'created_by_username') else None,
             "composition": ", ".join(composition_parts) if composition_parts else None
         }

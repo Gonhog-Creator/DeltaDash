@@ -54,6 +54,7 @@ export function Vests() {
   const [loadingTestSessions, setLoadingTestSessions] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
   const [protocolThreatLevels, setProtocolThreatLevels] = useState<ProtocolThreatLevel[]>([]);
+  const [vestTestSessionCounts, setVestTestSessionCounts] = useState<Record<string, number>>({});
 
   // Refetch materials when form opens to get latest ply_count values
   useEffect(() => {
@@ -74,6 +75,30 @@ export function Vests() {
     };
     fetchProtocolThreatLevels();
   }, []);
+
+  // Fetch test session counts for all vests on mount
+  useEffect(() => {
+    const fetchVestTestSessionCounts = async () => {
+      if (!vests) return;
+      try {
+        const counts: Record<string, number> = {};
+        await Promise.all(
+          vests.map(async (vest) => {
+            try {
+              const sessions = await vestsApi.getTestSessions(vest.id);
+              counts[vest.id] = sessions.test_sessions.length;
+            } catch (err) {
+              counts[vest.id] = 0;
+            }
+          })
+        );
+        setVestTestSessionCounts(counts);
+      } catch (err) {
+        console.error('Failed to fetch vest test session counts:', err);
+      }
+    };
+    fetchVestTestSessionCounts();
+  }, [vests]);
   const [formData, setFormData] = useState<VestCreate>({
     vest_code: '',
     vest_type: '',
@@ -631,14 +656,14 @@ export function Vests() {
           <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+              <th
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 max-w-[180px] truncate"
                 onClick={() => handleSort('vest_code')}
               >
                 Vest Code {sortField === 'vest_code' && (sortDirection === 'asc' ? '↑' : '↓')}
               </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+              <th
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 max-w-32 truncate"
                 onClick={() => handleSort('vest_type')}
               >
                 <div className="flex items-center gap-1">
@@ -657,8 +682,8 @@ export function Vests() {
                   </button>
                 </div>
               </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+              <th
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 max-w-40 truncate"
                 onClick={() => handleSort('threat_level')}
               >
                 <div className="flex items-center gap-1">
@@ -683,15 +708,17 @@ export function Vests() {
               >
                 Total Layers {sortField === 'total_layers' && (sortDirection === 'asc' ? '↑' : '↓')}
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Composition</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-xs">Composition</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thickness</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stitched</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Linked</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {getFilteredAndSortedVests(vests)?.map((vest) => {
               // Calculate estimated thickness from layers if not provided
-              let thicknessDisplay = vest.total_thickness_mm ? `${vest.total_thickness_mm} mm` : '-';
+              let thicknessDisplay = vest.total_thickness_mm ? `${Number(vest.total_thickness_mm).toFixed(2)} mm` : '-';
               if (!vest.total_thickness_mm && vest.layers && vest.layers.length > 0) {
                 const estimatedThickness = vest.layers.reduce((sum, layer) => {
                   const material = materials?.find(m => m.id === layer.material_id);
@@ -705,14 +732,26 @@ export function Vests() {
                 }
               }
 
+              const isStitched = vest.stitch_pattern === 'stitched';
+              const shouldShowStitched = vest.vest_type?.toLowerCase() === 'soft';
+              const isLinked = vestTestSessionCounts[vest.id] > 0;
+
               return (
                 <tr key={vest.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => handleVestClick(vest)}>
-                  <td className="px-6 py-4 text-sm font-medium text-gray-900 break-words">{vest.vest_code?.toUpperCase()}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.vest_type ? vest.vest_type.charAt(0).toUpperCase() + vest.vest_type.slice(1).toLowerCase() : '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.threat_level || '-'}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900 max-w-[180px] break-words">{vest.vest_code?.toUpperCase()}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500 max-w-32 break-words">{vest.vest_type ? vest.vest_type.charAt(0).toUpperCase() + vest.vest_type.slice(1).toLowerCase() : '-'}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500 max-w-40 break-words">{vest.threat_level || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.total_layers || '-'}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 break-words" title={vest.composition || ''}>{vest.composition || '-'}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500 max-w-xs break-words">{vest.composition || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{thicknessDisplay}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{shouldShowStitched ? (isStitched ? 'Yes' : 'No') : '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {isLinked ? (
+                      <span className="text-green-500 text-lg">✓</span>
+                    ) : (
+                      <span className="text-red-500 text-lg">✗</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   {role !== 'viewer' && (
                     <>
@@ -737,7 +776,7 @@ export function Vests() {
             })}
             {vests?.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={9} className="px-6 py-4 text-center text-sm text-gray-500">
                   No vests found. Click "Add Vest" to create one.
                 </td>
               </tr>

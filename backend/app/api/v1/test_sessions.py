@@ -39,6 +39,9 @@ def list_test_sessions(
     
     result = []
     for session, vest in test_sessions:
+        # Count shot data for this test session
+        shot_count = db.query(ShotDataModel).filter(ShotDataModel.test_session_id == session.id).count()
+        
         session_dict = {
             "id": session.id,
             "name": session.name,
@@ -61,6 +64,7 @@ def list_test_sessions(
             "certification_number": session.certification_number,
             "created_at": session.created_at,
             "updated_at": session.updated_at,
+            "shot_count": shot_count,
         }
         result.append(session_dict)
     

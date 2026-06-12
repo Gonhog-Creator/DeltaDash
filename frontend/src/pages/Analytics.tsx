@@ -189,6 +189,8 @@ export function Analytics() {
         return point.vest_number || 'Unknown';
       case 'material':
         return point.material_name || 'Unknown';
+      case 'material_class':
+        return point.material_class || 'Unknown';
       default:
         return null;
     }
@@ -216,6 +218,46 @@ export function Analytics() {
   const uniqueCalibers = Array.from(new Set(analyticsData?.points.map(p => p.caliber).filter(Boolean) || []));
   // Get protection levels from data (show all that exist)
   const uniqueProtectionLevels = Array.from(new Set(analyticsData?.points.map(p => p.protection_level).filter(Boolean) || []));
+  
+  // Group protection levels by RBX pattern
+  const getProtectionLevelGroups = () => {
+    const groups = new Map<string, string[]>();
+    const nonGrouped: string[] = [];
+    
+    uniqueProtectionLevels.forEach(level => {
+      const match = level.match(/RB(\d+)/i);
+      if (match) {
+        const rbLevel = `RB${match[1]}`.toUpperCase();
+        if (!groups.has(rbLevel)) {
+          groups.set(rbLevel, []);
+        }
+        groups.get(rbLevel)!.push(level);
+      } else {
+        nonGrouped.push(level);
+      }
+    });
+    
+    return { groups, nonGrouped };
+  };
+  
+  const { groups: protectionGroups, nonGrouped: nonGroupedProtectionLevels } = getProtectionLevelGroups();
+  
+  // Get all protection levels that belong to a selected group
+  const getExpandedProtectionLevels = (selected: string[]) => {
+    const expanded: string[] = [];
+    selected.forEach(level => {
+      if (level.startsWith('RB') && level.length === 3 && level.match(/RB\d+/)) {
+        // This is a group level, add all its members
+        const groupMembers = protectionGroups.get(level);
+        if (groupMembers) {
+          expanded.push(...groupMembers);
+        }
+      } else {
+        expanded.push(level);
+      }
+    });
+    return expanded;
+  };
 
   // Apply filters
   const filteredPoints = analyticsData?.points.filter(p => {
@@ -224,8 +266,9 @@ export function Analytics() {
       return false;
     }
 
-    // Filter by protection level
-    if (selectedProtectionLevels.length > 0 && (!p.protection_level || !selectedProtectionLevels.includes(p.protection_level))) {
+    // Filter by protection level (expand groups to include all members)
+    const expandedProtectionLevels = getExpandedProtectionLevels(selectedProtectionLevels);
+    if (selectedProtectionLevels.length > 0 && (!p.protection_level || !expandedProtectionLevels.includes(p.protection_level))) {
       return false;
     }
 
@@ -411,7 +454,24 @@ export function Analytics() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Protection Level</label>
                 <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
-                  {uniqueProtectionLevels.map(level => (
+                  {Array.from(protectionGroups.keys()).map(rbLevel => (
+                    <label key={rbLevel} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedProtectionLevels.includes(rbLevel)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedProtectionLevels([...selectedProtectionLevels, rbLevel]);
+                          } else {
+                            setSelectedProtectionLevels(selectedProtectionLevels.filter(l => l !== rbLevel));
+                          }
+                        }}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm text-gray-700">{rbLevel}</span>
+                    </label>
+                  ))}
+                  {nonGroupedProtectionLevels.map(level => (
                     <label key={level} className="flex items-center space-x-2">
                       <input
                         type="checkbox"

@@ -135,6 +135,40 @@ def get_velocity_vs_bfd(
         
         angle_degrees_value = float(shot.angle_degrees) if shot.angle_degrees is not None else None
         
+        # Get the dominant material for this vest
+        material_name = None
+        material_class = None
+        if vest:
+            # Get vest layers with materials
+            vest_layers = db.query(VestLayerModel, MaterialModel).outerjoin(
+                MaterialModel, VestLayerModel.material_id == MaterialModel.id
+            ).filter(VestLayerModel.vest_id == vest.id).all()
+            
+            if vest_layers:
+                # Calculate dominant material based on layer_count * thickness
+                material_scores = {}
+                for layer, material in vest_layers:
+                    if material:
+                        # Score = layer_count * material_thickness
+                        thickness = float(material.thickness_mm) if material.thickness_mm else 1.0
+                        layer_count = layer.layer_count if layer.layer_count else 1
+                        score = layer_count * thickness
+                        
+                        material_key = material.id
+                        if material_key not in material_scores:
+                            material_scores[material_key] = {
+                                'name': material.name,
+                                'material_class': material.material_class,
+                                'score': 0
+                            }
+                        material_scores[material_key]['score'] += score
+                
+                # Find the material with the highest score
+                if material_scores:
+                    dominant_material = max(material_scores.values(), key=lambda x: x['score'])
+                    material_name = dominant_material['name']
+                    material_class = dominant_material['material_class']
+        
         # Create one data point per shot (not per material) for efficiency
         point = AnalyticsPoint(
             velocity=float(shot.velocity_m_s) if shot.velocity_m_s else None,
@@ -151,8 +185,8 @@ def get_velocity_vs_bfd(
             angle_degrees=angle_degrees_value,
             trauma_qualitative=shot.trauma_qualitative,
             is_official=test_session.is_official if test_session else None,
-            material_name=None,
-            material_class=None,
+            material_name=material_name,
+            material_class=material_class,
         )
         points.append(point)
     

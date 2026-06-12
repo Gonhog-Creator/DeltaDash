@@ -22,6 +22,7 @@ export interface TestSession {
   certification_number: string | null;
   created_at: string;
   updated_at: string;
+  shot_count?: number | null;
 }
 
 export interface TestSessionCreate {

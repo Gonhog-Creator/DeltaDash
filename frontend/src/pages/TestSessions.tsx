@@ -325,7 +325,7 @@ export function TestSessions() {
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-24 truncate">Lab</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Protocol</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vest</th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Cond.</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate"></th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Excel</th>
                 <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
@@ -335,6 +335,7 @@ export function TestSessions() {
               const children = groupedTests[parent.id] || [];
               const hasChildren = children.length > 0;
               const isExpanded = expandedGroups.has(parent.id);
+              const totalShotCount = children.reduce((sum, child) => sum + (child.shot_count || 0), 0);
               
               const sortedChildren = [...children].sort((a, b) => {
                 const extractTestNumber = (name: string, parentName: string) => {
@@ -367,7 +368,7 @@ export function TestSessions() {
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={parent.vest_code || ''}>
                       {parent.vest_code ? (parent.vest_code.length > 15 ? parent.vest_code.substring(0, 15) + '...' : parent.vest_code) : '-'}
                     </td>
-                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={formatConditioning(parent.conditioning)}>{formatConditioning(parent.conditioning)}</td>
+                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate">{hasChildren ? totalShotCount : '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
                       {role !== 'viewer' && (
                         parent.excel_file_path ? (
@@ -1006,7 +1007,7 @@ export function TestSessions() {
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
                 >
                   <option value="">Select vest...</option>
-                  {vests?.map((vest) => (
+                  {vests?.sort((a, b) => a.vest_code.localeCompare(b.vest_code)).map((vest) => (
                     <option key={vest.id} value={vest.id}>
                       {vest.vest_code} - {vest.vest_type || 'N/A'} - {vest.threat_level || 'N/A'}
                     </option>

@@ -390,20 +390,20 @@ export function Comparison() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                <tr className={getBetterValue('avgBfd1to3', vest1Stats.avgBfd1to3, vest2Stats.avgBfd1to3) === 'vest1' ? 'bg-green-50' : getBetterValue('avgBfd1to3', vest1Stats.avgBfd1to3, vest2Stats.avgBfd1to3) === 'vest2' ? 'bg-green-50' : ''}>
+                <tr>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Avg BFD (Shots 1-3)</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest1Stats.avgBfd1to3?.toFixed(2) || 'N/A'} mm</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest2Stats.avgBfd1to3?.toFixed(2) || 'N/A'} mm</td>
+                  <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-500 ${getBetterValue('avgBfd1to3', vest1Stats.avgBfd1to3, vest2Stats.avgBfd1to3) === 'vest1' ? 'bg-green-50' : ''}`}>{vest1Stats.avgBfd1to3?.toFixed(2) || 'N/A'} mm</td>
+                  <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-500 ${getBetterValue('avgBfd1to3', vest1Stats.avgBfd1to3, vest2Stats.avgBfd1to3) === 'vest2' ? 'bg-green-50' : ''}`}>{vest2Stats.avgBfd1to3?.toFixed(2) || 'N/A'} mm</td>
                 </tr>
-                <tr className={getBetterValue('maxBfd1to3', vest1Stats.maxBfd1to3, vest2Stats.maxBfd1to3) === 'vest1' ? 'bg-green-50' : getBetterValue('maxBfd1to3', vest1Stats.maxBfd1to3, vest2Stats.maxBfd1to3) === 'vest2' ? 'bg-green-50' : ''}>
+                <tr>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Max BFD (Shots 1-3)</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest1Stats.maxBfd1to3?.toFixed(2) || 'N/A'} mm</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest2Stats.maxBfd1to3?.toFixed(2) || 'N/A'} mm</td>
+                  <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-500 ${getBetterValue('maxBfd1to3', vest1Stats.maxBfd1to3, vest2Stats.maxBfd1to3) === 'vest1' ? 'bg-green-50' : ''}`}>{vest1Stats.maxBfd1to3?.toFixed(2) || 'N/A'} mm</td>
+                  <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-500 ${getBetterValue('maxBfd1to3', vest1Stats.maxBfd1to3, vest2Stats.maxBfd1to3) === 'vest2' ? 'bg-green-50' : ''}`}>{vest2Stats.maxBfd1to3?.toFixed(2) || 'N/A'} mm</td>
                 </tr>
-                <tr className={getBetterValue('thickness', vest1Stats.thickness, vest2Stats.thickness) === 'vest1' ? 'bg-green-50' : getBetterValue('thickness', vest1Stats.thickness, vest2Stats.thickness) === 'vest2' ? 'bg-green-50' : ''}>
+                <tr>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Thickness</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest1Stats.thickness ? Number(vest1Stats.thickness).toFixed(2) : 'N/A'} mm</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest2Stats.thickness ? Number(vest2Stats.thickness).toFixed(2) : 'N/A'} mm</td>
+                  <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-500 ${getBetterValue('thickness', vest1Stats.thickness, vest2Stats.thickness) === 'vest1' ? 'bg-green-50' : ''}`}>{vest1Stats.thickness ? Number(vest1Stats.thickness).toFixed(2) : 'N/A'} mm</td>
+                  <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-500 ${getBetterValue('thickness', vest1Stats.thickness, vest2Stats.thickness) === 'vest2' ? 'bg-green-50' : ''}`}>{vest2Stats.thickness ? Number(vest2Stats.thickness).toFixed(2) : 'N/A'} mm</td>
                 </tr>
               </tbody>
             </table>

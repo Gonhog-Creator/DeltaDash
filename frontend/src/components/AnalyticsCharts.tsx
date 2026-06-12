@@ -42,6 +42,46 @@ export function FilterSection({
   setSelectedCalibers,
   setSelectedProtectionLevels,
 }: FilterSectionProps) {
+  // Group protection levels by RBX pattern
+  const getProtectionLevelGroups = () => {
+    const groups = new Map<string, string[]>();
+    const nonGrouped: string[] = [];
+    
+    uniqueProtectionLevels.forEach(level => {
+      const match = level.match(/RB(\d+)/i);
+      if (match) {
+        const rbLevel = `RB${match[1]}`.toUpperCase();
+        if (!groups.has(rbLevel)) {
+          groups.set(rbLevel, []);
+        }
+        groups.get(rbLevel)!.push(level);
+      } else {
+        nonGrouped.push(level);
+      }
+    });
+    
+    return { groups, nonGrouped };
+  };
+  
+  const { groups: protectionGroups, nonGrouped: nonGroupedProtectionLevels } = getProtectionLevelGroups();
+  
+  // Get all protection levels that belong to a selected group
+  const getExpandedProtectionLevels = (selected: string[]) => {
+    const expanded: string[] = [];
+    selected.forEach(level => {
+      if (level.startsWith('RB') && level.length === 3 && level.match(/RB\d+/)) {
+        // This is a group level, add all its members
+        const groupMembers = protectionGroups.get(level);
+        if (groupMembers) {
+          expanded.push(...groupMembers);
+        }
+      } else {
+        expanded.push(level);
+      }
+    });
+    return expanded;
+  };
+  
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Filters</h2>
@@ -79,7 +119,24 @@ export function FilterSection({
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Protection Level</label>
           <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
-            {uniqueProtectionLevels.map(level => (
+            {Array.from(protectionGroups.keys()).map(rbLevel => (
+              <label key={rbLevel} className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={selectedProtectionLevels.includes(rbLevel)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedProtectionLevels([...selectedProtectionLevels, rbLevel]);
+                    } else {
+                      setSelectedProtectionLevels(selectedProtectionLevels.filter(l => l !== rbLevel));
+                    }
+                  }}
+                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-sm text-gray-700">{rbLevel}</span>
+              </label>
+            ))}
+            {nonGroupedProtectionLevels.map(level => (
               <label key={level} className="flex items-center space-x-2">
                 <input
                   type="checkbox"

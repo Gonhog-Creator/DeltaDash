@@ -127,7 +127,7 @@ export function OfficialCertifications() {
 
     // Auto-fill test name from filename if not set
     if (!testName) {
-      const fileName = file.name.replace(/\.[^/.]+$/, '');
+      const fileName = file.name.replace(/\.[^/.]+$/, '').replace(/_/g, '/');
       setTestName(fileName);
     }
 
@@ -308,7 +308,7 @@ export function OfficialCertifications() {
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-24 truncate">Lab</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Protocol</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vest</th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Cond.</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate"></th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cert. #</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Excel</th>
                 <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -319,6 +319,7 @@ export function OfficialCertifications() {
               const children = groupedTests[parent.id] || [];
               const hasChildren = children.length > 0;
               const isExpanded = expandedGroups.has(parent.id);
+              const totalShotCount = children.reduce((sum, child) => sum + (child.shot_count || 0), 0);
               
               const sortedChildren = [...children].sort((a, b) => {
                 const extractTestNumber = (name: string, parentName: string) => {
@@ -351,7 +352,7 @@ export function OfficialCertifications() {
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={parent.vest_code || ''}>
                       {parent.vest_code ? (parent.vest_code.length > 15 ? parent.vest_code.substring(0, 15) + '...' : parent.vest_code) : '-'}
                     </td>
-                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={formatConditioning(parent.conditioning)}>{formatConditioning(parent.conditioning)}</td>
+                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate">{hasChildren ? totalShotCount : '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.certification_number || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
                       {role !== 'viewer' && (
@@ -470,7 +471,7 @@ export function OfficialCertifications() {
             })}
             {testSessions?.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={10} className="px-6 py-4 text-center text-sm text-gray-500">
                   No official certifications found. Click "Upload Excel" to create one.
                 </td>
               </tr>
@@ -592,7 +593,7 @@ export function OfficialCertifications() {
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
                 >
                   <option value="">Select vest...</option>
-                  {vests?.map((vest) => (
+                  {vests?.sort((a, b) => a.vest_code.localeCompare(b.vest_code)).map((vest) => (
                     <option key={vest.id} value={vest.id}>
                       {vest.vest_code} - {vest.vest_type || 'N/A'} - {vest.threat_level || 'N/A'}
                     </option>

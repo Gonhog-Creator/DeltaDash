@@ -42,6 +42,7 @@ class PredictionService:
         import os
         import json
         import joblib
+        import sys
         
         # Model directory - prediction_service.py is in backend/ml, so we need to go up to backend
         backend_dir = os.path.dirname(os.path.dirname(__file__))
@@ -49,6 +50,31 @@ class PredictionService:
         
         # Load metadata
         metadata_path = os.path.join(model_dir, "metadata.json")
+        
+        # If metadata doesn't exist on filesystem, try to load from database
+        if not os.path.exists(metadata_path):
+            try:
+                # Add backend to path to import app modules
+                if backend_dir not in sys.path:
+                    sys.path.insert(0, backend_dir)
+                from app.services.ml.ballistic_ml import load_model_version
+                
+                # If version is specified, load that version from database
+                if version:
+                    load_model_version(version, db_session=self.db)
+                else:
+                    # Load the most recent model from database
+                    from app.db.models.model_run import ModelRun
+                    most_recent = self.db.query(ModelRun).filter(
+                        ModelRun.model_type == "ballistic"
+                    ).order_by(ModelRun.created_at.desc()).first()
+                    if most_recent:
+                        load_model_version(most_recent.version, db_session=self.db)
+            except Exception as e:
+                print(f"Failed to load model from database: {e}")
+                return None
+        
+        # Check again if metadata exists after attempting database load
         if not os.path.exists(metadata_path):
             return None
         

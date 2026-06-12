@@ -79,6 +79,8 @@ class VestListItem(BaseModel):
     total_layers: Optional[int]
     total_thickness_mm: Optional[Decimal]
     sizes: Optional[Dict[str, float]] = None
+    construction_notes: Optional[str] = None
+    stitch_pattern: Optional[str] = None
     created_by_username: Optional[str] = None
     composition: Optional[str] = None
 
