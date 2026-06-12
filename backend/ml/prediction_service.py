@@ -85,6 +85,7 @@ class PredictionService:
 
         # If version is specified and model was NOT loaded from database, try version directory
         # If loaded from database, the files are already in the current location
+        version_dir = None
         if version and not loaded_from_db:
             version_dir = os.path.join(model_dir, "versions", version)
             if not os.path.exists(version_dir):
@@ -121,7 +122,7 @@ class PredictionService:
 
         # Try to load perforation classifier
         perforation_model = None
-        perforation_path = os.path.join(model_dir if not version else version_dir, "perforated.pkl")
+        perforation_path = os.path.join(version_dir if version_dir else model_dir, "perforated.pkl")
         if os.path.exists(perforation_path):
             perforation_loaded = joblib.load(perforation_path)
             if isinstance(perforation_loaded, dict) and "model" in perforation_loaded:
@@ -548,6 +549,7 @@ class PredictionService:
             for ammo_config in ammunition_config:
                 ammo_id = ammo_config.get('ammunition_id')
                 reference_velocity = ammo_config.get('reference_velocity_m_s')
+                velocity_window = ammo_config.get('velocity_window_m_s', 0)
                 shots_per_panel = ammo_config.get('shots_per_panel', 6)
 
                 # Get ammunition
@@ -563,103 +565,119 @@ class PredictionService:
                     {'side': 'back', 'conditioning': 'wet'},
                 ]
 
+                # Generate velocity variants based on velocity window
+                velocity_variants = []
+                if velocity_window > 0:
+                    velocity_variants = [
+                        {'velocity': reference_velocity - velocity_window, 'label': 'min'},
+                        {'velocity': reference_velocity, 'label': 'target'},
+                        {'velocity': reference_velocity + velocity_window, 'label': 'max'},
+                    ]
+                else:
+                    velocity_variants = [
+                        {'velocity': reference_velocity, 'label': 'target'},
+                    ]
+
                 for condition in conditions:
-                    for shot_num in range(shots_per_panel):
-                        # Create a feature dictionary matching training format
-                        import pandas as pd
+                    for velocity_variant in velocity_variants:
+                        velocity = velocity_variant['velocity']
+                        velocity_label = velocity_variant['label']
+                        for shot_num in range(shots_per_panel):
+                            # Create a feature dictionary matching training format
+                            import pandas as pd
 
-                        # Get material properties for feature engineering
-                        material_properties = fetch_material_properties(self.db)
+                            # Get material properties for feature engineering
+                            material_properties = fetch_material_properties(self.db)
 
-                        # Create feature row matching training format (same as health check)
-                        # Use same fallback hierarchy as health check for threat_level
-                        threat_level = (level.get('level_name') or custom_vest.get('threat_level'))
-                        features = {
-                            'vest_composition': vest_composition,
-                            'number_of_layers': int(custom_vest.get('total_layers', 0)),
-                            'ammunition_used': ammo.name if ammo else ammo.caliber,
-                            'threat_level': threat_level,
-                            'shot_number': shot_num + 1,
-                            'impact_velocity_mps': reference_velocity,
-                            'impact_angle_deg': 0.0,
-                            'bullet_mass_g': float(ammo.projectile_mass_grams) if ammo and ammo.projectile_mass_grams else 0,
-                            'temperature_c': 20.0,
-                            'humidity_pct': 50.0,
-                            'condition': condition['conditioning'],
-                            'panel_side': condition['side'],
-                            'caliber_diameter_mm': float(ammo.caliber_diameter_mm) if ammo and ammo.caliber_diameter_mm else None,
-                            'caliber_length_mm': float(ammo.caliber_length_mm) if ammo and ammo.caliber_length_mm else None,
-                            'vest_type': custom_vest.get('vest_type'),
-                            'is_female': custom_vest.get('is_female', False),
-                            'ply_orientations': None,
-                        }
+                            # Create feature row matching training format (same as health check)
+                            # Use same fallback hierarchy as health check for threat_level
+                            threat_level = (level.get('level_name') or custom_vest.get('threat_level'))
+                            features = {
+                                'vest_composition': vest_composition,
+                                'number_of_layers': int(custom_vest.get('total_layers', 0)),
+                                'ammunition_used': ammo.name if ammo else ammo.caliber,
+                                'threat_level': threat_level,
+                                'shot_number': shot_num + 1,
+                                'impact_velocity_mps': velocity,
+                                'impact_angle_deg': 0.0,
+                                'bullet_mass_g': float(ammo.projectile_mass_grams) if ammo and ammo.projectile_mass_grams else 0,
+                                'temperature_c': 20.0,
+                                'humidity_pct': 50.0,
+                                'condition': condition['conditioning'],
+                                'panel_side': condition['side'],
+                                'caliber_diameter_mm': float(ammo.caliber_diameter_mm) if ammo and ammo.caliber_diameter_mm else None,
+                                'caliber_length_mm': float(ammo.caliber_length_mm) if ammo and ammo.caliber_length_mm else None,
+                                'vest_type': custom_vest.get('vest_type'),
+                                'is_female': custom_vest.get('is_female', False),
+                                'ply_orientations': None,
+                            }
 
-                        # Convert to DataFrame and apply engineering features
-                        df = pd.DataFrame([features])
-                        df = add_engineered_features(df, material_properties, validate=False)
+                            # Convert to DataFrame and apply engineering features
+                            df = pd.DataFrame([features])
+                            df = add_engineered_features(df, material_properties, validate=False)
 
-                        # Encode categorical features (simple label encoding)
-                        categorical_cols = df.select_dtypes(include=['object']).columns
-                        for col in categorical_cols:
-                            df[col] = pd.factorize(df[col].astype(str))[0]
+                            # Encode categorical features (simple label encoding)
+                            categorical_cols = df.select_dtypes(include=['object']).columns
+                            for col in categorical_cols:
+                                df[col] = pd.factorize(df[col].astype(str))[0]
 
-                        # Ensure all required features are present
-                        for col in feature_columns:
-                            if col not in df.columns:
-                                df[col] = 0
+                            # Ensure all required features are present
+                            for col in feature_columns:
+                                if col not in df.columns:
+                                    df[col] = 0
 
-                        # Reorder columns to match training data
-                        df = df[feature_columns]
+                            # Reorder columns to match training data
+                            df = df[feature_columns]
 
-                        # Scale features
-                        features_scaled = scaler.transform(df)
+                            # Scale features
+                            features_scaled = scaler.transform(df)
 
-                        # Make prediction
-                        prediction = model.predict(features_scaled)[0]
+                            # Make prediction
+                            prediction = model.predict(features_scaled)[0]
 
-                        # Apply inverse transform if log transform was used
-                        if use_log_transform:
-                            prediction = float(np.expm1(prediction))
+                            # Apply inverse transform if log transform was used
+                            if use_log_transform:
+                                prediction = float(np.expm1(prediction))
 
-                        # Predict perforation if classifier is available
-                        perforation_probability = None
-                        if perforation_model:
-                            perforation_probability = float(perforation_model.predict_proba(features_scaled)[0, 1])
+                            # Predict perforation if classifier is available
+                            perforation_probability = None
+                            if perforation_model:
+                                perforation_probability = float(perforation_model.predict_proba(features_scaled)[0, 1])
 
-                        # Determine perforation status
-                        perforation_status = None
-                        if perforation_probability is not None and perforation_probability > 0.9:
-                            perforation_status = 'perforated'
+                            # Determine perforation status
+                            perforation_status = None
+                            if perforation_probability is not None and perforation_probability > 0.9:
+                                perforation_status = 'perforated'
 
-                        # Calculate confidence interval
-                        confidence_interval = 2.0  # ±2mm
-                        confidence_interval_low_mm = float(prediction - confidence_interval)
-                        confidence_interval_high_mm = float(prediction + confidence_interval)
+                            # Calculate confidence interval
+                            confidence_interval = 2.0  # ±2mm
+                            confidence_interval_low_mm = float(prediction - confidence_interval)
+                            confidence_interval_high_mm = float(prediction + confidence_interval)
 
-                        # Check domain of applicability
-                        comparable_shot_count = self._count_comparable_shots(features)
-                        extrapolation_warning = comparable_shot_count < 10
+                            # Check domain of applicability
+                            comparable_shot_count = self._count_comparable_shots(features)
+                            extrapolation_warning = comparable_shot_count < 10
 
-                        prediction_result = {
-                            'shot_number': shot_num + 1,
-                            'level_name': level_name,
-                            'side': condition['side'],
-                            'conditioning': condition['conditioning'],
-                            'ammunition_id': ammo_id,
-                            'ammunition_name': ammo.name if ammo.name else ammo.caliber,
-                            'reference_velocity_m_s': reference_velocity,
-                            'velocity_m_s': velocity,
-                            'velocity_label': velocity_label,
-                            'predicted_bfd_mm': float(prediction),
-                            'perforation_probability': perforation_probability,
-                            'perforation_status': perforation_status,
-                            'confidence_interval_low_mm': confidence_interval_low_mm,
-                            'confidence_interval_high_mm': confidence_interval_high_mm,
-                            'comparable_shot_count': comparable_shot_count,
-                            'extrapolation_warning': extrapolation_warning,
-                        }
+                            prediction_result = {
+                                'shot_number': shot_num + 1,
+                                'level_name': level_name,
+                                'side': condition['side'],
+                                'conditioning': condition['conditioning'],
+                                'ammunition_id': ammo_id,
+                                'ammunition_name': ammo.name if ammo.name else ammo.caliber,
+                                'reference_velocity_m_s': reference_velocity,
+                                'velocity_m_s': velocity,
+                                'velocity_label': velocity_label,
+                                'predicted_bfd_mm': float(prediction),
+                                'perforation_probability': perforation_probability,
+                                'perforation_status': perforation_status,
+                                'confidence_interval_low_mm': confidence_interval_low_mm,
+                                'confidence_interval_high_mm': confidence_interval_high_mm,
+                                'comparable_shot_count': comparable_shot_count,
+                                'extrapolation_warning': extrapolation_warning,
+                            }
 
-                        all_predictions.append(prediction_result)
+                            all_predictions.append(prediction_result)
 
         # Calculate summary statistics
         all_bfd_values = [p['predicted_bfd_mm'] for p in all_predictions if p['predicted_bfd_mm'] is not None]

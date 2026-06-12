@@ -17,6 +17,8 @@ from app.db.models.shot_data import ShotData
 from app.db.models.location import Location
 from app.db.models.protocol import Protocol
 from app.db.models.anchor_point import AnchorPoint, AnchorPointLayer
+from app.db.models.geometry import Geometry
+from app.db.models.geometry_material_config import GeometryMaterialConfig
 
 __all__ = [
     "User",
@@ -39,4 +41,6 @@ __all__ = [
     "Protocol",
     "AnchorPoint",
     "AnchorPointLayer",
+    "Geometry",
+    "GeometryMaterialConfig",
 ]

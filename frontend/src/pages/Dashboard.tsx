@@ -9,9 +9,9 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { normalizeString } from '../utils/string';
 
 export function Dashboard() {
-  const { data: materials } = useMaterials();
-  const { data: shots } = useShots();
-  const { data: vests } = useVests();
+  const { data: materials, refetch: refetchMaterials } = useMaterials();
+  const { data: shots, refetch: refetchShots } = useShots();
+  const { data: vests, refetch: refetchVests } = useVests();
   const { isAdmin, role } = useAuth();
   const [stats, setStats] = useState({ test_session_count: 0, total_shots: 0 });
   const [isSyncing, setIsSyncing] = useState(false);
@@ -147,6 +147,10 @@ export function Dashboard() {
       // Refresh stats after sync
       const data = await apiClient.get<{ test_session_count: number; total_shots: number }>('/api/v1/test-sessions/stats');
       setStats({ test_session_count: data.test_session_count, total_shots: data.total_shots });
+      // Refetch all data after sync to show updated records
+      refetchVests();
+      refetchMaterials();
+      refetchShots();
     } catch (error: any) {
       console.error('Failed to sync database:', error);
       const errorMessage = error.response?.data?.detail || error.message || 'Failed to sync database. Check console for details.';

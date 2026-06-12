@@ -36,6 +36,7 @@ export function Layout({ children }: LayoutProps) {
     { path: '/materials', label: 'Materials' },
     { path: '/vests', label: 'Vests' },
     { path: '/ammunition', label: 'Ammunition' },
+    { path: '/fabric-estimation', label: 'Fabric Estimation' },
     { path: '/analytics', label: 'Analytics' },
     { path: '/comparison', label: 'Comparison' },
     { path: '/predictions', label: 'Predictions' },

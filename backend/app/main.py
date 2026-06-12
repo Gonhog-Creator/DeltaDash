@@ -9,7 +9,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)),
 
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns, analytics, locations, protocols, shot_data, vests, admin, ballistic, anchor_points
+from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns, analytics, locations, protocols, shot_data, vests, admin, ballistic, anchor_points, geometries, fabric_estimation, geometry_material_configs
 
 setup_logging()
 
@@ -45,6 +45,9 @@ app.include_router(vests.router, prefix="/api/v1/vests", tags=["vests"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(ballistic.router, prefix="/api/v1", tags=["ballistic"])
 app.include_router(anchor_points.router, prefix="/api/v1", tags=["anchor-points"])
+app.include_router(geometries.router, prefix="/api/v1/geometries", tags=["geometries"])
+app.include_router(fabric_estimation.router, prefix="/api/v1/fabric-estimation", tags=["fabric-estimation"])
+app.include_router(geometry_material_configs.router, prefix="/api/v1/geometry-material-configs", tags=["geometry-material-configs"])
 
 
 @app.get("/health")

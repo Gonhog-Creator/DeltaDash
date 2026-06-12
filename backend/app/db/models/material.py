@@ -46,5 +46,7 @@ class Material(Base):
     notes = Column(String)
     source_confidence = Column(String)
     fabric_composition_ids = Column(JSONB, nullable=True)  # Array of material IDs for compressed plate fabrics
+    price_per_m2 = Column(Numeric(10, 2), nullable=True)  # Material cost per square meter
+    roll_area_m2 = Column(Numeric(10, 2), nullable=True)  # Area per roll in m² (width x length)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -37,6 +37,8 @@ export interface Material {
   notes: string | null;
   source_confidence: string | null;
   fabric_composition_ids: string[] | null;
+  price_per_m2: number | null;
+  roll_area_m2: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -72,6 +74,8 @@ export interface MaterialCreate {
   notes?: string | null;
   source_confidence?: string | null;
   fabric_composition_ids?: string[] | null;
+  price_per_m2?: number | null;
+  roll_area_m2?: number | null;
   created_by_username?: string | null;
 }
 
@@ -107,6 +111,8 @@ export interface MaterialUpdate {
   notes?: string | null;
   source_confidence?: string | null;
   fabric_composition_ids?: string[] | null;
+  price_per_m2?: number | null;
+  roll_area_m2?: number | null;
 }
 
 export interface MaterialVestUsage {

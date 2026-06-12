@@ -15,6 +15,7 @@ import { ModelTraining } from './pages/ModelTraining'
 import { OfficialCertifications } from './pages/OfficialCertifications'
 import { Protocols } from './pages/Protocols'
 import { Comparison } from './pages/Comparison'
+import { FabricEstimation } from './pages/FabricEstimation'
 import { ViewerModeProvider } from './contexts/ViewerModeContext'
 
 const queryClient = new QueryClient({
@@ -51,6 +52,7 @@ function App() {
                       <Route path="/comparison" element={<Comparison />} />
                       <Route path="/predictions" element={<BallisticTesting />} />
                       <Route path="/model-training" element={<ModelTraining />} />
+                      <Route path="/fabric-estimation" element={<FabricEstimation />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </Layout>
