@@ -289,6 +289,7 @@ def get_count_preview(remote_cursor, local_db: Session) -> SyncPreview:
         ("model_runs", ModelRun, "SELECT COUNT(*) FROM model_runs"),
         ("protocols", Protocol, "SELECT COUNT(*) FROM protocols"),
         ("locations", Location, "SELECT COUNT(*) FROM locations"),
+        ("users", User, "SELECT COUNT(*) FROM users"),
         ("anchor_points", AnchorPoint, "SELECT COUNT(*) FROM anchor_points"),
         ("anchor_point_layers", AnchorPointLayer, "SELECT COUNT(*) FROM anchor_point_layers"),
     ]
@@ -369,6 +370,20 @@ def sync_database(
         
         try:
             applied_changes = {"new": 0, "updated": 0, "deleted": 0}
+            
+            # Initialize data variables
+            ammunition_data = []
+            materials_data = []
+            vests_data = []
+            vest_layers_data = []
+            test_sessions_data = []
+            shot_data = []
+            model_runs_data = []
+            protocols_data = []
+            locations_data = []
+            users_data = []
+            anchor_points_data = []
+            anchor_point_layers_data = []
             
             # Helper function to check if a record should be synced
             def should_sync_record(entity_name: str, record_id: str, change_type: str) -> bool:
@@ -926,6 +941,62 @@ def sync_database(
                 local_db.commit()
                 print("Locations synced successfully")
             
+            # Sync users (must be before anchor_points due to FK constraint)
+            print("Syncing users...")
+            remote_cursor.execute("SELECT * FROM users")
+            columns = [desc[0] for desc in remote_cursor.description]
+            users_data = remote_cursor.fetchall()
+            print(f"Found {len(users_data)} user records")
+            
+            # Skip if no remote data
+            if not users_data:
+                print("  No user records to sync")
+            else:
+                # Check if we should sync all records (count-based)
+                sync_all_new = should_sync_all("users", "new")
+                sync_all_updated = should_sync_all("users", "updated")
+                
+                # Get existing records as hash map by username for O(1) lookups
+                # Use username instead of ID since usernames are unique and matter for auth
+                existing_users = {}
+                for item in local_db.query(User).all():
+                    existing_users[item.username] = item
+                
+                new_users = []
+                updated_users = []
+                
+                for row in users_data:
+                    user_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in user_dict.items() if hasattr(User, key)}
+                    # Convert UUID strings to UUID objects
+                    if 'id' in valid_columns and isinstance(valid_columns['id'], str):
+                        valid_columns['id'] = uuid.UUID(valid_columns['id'])
+                    # Match by username instead of ID
+                    existing = existing_users.get(valid_columns.get('username'))
+                    
+                    if not existing:
+                        if sync_all_new or should_sync_record("users", str(valid_columns['id']), "new"):
+                            new_users.append(valid_columns)
+                    else:
+                        # Update the ID to match the existing local record's ID
+                        # This preserves the local ID while updating other fields
+                        valid_columns['id'] = existing.id
+                        if sync_all_updated or should_sync_record("users", str(valid_columns['id']), "updated"):
+                            updated_users.append(valid_columns)
+                
+                if new_users:
+                    local_db.bulk_insert_mappings(User, new_users)
+                    applied_changes["new"] += len(new_users)
+                    print(f"  Bulk inserted {len(new_users)} new user records")
+                
+                if updated_users:
+                    local_db.bulk_update_mappings(User, updated_users)
+                    applied_changes["updated"] += len(updated_users)
+                    print(f"  Bulk updated {len(updated_users)} user records")
+                
+                local_db.commit()
+                print("Users synced successfully")
+            
             # Sync anchor points
             print("Syncing anchor points...")
             remote_cursor.execute("SELECT * FROM anchor_points")
@@ -1072,6 +1143,8 @@ def sync_database(
                                 remote_cursor.execute("SELECT id FROM protocols")
                             elif entity_name == "locations":
                                 remote_cursor.execute("SELECT id FROM locations")
+                            elif entity_name == "users":
+                                remote_cursor.execute("SELECT id FROM users")
                             elif entity_name == "anchor_points":
                                 remote_cursor.execute("SELECT id FROM anchor_points")
                             elif entity_name == "anchor_point_layers":
@@ -1120,6 +1193,7 @@ def sync_database(
                 "model_runs": len(model_runs_data),
                 "protocols": len(protocols_data),
                 "locations": len(locations_data),
+                "users": len(users_data),
                 "anchor_points": len(anchor_points_data),
                 "anchor_point_layers": len(anchor_point_layers_data)
             }}
@@ -1175,6 +1249,7 @@ def reset_database(
             ("ammunition", Ammunition),
             ("protocols", Protocol),
             ("locations", Location),
+            ("users", User),
         ]
         
         # Delete local data
@@ -1211,6 +1286,7 @@ def reset_database(
             model_runs_data = []
             protocols_data = []
             locations_data = []
+            users_data = []
             anchor_points_data = []
             anchor_point_layers_data = []
             
@@ -1380,6 +1456,41 @@ def reset_database(
                 local_db.commit()
                 print("Locations synced successfully")
             
+            # Sync users (must be before anchor_points due to FK constraint)
+            if not entities_to_reset or "users" in entities_to_reset:
+                print("Syncing users...")
+                remote_cursor.execute("SELECT * FROM users")
+                columns = [desc[0] for desc in remote_cursor.description]
+                users_data = remote_cursor.fetchall()
+                print(f"Found {len(users_data)} user records")
+                
+                # Get existing users by username to avoid duplicates
+                existing_users = {}
+                for item in local_db.query(User).all():
+                    existing_users[item.username] = item
+                
+                for row in users_data:
+                    user_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in user_dict.items() if hasattr(User, key)}
+                    # Convert UUID strings to UUID objects
+                    if 'id' in valid_columns and isinstance(valid_columns['id'], str):
+                        valid_columns['id'] = uuid.UUID(valid_columns['id'])
+                    
+                    # Check if user with same username exists locally
+                    existing = existing_users.get(valid_columns.get('username'))
+                    if existing:
+                        # Update existing user instead of inserting duplicate
+                        for key, value in valid_columns.items():
+                            if hasattr(existing, key) and key != 'id':
+                                setattr(existing, key, value)
+                    else:
+                        # Insert new user
+                        new_user = User(**valid_columns)
+                        local_db.add(new_user)
+                
+                local_db.commit()
+                print("Users synced successfully")
+            
             # Sync anchor points
             if not entities_to_reset or "anchor_points" in entities_to_reset:
                 print("Syncing anchor points...")
@@ -1431,6 +1542,7 @@ def reset_database(
                 "model_runs": len(model_runs_data),
                 "protocols": len(protocols_data),
                 "locations": len(locations_data),
+                "users": len(users_data),
                 "anchor_points": len(anchor_points_data),
                 "anchor_point_layers": len(anchor_point_layers_data)
             }}

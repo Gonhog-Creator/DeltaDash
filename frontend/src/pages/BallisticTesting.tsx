@@ -68,10 +68,22 @@ export function BallisticTesting() {
   const { data: protocols } = useProtocols();
   const { data: vests } = useVests();
 
-  const [selectedVestId, setSelectedVestId] = useState<string>('');
-  const [selectedProtocolId, setSelectedProtocolId] = useState<string>('');
-  const [selectedLevelIndex, setSelectedLevelIndex] = useState<number>(-1);
-  const [selectedVersion, setSelectedVersion] = useState<string>('');
+  const [selectedVestId, setSelectedVestId] = useState<string>(() => {
+    const saved = localStorage.getItem('ballistic_vestId');
+    return saved || '';
+  });
+  const [selectedProtocolId, setSelectedProtocolId] = useState<string>(() => {
+    const saved = localStorage.getItem('ballistic_protocolId');
+    return saved || '';
+  });
+  const [selectedLevelIndex, setSelectedLevelIndex] = useState<number>(() => {
+    const saved = localStorage.getItem('ballistic_levelIndex');
+    return saved ? parseInt(saved) : -1;
+  });
+  const [selectedVersion, setSelectedVersion] = useState<string>(() => {
+    const saved = localStorage.getItem('ballistic_version');
+    return saved || '';
+  });
   const [modelVersions, setModelVersions] = useState<any[]>([]);
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -79,15 +91,24 @@ export function BallisticTesting() {
   const [validationError, setValidationError] = useState<string | null>(null);
 
   // Custom Vest State
-  const [useCustomVest, setUseCustomVest] = useState(false);
-  const [customVestLayers, setCustomVestLayers] = useState<Array<{material_id: string; layer_count: number; notes?: string}>>([]);
-  const [customVestBase, setCustomVestBase] = useState({
-    vest_type: 'soft' as 'soft' | 'hard' | 'hybrid',
-    is_female: false,
-    panel_protects_front: true,
-    panel_protects_back: true,
-    panel_protects_sides: false,
-    stitch_pattern: null as 'stitched' | null,
+  const [useCustomVest, setUseCustomVest] = useState(() => {
+    const saved = localStorage.getItem('ballistic_useCustomVest');
+    return saved === 'true';
+  });
+  const [customVestLayers, setCustomVestLayers] = useState<Array<{material_id: string; layer_count: number; notes?: string}>>(() => {
+    const saved = localStorage.getItem('ballistic_customVestLayers');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [customVestBase, setCustomVestBase] = useState(() => {
+    const saved = localStorage.getItem('ballistic_customVestBase');
+    return saved ? JSON.parse(saved) : {
+      vest_type: 'soft' as 'soft' | 'hard' | 'hybrid',
+      is_female: false,
+      panel_protects_front: true,
+      panel_protects_back: true,
+      panel_protects_sides: false,
+      stitch_pattern: null as 'stitched' | null,
+    };
   });
 
   // Calculate derived values from layers
@@ -123,6 +144,35 @@ export function BallisticTesting() {
     setCustomVestLayers(updated);
   };
 
+  // Persist state to localStorage
+  useEffect(() => {
+    localStorage.setItem('ballistic_vestId', selectedVestId);
+  }, [selectedVestId]);
+
+  useEffect(() => {
+    localStorage.setItem('ballistic_protocolId', selectedProtocolId);
+  }, [selectedProtocolId]);
+
+  useEffect(() => {
+    localStorage.setItem('ballistic_levelIndex', selectedLevelIndex.toString());
+  }, [selectedLevelIndex]);
+
+  useEffect(() => {
+    localStorage.setItem('ballistic_version', selectedVersion);
+  }, [selectedVersion]);
+
+  useEffect(() => {
+    localStorage.setItem('ballistic_useCustomVest', useCustomVest.toString());
+  }, [useCustomVest]);
+
+  useEffect(() => {
+    localStorage.setItem('ballistic_customVestLayers', JSON.stringify(customVestLayers));
+  }, [customVestLayers]);
+
+  useEffect(() => {
+    localStorage.setItem('ballistic_customVestBase', JSON.stringify(customVestBase));
+  }, [customVestBase]);
+
   // Fetch model versions on mount
   useEffect(() => {
     const fetchModelVersions = async () => {
@@ -130,7 +180,7 @@ export function BallisticTesting() {
         const result = await apiClient.get<any>('/api/v1/ballistic/versions');
         const versions = result.versions || [];
         setModelVersions(versions);
-        if (versions.length > 0) {
+        if (versions.length > 0 && !selectedVersion) {
           setSelectedVersion(versions[0].version);
         }
       } catch (err) {
@@ -138,7 +188,7 @@ export function BallisticTesting() {
       }
     };
     fetchModelVersions();
-  }, []);
+  }, [selectedVersion]);
 
   // Reset level selection when protocol changes
   const handleProtocolChange = (protocolId: string) => {
@@ -203,6 +253,34 @@ export function BallisticTesting() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleClearForm = () => {
+    setSelectedVestId('');
+    setSelectedProtocolId('');
+    setSelectedLevelIndex(-1);
+    setUseCustomVest(false);
+    setCustomVestLayers([]);
+    setCustomVestBase({
+      vest_type: 'soft',
+      is_female: false,
+      panel_protects_front: true,
+      panel_protects_back: true,
+      panel_protects_sides: false,
+      stitch_pattern: null,
+    });
+    setPrediction(null);
+    setError(null);
+    setValidationError(null);
+    
+    // Clear localStorage
+    localStorage.removeItem('ballistic_vestId');
+    localStorage.removeItem('ballistic_protocolId');
+    localStorage.removeItem('ballistic_levelIndex');
+    localStorage.removeItem('ballistic_version');
+    localStorage.removeItem('ballistic_useCustomVest');
+    localStorage.removeItem('ballistic_customVestLayers');
+    localStorage.removeItem('ballistic_customVestBase');
   };
 
   const formatPercent = (val?: number) => {
@@ -471,13 +549,19 @@ export function BallisticTesting() {
             )}
           </div>
 
-          <div className="mt-6">
+          <div className="mt-6 flex space-x-4">
             <button
               onClick={handlePredict}
               disabled={loading}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 disabled:bg-gray-400"
+              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 disabled:bg-gray-400"
             >
               {loading ? 'Predicting...' : 'Predict'}
+            </button>
+            <button
+              onClick={handleClearForm}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+            >
+              Clear Form
             </button>
           </div>
         </div>

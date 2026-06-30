@@ -7,11 +7,11 @@
     "install:backend": "cd backend && /Library/Developer/CommandLineTools/usr/bin/python3 -m pip install -r requirements.txt",
     "install:frontend": "cd frontend && npm install",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "cd backend && DATABASE_URL=\"postgresql://ballistic_user:change_me_in_production@localhost:5432/ballistic\" SECRET_KEY=\"development_secret_key_change_in_production_32_chars_min\" CORS_ORIGINS=\"http://localhost:5173,http://localhost:5174,http://localhost:8000\" /Library/Developer/CommandLineTools/usr/bin/python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "dev:backend": "cd backend && DATABASE_URL=\"postgresql://ballistic_user:ballistic_pass@localhost:5432/ballistic\" SECRET_KEY=\"development_secret_key_change_in_production_32_chars_min\" CORS_ORIGINS=\"http://localhost:5173,http://localhost:5174,http://localhost:8000\" /Library/Developer/CommandLineTools/usr/bin/python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "npm run build:frontend",
     "build:frontend": "cd frontend && npm run build",
-    "migrate": "cd backend && DATABASE_URL=\"postgresql://ballistic_user:change_me_in_production@localhost:5432/ballistic\" SECRET_KEY=\"development_secret_key_change_in_production_32_chars_min\" /Library/Developer/CommandLineTools/usr/bin/python3 -m alembic upgrade head",
+    "migrate": "cd backend && DATABASE_URL=\"postgresql://ballistic_user:ballistic_pass@localhost:5432/ballistic\" SECRET_KEY=\"development_secret_key_change_in_production_32_chars_min\" /Library/Developer/CommandLineTools/usr/bin/python3 -m alembic upgrade head",
     "stop": "pkill -f \"uvicorn\\|npm.*dev\" || true"
   },
   "devDependencies": {
