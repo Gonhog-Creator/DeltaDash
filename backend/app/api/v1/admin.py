@@ -120,7 +120,6 @@ def get_preview_changes(remote_cursor, local_db: Session) -> SyncPreview:
         ("vest_layers", VestLayer, "SELECT * FROM vest_layers"),
         ("test_sessions", TestSession, "SELECT * FROM test_sessions"),
         ("shot_data", ShotData, "SELECT * FROM shot_data"),
-        ("model_runs", ModelRun, "SELECT * FROM model_runs"),
         ("protocols", Protocol, "SELECT * FROM protocols"),
         ("locations", Location, "SELECT * FROM locations"),
         ("anchor_points", AnchorPoint, "SELECT * FROM anchor_points"),
@@ -230,10 +229,9 @@ def preview_sync(
 ):
     """Preview changes that would occur during database sync without applying them.
     
-    Simplified version that compares record counts instead of fetching all data.
-    Much faster for slow connections.
+    Performs field-level comparison to detect all changes including material properties.
     """
-    print("=== PREVIEW SYNC STARTED (COUNT-BASED) ===")
+    print("=== PREVIEW SYNC STARTED (DETAILED) ===")
     print(f"User ID: {current_user.id}, is_admin: {current_user.is_admin}")
     
     if not current_user.is_admin:
@@ -258,8 +256,8 @@ def preview_sync(
         local_db: Session = SessionLocal()
         
         try:
-            print("Generating count-based preview...")
-            preview = get_count_preview(remote_cursor, local_db)
+            print("Generating detailed field-level preview...")
+            preview = get_preview_changes(remote_cursor, local_db)
             print("Preview generated successfully")
             return preview
         finally:
@@ -378,7 +376,6 @@ def sync_database(
             vest_layers_data = []
             test_sessions_data = []
             shot_data = []
-            model_runs_data = []
             protocols_data = []
             locations_data = []
             users_data = []
@@ -777,73 +774,7 @@ def sync_database(
                     print(f"  Updated {len(test_session_fk_updates)} test session foreign keys")
                 
                 print("Shot data synced successfully")
-            
-            
-            # Sync model runs
-            print("Syncing model runs...")
-            remote_cursor.execute("SELECT * FROM model_runs")
-            columns = [desc[0] for desc in remote_cursor.description]
-            model_runs_data = remote_cursor.fetchall()
-            print(f"Found {len(model_runs_data)} model run records")
 
-            # Skip if no remote data
-            if not model_runs_data:
-                print("  No model run records to sync")
-            else:
-                # Check if we should sync all records (count-based)
-                sync_all_new = should_sync_all("model_runs", "new")
-                sync_all_updated = should_sync_all("model_runs", "updated")
-                
-                # Get existing records as hash map for O(1) lookups
-                existing_model_runs = {}
-                for item in local_db.query(ModelRun).all():
-                    existing_model_runs[str(item.id)] = item
-
-                new_model_runs = []
-                updated_model_runs = []
-
-                for row in model_runs_data:
-                    model_run_dict = dict(zip(columns, row))
-                    valid_columns = {key: value for key, value in model_run_dict.items() if hasattr(ModelRun, key)}
-                    # Convert UUID strings to UUID objects
-                    if 'id' in valid_columns and isinstance(valid_columns['id'], str):
-                        valid_columns['id'] = uuid.UUID(valid_columns['id'])
-                    if 'created_by' in valid_columns and valid_columns['created_by'] and isinstance(valid_columns['created_by'], str):
-                        valid_columns['created_by'] = uuid.UUID(valid_columns['created_by'])
-                    
-                    # Match models by name first (primary), then by ID (fallback)
-                    # This handles cases where models are created locally and uploaded with different IDs
-                    existing = None
-                    if 'model_name' in valid_columns and valid_columns['model_name']:
-                        for item in existing_model_runs.values():
-                            if item.model_name == valid_columns['model_name']:
-                                existing = item
-                                break
-                    
-                    # If no match by name, try matching by ID
-                    if not existing:
-                        existing = existing_model_runs.get(str(valid_columns['id']))
-                    
-                    if not existing:
-                        if sync_all_new or should_sync_record("model_runs", str(valid_columns['id']), "new"):
-                            new_model_runs.append(valid_columns)
-                    else:
-                        if sync_all_updated or should_sync_record("model_runs", str(valid_columns['id']), "updated"):
-                            updated_model_runs.append(valid_columns)
-
-                if new_model_runs:
-                    local_db.bulk_insert_mappings(ModelRun, new_model_runs)
-                    applied_changes["new"] += len(new_model_runs)
-                    print(f"  Bulk inserted {len(new_model_runs)} new model run records")
-
-                if updated_model_runs:
-                    local_db.bulk_update_mappings(ModelRun, updated_model_runs)
-                    applied_changes["updated"] += len(updated_model_runs)
-                    print(f"  Bulk updated {len(updated_model_runs)} model run records")
-
-                local_db.commit()
-                print("Model runs synced successfully")
-            
             
             # Sync protocols
             print("Syncing protocols...")
