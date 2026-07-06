@@ -25,7 +25,7 @@ router = APIRouter(redirect_slashes=False)
 @router.get("/")
 def list_test_sessions(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 1000,
     is_official: Optional[bool] = None,
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
