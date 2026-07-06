@@ -376,6 +376,7 @@ def sync_database(
             vest_layers_data = []
             test_sessions_data = []
             shot_data = []
+            model_runs_data = []
             protocols_data = []
             locations_data = []
             users_data = []
