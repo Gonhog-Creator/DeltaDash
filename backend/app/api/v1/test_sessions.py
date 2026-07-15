@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from app.db.session import get_db
 from app.db.models import TestSession as TestSessionModel, ShotData as ShotDataModel, Shot as ShotModel, Vest as VestModel, AuditLog
-from app.api.v1.auth import get_current_active_user, require_write_access
+from app.api.v1.auth import get_current_active_user, require_write_access, require_admin
 from app.schemas.test_session import TestSessionCreate, TestSessionUpdate, TestSession
 from app.schemas.shot_data import ShotDataCreate
 from app.db.models.user import User as UserModel
@@ -497,7 +497,7 @@ def upload_excel_to_test_session(
 @router.post("/admin/bulk-reupload-all", response_model=List[TestSession])
 def bulk_reupload_all_test_sessions(
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user)
+    current_user: UserModel = Depends(require_admin)
 ):
     """
     Admin endpoint: Re-upload all test sessions that have an associated Excel file.

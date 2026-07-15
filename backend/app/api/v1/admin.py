@@ -8,7 +8,6 @@ from app.db.models.vest import Vest
 from app.db.models.vest_layer import VestLayer
 from app.db.models.shot_data import ShotData
 from app.db.models.ammunition import Ammunition
-from app.db.models.model_run import ModelRun
 from app.db.models.prediction import Prediction
 from app.db.models.protocol import Protocol
 from app.db.models.location import Location
@@ -284,7 +283,6 @@ def get_count_preview(remote_cursor, local_db: Session) -> SyncPreview:
         ("vest_layers", VestLayer, "SELECT COUNT(*) FROM vest_layers"),
         ("test_sessions", TestSession, "SELECT COUNT(*) FROM test_sessions"),
         ("shot_data", ShotData, "SELECT COUNT(*) FROM shot_data"),
-        ("model_runs", ModelRun, "SELECT COUNT(*) FROM model_runs"),
         ("protocols", Protocol, "SELECT COUNT(*) FROM protocols"),
         ("locations", Location, "SELECT COUNT(*) FROM locations"),
         ("users", User, "SELECT COUNT(*) FROM users"),
@@ -376,7 +374,6 @@ def sync_database(
             vest_layers_data = []
             test_sessions_data = []
             shot_data = []
-            model_runs_data = []
             protocols_data = []
             locations_data = []
             users_data = []
@@ -1036,7 +1033,6 @@ def sync_database(
                 ("shot_data", ShotData),
                 ("anchor_point_layers", AnchorPointLayer),
                 ("anchor_points", AnchorPoint),
-                ("model_runs", ModelRun),
                 ("test_sessions", TestSession),
                 ("vest_layers", VestLayer),
                 ("vests", Vest),
@@ -1069,8 +1065,6 @@ def sync_database(
                                 remote_cursor.execute("SELECT id FROM test_sessions")
                             elif entity_name == "shot_data":
                                 remote_cursor.execute("SELECT id FROM shot_data")
-                            elif entity_name == "model_runs":
-                                remote_cursor.execute("SELECT id FROM model_runs")
                             elif entity_name == "protocols":
                                 remote_cursor.execute("SELECT id FROM protocols")
                             elif entity_name == "locations":
@@ -1122,7 +1116,6 @@ def sync_database(
                 "vest_layers": len(vest_layers_data),
                 "test_sessions": len(test_sessions_data),
                 "shot_data": len(shot_data),
-                "model_runs": len(model_runs_data),
                 "protocols": len(protocols_data),
                 "locations": len(locations_data),
                 "users": len(users_data),
@@ -1176,7 +1169,6 @@ def reset_database(
             ("test_sessions", TestSession),
             ("anchor_points", AnchorPoint),
             ("vests", Vest),
-            ("model_runs", ModelRun),
             ("materials", Material),
             ("ammunition", Ammunition),
             ("protocols", Protocol),
@@ -1215,7 +1207,6 @@ def reset_database(
             vest_layers_data = []
             test_sessions_data = []
             shot_data = []
-            model_runs_data = []
             protocols_data = []
             locations_data = []
             users_data = []
@@ -1317,44 +1308,6 @@ def reset_database(
                 
                 local_db.commit()
                 print("Shot data synced successfully")
-            
-            # Sync model runs
-            if not entities_to_reset or "model_runs" in entities_to_reset:
-                print("Syncing model runs...")
-                remote_cursor.execute("SELECT * FROM model_runs")
-                columns = [desc[0] for desc in remote_cursor.description]
-                model_runs_data = remote_cursor.fetchall()
-                print(f"Found {len(model_runs_data)} model run records")
-                
-                # Get existing model runs for name matching
-                existing_model_runs = {}
-                for item in local_db.query(ModelRun).all():
-                    existing_model_runs[item.model_name] = item
-                
-                for row in model_runs_data:
-                    model_run_dict = dict(zip(columns, row))
-                    valid_columns = {key: value for key, value in model_run_dict.items() if hasattr(ModelRun, key)}
-                    # Convert UUID strings to UUID objects
-                    if 'id' in valid_columns and isinstance(valid_columns['id'], str):
-                        valid_columns['id'] = uuid.UUID(valid_columns['id'])
-                    if 'created_by' in valid_columns and valid_columns['created_by'] and isinstance(valid_columns['created_by'], str):
-                        valid_columns['created_by'] = uuid.UUID(valid_columns['created_by'])
-                    
-                    # Match models by name first (primary), then by ID (fallback)
-                    existing = None
-                    if 'model_name' in valid_columns and valid_columns['model_name']:
-                        existing = existing_model_runs.get(valid_columns['model_name'])
-                    
-                    # Only add if not already exists (by name or ID)
-                    if not existing:
-                        new_model_run = ModelRun(**valid_columns)
-                        local_db.add(new_model_run)
-                        # Update existing map for subsequent iterations
-                        if 'model_name' in valid_columns and valid_columns['model_name']:
-                            existing_model_runs[valid_columns['model_name']] = new_model_run
-                
-                local_db.commit()
-                print("Model runs synced successfully")
             
             # Sync protocols
             if not entities_to_reset or "protocols" in entities_to_reset:
@@ -1471,7 +1424,6 @@ def reset_database(
                 "vest_layers": len(vest_layers_data),
                 "test_sessions": len(test_sessions_data),
                 "shot_data": len(shot_data),
-                "model_runs": len(model_runs_data),
                 "protocols": len(protocols_data),
                 "locations": len(locations_data),
                 "users": len(users_data),

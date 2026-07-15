@@ -200,7 +200,6 @@ export function Dashboard() {
     { id: 'vest_layers', label: 'Vest Layers' },
     { id: 'test_sessions', label: 'Test Sessions' },
     { id: 'shot_data', label: 'Shot Data' },
-    { id: 'model_runs', label: 'Models' },
     { id: 'protocols', label: 'Protocols' },
     { id: 'locations', label: 'Locations' },
     { id: 'anchor_points', label: 'Anchor Points' },
