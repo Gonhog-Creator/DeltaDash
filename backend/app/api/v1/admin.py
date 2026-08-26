@@ -1474,7 +1474,9 @@ def create_backup(
                 # Use pg_dump to create a database dump
                 try:
                     # Check if pg_dump is available
-                    subprocess.run(['which', 'pg_dump'], capture_output=True, check=True)
+                    pg_dump_bin = shutil.which('pg_dump')
+                    if not pg_dump_bin:
+                        raise Exception("pg_dump not found on PATH. Ensure postgresql-client is installed and matches the server version.")
                     
                     subprocess.run(
                         ['pg_dump', db_url, '-f', db_backup_file],
@@ -1483,8 +1485,7 @@ def create_backup(
                     )
                     
                     # Compress the SQL file with gzip if available
-                    try:
-                        subprocess.run(['which', 'gzip'], capture_output=True, check=True)
+                    if shutil.which('gzip'):
                         compressed_file = db_backup_file + '.gz'
                         subprocess.run(
                             ['gzip', '-9', db_backup_file],
@@ -1493,8 +1494,7 @@ def create_backup(
                         )
                         zipf.write(compressed_file, 'database_dump.sql.gz')
                         os.remove(compressed_file)  # Clean up compressed file
-                    except subprocess.CalledProcessError:
-                        # gzip not available, add uncompressed file
+                    else:
                         zipf.write(db_backup_file, 'database_dump.sql')
                     
                     # Clean up the SQL file if it still exists
@@ -1545,6 +1545,8 @@ def create_backup(
 
         return {"message": "Backup created successfully", "filename": backup_filename}
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Backup failed: {str(e)}")
 

@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import sqlite3
 import uuid
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'app.db')
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'ballistic_dev.db')
 
 # Pre-computed bcrypt hashes (Python 3.14 bcrypt issue workaround)
 # These hashes work with the verify_password bypass in security.py
@@ -43,7 +43,21 @@ def fix_db_and_seed():
     cursor.execute("SELECT id, username, is_admin FROM users")
     users = cursor.fetchall()
     print(f"Current users: {users}")
-    
+
+    # Repair any invalid (non-UUID) user IDs
+    for user_id, username, _ in users:
+        try:
+            uuid.UUID(str(user_id))
+        except (ValueError, AttributeError):
+            new_id = str(uuid.uuid4())
+            print(f"Repairing invalid ID for user '{username}': '{user_id}' -> '{new_id}'")
+            cursor.execute("UPDATE users SET id=? WHERE id=?", (new_id, user_id))
+            conn.commit()
+
+    # Re-fetch after repair
+    cursor.execute("SELECT id, username, is_admin FROM users")
+    users = cursor.fetchall()
+
     if not users:
         print("\nCreating admin user...")
         admin_id = str(uuid.uuid4())

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 import os
+# reload trigger
 
 # Load environment variables from .env file
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
@@ -58,3 +59,4 @@ def health_check():
 @app.get("/")
 def root():
     return {"message": "Ballistic Test Analytics Platform API", "status": "operational"}
+
