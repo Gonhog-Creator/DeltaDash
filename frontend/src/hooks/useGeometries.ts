@@ -1,5 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '../api/client';
+import { apiClient, API_BASE_URL } from '../api/client';
+
+export interface GeometrySizeMeasurements {
+  front: Record<string, number>;
+  back: Record<string, number>;
+}
+
+export interface GeometryPdf {
+  path: string;
+  original_name: string;
+}
 
 export interface Geometry {
   id: string;
@@ -9,27 +19,42 @@ export interface Geometry {
   surface_areas: Record<string, Record<string, number>>;
   available_sizes: string[];
   includes_hard_plates: boolean;
+  is_approved: boolean;
+  size_measurements: Record<string, GeometrySizeMeasurements> | null;
+  pdf_document: GeometryPdf | null;
+  image_url: string | null;
+  compatibility: string | null;
   notes: string | null;
 }
 
 export interface GeometryCreate {
   name: string;
-  description?: string;
-  vest_type?: string;
+  description?: string | null;
+  vest_type?: string | null;
   surface_areas: Record<string, Record<string, number>>;
   available_sizes: string[];
   includes_hard_plates?: boolean;
-  notes?: string;
+  is_approved?: boolean;
+  size_measurements?: Record<string, GeometrySizeMeasurements> | null;
+  pdf_document?: GeometryPdf | null;
+  image_url?: string | null;
+  compatibility?: string | null;
+  notes?: string | null;
 }
 
 export interface GeometryUpdate {
   name?: string;
-  description?: string;
-  vest_type?: string;
+  description?: string | null;
+  vest_type?: string | null;
   surface_areas?: Record<string, Record<string, number>>;
   available_sizes?: string[];
   includes_hard_plates?: boolean;
-  notes?: string;
+  is_approved?: boolean;
+  size_measurements?: Record<string, GeometrySizeMeasurements> | null;
+  pdf_document?: GeometryPdf | null;
+  image_url?: string | null;
+  compatibility?: string | null;
+  notes?: string | null;
 }
 
 export const geometriesApi = {
@@ -54,6 +79,47 @@ export const geometriesApi = {
   
   delete: async (id: string) => {
     return apiClient.delete<{ message: string }>(`/api/v1/geometries/${id}`);
+  },
+
+  uploadPdf: async (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append('pdf_file', file);
+    return apiClient.post<Geometry>(`/api/v1/geometries/${id}/upload-pdf`, formData);
+  },
+
+  downloadPdf: (id: string) => {
+    return `${API_BASE_URL}/api/v1/geometries/${id}/download-pdf`;
+  },
+
+  deletePdf: async (id: string) => {
+    return apiClient.delete<Geometry>(`/api/v1/geometries/${id}/delete-pdf`);
+  },
+
+  uploadImage: async (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append('image_file', file);
+    return apiClient.post<Geometry>(`/api/v1/geometries/${id}/upload-image`, formData);
+  },
+
+  downloadImage: (id: string) => {
+    return `${API_BASE_URL}/api/v1/geometries/${id}/image`;
+  },
+
+  deleteImage: async (id: string) => {
+    return apiClient.delete<Geometry>(`/api/v1/geometries/${id}/delete-image`);
+  },
+
+  downloadExcel: () => {
+    return `${API_BASE_URL}/api/v1/geometries/download-excel`;
+  },
+
+  uploadExcel: async (file: File) => {
+    const formData = new FormData();
+    formData.append('excel_file', file);
+    return apiClient.post<{ message: string; count: number }>(
+      '/api/v1/geometries/upload-excel',
+      formData
+    );
   },
 };
 

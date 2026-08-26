@@ -81,6 +81,11 @@ def list_vests(
             "sizes": vest.sizes,
             "construction_notes": vest.construction_notes,
             "stitch_pattern": vest.stitch_pattern,
+            "weight_g": vest.weight_g,
+            "trauma_homologation": vest.trauma_homologation,
+            "flexibility_rating": vest.flexibility_rating,
+            "is_panel_sewn": vest.is_panel_sewn,
+            "size_curve": vest.size_curve,
             "created_by_username": vest.created_by_username if hasattr(vest, 'created_by_username') else None,
             "composition": ", ".join(composition_parts) if composition_parts else None
         }

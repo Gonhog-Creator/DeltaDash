@@ -12,9 +12,13 @@ from app.db.models.prediction import Prediction
 from app.db.models.protocol import Protocol
 from app.db.models.location import Location
 from app.db.models.anchor_point import AnchorPoint, AnchorPointLayer
+from app.db.models.geometry import Geometry
+from app.db.models.geometry_material_config import GeometryMaterialConfig
+from app.db.models.cover import Cover
 from app.api.v1.auth import get_current_active_user, get_current_user
 from app.db.models.user import User
 from app.core.config import settings
+from app.services.seed_geometries import seed_geometries
 import psycopg2
 import os
 import zipfile
@@ -121,6 +125,9 @@ def get_preview_changes(remote_cursor, local_db: Session) -> SyncPreview:
         ("shot_data", ShotData, "SELECT * FROM shot_data"),
         ("protocols", Protocol, "SELECT * FROM protocols"),
         ("locations", Location, "SELECT * FROM locations"),
+        ("geometries", Geometry, "SELECT * FROM geometries"),
+        ("geometry_material_configs", GeometryMaterialConfig, "SELECT * FROM geometry_material_configs"),
+        ("covers", Cover, "SELECT * FROM covers"),
         ("anchor_points", AnchorPoint, "SELECT * FROM anchor_points"),
         ("anchor_point_layers", AnchorPointLayer, "SELECT * FROM anchor_point_layers"),
     ]
@@ -285,6 +292,9 @@ def get_count_preview(remote_cursor, local_db: Session) -> SyncPreview:
         ("shot_data", ShotData, "SELECT COUNT(*) FROM shot_data"),
         ("protocols", Protocol, "SELECT COUNT(*) FROM protocols"),
         ("locations", Location, "SELECT COUNT(*) FROM locations"),
+        ("geometries", Geometry, "SELECT COUNT(*) FROM geometries"),
+        ("geometry_material_configs", GeometryMaterialConfig, "SELECT COUNT(*) FROM geometry_material_configs"),
+        ("covers", Cover, "SELECT COUNT(*) FROM covers"),
         ("users", User, "SELECT COUNT(*) FROM users"),
         ("anchor_points", AnchorPoint, "SELECT COUNT(*) FROM anchor_points"),
         ("anchor_point_layers", AnchorPointLayer, "SELECT COUNT(*) FROM anchor_point_layers"),
@@ -379,6 +389,9 @@ def sync_database(
             users_data = []
             anchor_points_data = []
             anchor_point_layers_data = []
+            geometries_data = []
+            geometry_material_configs_data = []
+            covers_data = []
             
             # Helper function to check if a record should be synced
             def should_sync_record(entity_name: str, record_id: str, change_type: str) -> bool:
@@ -871,6 +884,8 @@ def sync_database(
                 print("Locations synced successfully")
             
             # Sync users (must be before anchor_points due to FK constraint)
+            remote_to_local_user_id = {}
+            fallback_user_id = None
             print("Syncing users...")
             remote_cursor.execute("SELECT * FROM users")
             columns = [desc[0] for desc in remote_cursor.description]
@@ -925,7 +940,26 @@ def sync_database(
                 
                 local_db.commit()
                 print("Users synced successfully")
-            
+
+                # Build remote-to-local user ID mapping for FK remapping
+                # Remote users matched by username have different IDs than local
+                remote_to_local_user_id = {}
+                local_users_by_username = {u.username: u for u in local_db.query(User).all()}
+                for row in users_data:
+                    remote_user = dict(zip(columns, row))
+                    remote_username = remote_user.get('username')
+                    remote_id = remote_user.get('id')
+                    if remote_id and remote_username and remote_username in local_users_by_username:
+                        remote_to_local_user_id[str(remote_id)] = local_users_by_username[remote_username].id
+
+                # Fallback: use first local admin user for unmapped remote users
+                # (users not in preview/sync confirmation are skipped, so their IDs won't exist locally)
+                fallback_user = local_db.query(User).filter(User.is_admin == True).first()
+                if not fallback_user:
+                    fallback_user = local_db.query(User).first()
+                if fallback_user:
+                    fallback_user_id = fallback_user.id
+
             # Sync anchor points
             print("Syncing anchor points...")
             remote_cursor.execute("SELECT * FROM anchor_points")
@@ -955,8 +989,14 @@ def sync_database(
                     # Convert UUID strings to UUID objects
                     if 'id' in valid_columns and isinstance(valid_columns['id'], str):
                         valid_columns['id'] = uuid.UUID(valid_columns['id'])
-                    if 'created_by_id' in valid_columns and isinstance(valid_columns['created_by_id'], str):
-                        valid_columns['created_by_id'] = uuid.UUID(valid_columns['created_by_id'])
+                    if 'created_by_id' in valid_columns and valid_columns['created_by_id']:
+                        remote_uid = str(valid_columns['created_by_id'])
+                        if remote_uid in remote_to_local_user_id:
+                            valid_columns['created_by_id'] = remote_to_local_user_id[remote_uid]
+                        elif fallback_user_id:
+                            valid_columns['created_by_id'] = fallback_user_id
+                        elif isinstance(valid_columns['created_by_id'], str):
+                            valid_columns['created_by_id'] = uuid.UUID(valid_columns['created_by_id'])
                     if 'batch_id' in valid_columns and valid_columns['batch_id'] and isinstance(valid_columns['batch_id'], str):
                         valid_columns['batch_id'] = uuid.UUID(valid_columns['batch_id'])
                     existing = existing_anchor_points.get(str(valid_columns['id']))
@@ -1027,6 +1067,141 @@ def sync_database(
                 local_db.commit()
                 print("Anchor point layers synced successfully")
             
+            # Sync geometries
+            print("Syncing geometries...")
+            remote_cursor.execute("SELECT * FROM geometries")
+            columns = [desc[0] for desc in remote_cursor.description]
+            geometries_data = remote_cursor.fetchall()
+            print(f"Found {len(geometries_data)} geometry records")
+            
+            if not geometries_data:
+                print("  No geometry records to sync")
+            else:
+                sync_all_new = should_sync_all("geometries", "new")
+                sync_all_updated = should_sync_all("geometries", "updated")
+                
+                existing_geometries = {}
+                for item in local_db.query(Geometry).all():
+                    existing_geometries[str(item.id)] = item
+                
+                new_geometries = []
+                updated_geometries = []
+                
+                for row in geometries_data:
+                    geometry_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in geometry_dict.items() if hasattr(Geometry, key)}
+                    existing = existing_geometries.get(str(valid_columns['id']))
+                    
+                    if not existing:
+                        if sync_all_new or should_sync_record("geometries", str(valid_columns['id']), "new"):
+                            new_geometries.append(valid_columns)
+                    else:
+                        if sync_all_updated or should_sync_record("geometries", str(valid_columns['id']), "updated"):
+                            updated_geometries.append(valid_columns)
+                
+                if new_geometries:
+                    local_db.bulk_insert_mappings(Geometry, new_geometries)
+                    applied_changes["new"] += len(new_geometries)
+                    print(f"  Bulk inserted {len(new_geometries)} new geometry records")
+                
+                if updated_geometries:
+                    local_db.bulk_update_mappings(Geometry, updated_geometries)
+                    applied_changes["updated"] += len(updated_geometries)
+                    print(f"  Bulk updated {len(updated_geometries)} geometry records")
+                
+                local_db.commit()
+                print("Geometries synced successfully")
+            
+            # Sync geometry material configs
+            print("Syncing geometry material configs...")
+            remote_cursor.execute("SELECT * FROM geometry_material_configs")
+            columns = [desc[0] for desc in remote_cursor.description]
+            geometry_material_configs_data = remote_cursor.fetchall()
+            print(f"Found {len(geometry_material_configs_data)} geometry material config records")
+            
+            if not geometry_material_configs_data:
+                print("  No geometry material config records to sync")
+            else:
+                sync_all_new = should_sync_all("geometry_material_configs", "new")
+                sync_all_updated = should_sync_all("geometry_material_configs", "updated")
+                
+                existing_geometry_material_configs = {}
+                for item in local_db.query(GeometryMaterialConfig).all():
+                    existing_geometry_material_configs[str(item.id)] = item
+                
+                new_geometry_material_configs = []
+                updated_geometry_material_configs = []
+                
+                for row in geometry_material_configs_data:
+                    gmc_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in gmc_dict.items() if hasattr(GeometryMaterialConfig, key)}
+                    existing = existing_geometry_material_configs.get(str(valid_columns['id']))
+                    
+                    if not existing:
+                        if sync_all_new or should_sync_record("geometry_material_configs", str(valid_columns['id']), "new"):
+                            new_geometry_material_configs.append(valid_columns)
+                    else:
+                        if sync_all_updated or should_sync_record("geometry_material_configs", str(valid_columns['id']), "updated"):
+                            updated_geometry_material_configs.append(valid_columns)
+                
+                if new_geometry_material_configs:
+                    local_db.bulk_insert_mappings(GeometryMaterialConfig, new_geometry_material_configs)
+                    applied_changes["new"] += len(new_geometry_material_configs)
+                    print(f"  Bulk inserted {len(new_geometry_material_configs)} new geometry material config records")
+                
+                if updated_geometry_material_configs:
+                    local_db.bulk_update_mappings(GeometryMaterialConfig, updated_geometry_material_configs)
+                    applied_changes["updated"] += len(updated_geometry_material_configs)
+                    print(f"  Bulk updated {len(updated_geometry_material_configs)} geometry material config records")
+                
+                local_db.commit()
+                print("Geometry material configs synced successfully")
+            
+            # Sync covers
+            print("Syncing covers...")
+            remote_cursor.execute("SELECT * FROM covers")
+            columns = [desc[0] for desc in remote_cursor.description]
+            covers_data = remote_cursor.fetchall()
+            print(f"Found {len(covers_data)} cover records")
+            
+            if not covers_data:
+                print("  No cover records to sync")
+            else:
+                sync_all_new = should_sync_all("covers", "new")
+                sync_all_updated = should_sync_all("covers", "updated")
+                
+                existing_covers = {}
+                for item in local_db.query(Cover).all():
+                    existing_covers[str(item.id)] = item
+                
+                new_covers = []
+                updated_covers = []
+                
+                for row in covers_data:
+                    cover_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in cover_dict.items() if hasattr(Cover, key)}
+                    existing = existing_covers.get(str(valid_columns['id']))
+                    
+                    if not existing:
+                        if sync_all_new or should_sync_record("covers", str(valid_columns['id']), "new"):
+                            new_covers.append(valid_columns)
+                    else:
+                        if sync_all_updated or should_sync_record("covers", str(valid_columns['id']), "updated"):
+                            updated_covers.append(valid_columns)
+                
+                if new_covers:
+                    local_db.bulk_insert_mappings(Cover, new_covers)
+                    applied_changes["new"] += len(new_covers)
+                    print(f"  Bulk inserted {len(new_covers)} new cover records")
+                
+                if updated_covers:
+                    local_db.bulk_update_mappings(Cover, updated_covers)
+                    applied_changes["updated"] += len(updated_covers)
+                    print(f"  Bulk updated {len(updated_covers)} cover records")
+                
+                local_db.commit()
+                print("Covers synced successfully")
+            
             # Handle deletions based on confirmation - order matters for foreign key constraints
             # Delete in reverse dependency order: children before parents
             deletion_order = [
@@ -1036,10 +1211,13 @@ def sync_database(
                 ("test_sessions", TestSession),
                 ("vest_layers", VestLayer),
                 ("vests", Vest),
+                ("geometry_material_configs", GeometryMaterialConfig),
+                ("covers", Cover),
                 ("materials", Material),
                 ("ammunition", Ammunition),
                 ("protocols", Protocol),
-                ("locations", Location)
+                ("locations", Location),
+                ("geometries", Geometry)
             ]
             
             for entity_name, model_class in deletion_order:
@@ -1075,6 +1253,12 @@ def sync_database(
                                 remote_cursor.execute("SELECT id FROM anchor_points")
                             elif entity_name == "anchor_point_layers":
                                 remote_cursor.execute("SELECT id FROM anchor_point_layers")
+                            elif entity_name == "geometries":
+                                remote_cursor.execute("SELECT id FROM geometries")
+                            elif entity_name == "geometry_material_configs":
+                                remote_cursor.execute("SELECT id FROM geometry_material_configs")
+                            elif entity_name == "covers":
+                                remote_cursor.execute("SELECT id FROM covers")
                             
                             for row in remote_cursor.fetchall():
                                 remote_ids.add(str(row[0]))
@@ -1120,7 +1304,10 @@ def sync_database(
                 "locations": len(locations_data),
                 "users": len(users_data),
                 "anchor_points": len(anchor_points_data),
-                "anchor_point_layers": len(anchor_point_layers_data)
+                "anchor_point_layers": len(anchor_point_layers_data),
+                "geometries": len(geometries_data),
+                "geometry_material_configs": len(geometry_material_configs_data),
+                "covers": len(covers_data)
             }}
             
         except Exception as e:
@@ -1136,6 +1323,27 @@ def sync_database(
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to connect to remote database: {str(e)}")
+
+
+@router.post("/seed-geometries")
+def seed_geometries_endpoint(
+    current_user: User = Depends(get_current_active_user)
+):
+    """Seed or update geometries from the fixtures/geometries.json file (admin only)."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    db = SessionLocal()
+    try:
+        geometries = seed_geometries(db)
+        return {"message": f"Seeded {len(geometries)} geometries", "count": len(geometries)}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Seed failed: {str(e)}")
+    finally:
+        db.close()
 
 
 @router.post("/reset-database")
@@ -1169,10 +1377,13 @@ def reset_database(
             ("test_sessions", TestSession),
             ("anchor_points", AnchorPoint),
             ("vests", Vest),
+            ("geometry_material_configs", GeometryMaterialConfig),
+            ("covers", Cover),
             ("materials", Material),
             ("ammunition", Ammunition),
             ("protocols", Protocol),
             ("locations", Location),
+            ("geometries", Geometry),
             ("users", User),
         ]
         
@@ -1212,6 +1423,9 @@ def reset_database(
             users_data = []
             anchor_points_data = []
             anchor_point_layers_data = []
+            geometries_data = []
+            geometry_material_configs_data = []
+            covers_data = []
             
             # Sync ammunition
             if not entities_to_reset or "ammunition" in entities_to_reset:
@@ -1417,6 +1631,57 @@ def reset_database(
                 local_db.commit()
                 print("Anchor point layers synced successfully")
             
+            # Sync geometries
+            if not entities_to_reset or "geometries" in entities_to_reset:
+                print("Syncing geometries...")
+                remote_cursor.execute("SELECT * FROM geometries")
+                columns = [desc[0] for desc in remote_cursor.description]
+                geometries_data = remote_cursor.fetchall()
+                print(f"Found {len(geometries_data)} geometry records")
+                
+                for row in geometries_data:
+                    geometry_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in geometry_dict.items() if hasattr(Geometry, key)}
+                    new_geometry = Geometry(**valid_columns)
+                    local_db.add(new_geometry)
+                
+                local_db.commit()
+                print("Geometries synced successfully")
+            
+            # Sync geometry material configs
+            if not entities_to_reset or "geometry_material_configs" in entities_to_reset:
+                print("Syncing geometry material configs...")
+                remote_cursor.execute("SELECT * FROM geometry_material_configs")
+                columns = [desc[0] for desc in remote_cursor.description]
+                geometry_material_configs_data = remote_cursor.fetchall()
+                print(f"Found {len(geometry_material_configs_data)} geometry material config records")
+                
+                for row in geometry_material_configs_data:
+                    gmc_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in gmc_dict.items() if hasattr(GeometryMaterialConfig, key)}
+                    new_gmc = GeometryMaterialConfig(**valid_columns)
+                    local_db.add(new_gmc)
+                
+                local_db.commit()
+                print("Geometry material configs synced successfully")
+            
+            # Sync covers
+            if not entities_to_reset or "covers" in entities_to_reset:
+                print("Syncing covers...")
+                remote_cursor.execute("SELECT * FROM covers")
+                columns = [desc[0] for desc in remote_cursor.description]
+                covers_data = remote_cursor.fetchall()
+                print(f"Found {len(covers_data)} cover records")
+                
+                for row in covers_data:
+                    cover_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in cover_dict.items() if hasattr(Cover, key)}
+                    new_cover = Cover(**valid_columns)
+                    local_db.add(new_cover)
+                
+                local_db.commit()
+                print("Covers synced successfully")
+            
             return {"message": "Database reset completed successfully", "synced_records": {
                 "ammunition": len(ammunition_data),
                 "materials": len(materials_data),
@@ -1428,7 +1693,10 @@ def reset_database(
                 "locations": len(locations_data),
                 "users": len(users_data),
                 "anchor_points": len(anchor_points_data),
-                "anchor_point_layers": len(anchor_point_layers_data)
+                "anchor_point_layers": len(anchor_point_layers_data),
+                "geometries": len(geometries_data),
+                "geometry_material_configs": len(geometry_material_configs_data),
+                "covers": len(covers_data)
             }}
             
         except Exception as e:

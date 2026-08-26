@@ -27,6 +27,9 @@ from app.db.models import (  # noqa: F401, F403
     ShotPatternPosition,
     AuditLog,
     ModelRun,
+    Geometry,
+    GeometryMaterialConfig,
+    Cover,
 )
 
 # this is the Alembic Config object, which provides

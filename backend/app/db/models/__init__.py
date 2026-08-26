@@ -19,6 +19,8 @@ from app.db.models.protocol import Protocol
 from app.db.models.anchor_point import AnchorPoint, AnchorPointLayer
 from app.db.models.geometry import Geometry
 from app.db.models.geometry_material_config import GeometryMaterialConfig
+from app.db.models.cover import Cover
+from app.db.models.vest_model import VestModel, ModelDocument
 
 __all__ = [
     "User",
@@ -43,4 +45,7 @@ __all__ = [
     "AnchorPointLayer",
     "Geometry",
     "GeometryMaterialConfig",
+    "Cover",
+    "VestModel",
+    "ModelDocument",
 ]

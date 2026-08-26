@@ -6,7 +6,7 @@ import { useProtocols, useCreateProtocol, useDeleteProtocol, useUpdateProtocol }
 import { useVests } from '../hooks/useVests';
 import { useAuth } from '../hooks/useAuth';
 import { TestSession } from '../api/test_session';
-import { apiClient } from '../api/client';
+import { apiClient, API_BASE_URL } from '../api/client';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { LocationManagementModal } from '../components/LocationManagementModal';
 import { ProtocolManagementModal } from '../components/ProtocolManagementModal';
@@ -136,8 +136,11 @@ export function TestSessions() {
       formData.append('excel_file', file);
       formData.append('test_name', testName || file.name.replace(/\.[^/.]+$/, ''));
 
-      const response = await fetch('/api/v1/test-sessions/extract-date', {
+      const response = await fetch(`${API_BASE_URL}/api/v1/test-sessions/extract-date`, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
         body: formData,
       });
 

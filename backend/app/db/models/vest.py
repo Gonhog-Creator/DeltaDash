@@ -20,6 +20,14 @@ class Vest(Base):
     sizes = Column(JSON)
     construction_notes = Column(String)
     stitch_pattern = Column(String)
+
+    # Pliego técnico matching fields
+    weight_g = Column(Numeric(10, 2), nullable=True)
+    trauma_homologation = Column(JSON, nullable=True)  # { "level": "RB3", "backface_mm": 25.0, "ammunition": ".44 MAG", "certified": true }
+    flexibility_rating = Column(Numeric(5, 2), nullable=True)  # numeric flexibility rating, e.g., 0.0-10.0
+    is_panel_sewn = Column(Boolean, nullable=True)
+    size_curve = Column(JSON, nullable=True)  # { "S": {"chest_mm": 960, "waist_mm": 860, "length_mm": 480}, ... }
+
     notes = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

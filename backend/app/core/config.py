@@ -19,14 +19,20 @@ class Settings(BaseSettings):
     # Local storage paths (fallback)
     LOCAL_UPLOAD_DIR: str = "storage/uploads"
     LOCAL_MATERIAL_DOCS_DIR: str = "storage/material_docs"
+    LOCAL_GEOMETRY_DOCS_DIR: str = "storage/geometry_docs"
+    LOCAL_GEOMETRY_IMAGES_DIR: str = "storage/geometry_images"
     LOCAL_REPORTS_DIR: str = "storage/reports"
     LOCAL_MODEL_ARTIFACTS_DIR: str = "storage/model_artifacts"
+    LOCAL_MODEL_DOCS_DIR: str = "storage/model_docs"
     
     # Production storage paths (Railway)
     UPLOAD_DIR: str = "/app/storage/uploads"
     MATERIAL_DOCS_DIR: str = "/app/storage/material_docs"
+    GEOMETRY_DOCS_DIR: str = "/app/storage/geometry_docs"
+    GEOMETRY_IMAGES_DIR: str = "/app/storage/geometry_images"
     REPORTS_DIR: str = "/app/storage/reports"
     MODEL_ARTIFACTS_DIR: str = "/app/storage/model_artifacts"
+    MODEL_DOCS_DIR: str = "/app/storage/model_docs"
     
     @property
     def cors_origins_list(self) -> list[str]:
@@ -51,6 +57,24 @@ class Settings(BaseSettings):
         return self.LOCAL_MATERIAL_DOCS_DIR
     
     @property
+    def geometry_docs_dir(self) -> str:
+        """Get the appropriate geometry docs directory based on environment"""
+        if self.USE_RAILWAY_STORAGE and os.path.exists(self.GEOMETRY_DOCS_DIR):
+            return self.GEOMETRY_DOCS_DIR
+        # Ensure local directory exists
+        os.makedirs(self.LOCAL_GEOMETRY_DOCS_DIR, exist_ok=True)
+        return self.LOCAL_GEOMETRY_DOCS_DIR
+    
+    @property
+    def geometry_images_dir(self) -> str:
+        """Get the appropriate geometry images directory based on environment"""
+        if self.USE_RAILWAY_STORAGE and os.path.exists(self.GEOMETRY_IMAGES_DIR):
+            return self.GEOMETRY_IMAGES_DIR
+        # Ensure local directory exists
+        os.makedirs(self.LOCAL_GEOMETRY_IMAGES_DIR, exist_ok=True)
+        return self.LOCAL_GEOMETRY_IMAGES_DIR
+    
+    @property
     def reports_dir(self) -> str:
         """Get the appropriate reports directory based on environment"""
         if self.USE_RAILWAY_STORAGE and os.path.exists(self.REPORTS_DIR):
@@ -67,6 +91,14 @@ class Settings(BaseSettings):
         # Ensure local directory exists
         os.makedirs(self.LOCAL_MODEL_ARTIFACTS_DIR, exist_ok=True)
         return self.LOCAL_MODEL_ARTIFACTS_DIR
+
+    @property
+    def model_docs_dir(self) -> str:
+        """Get the appropriate model docs directory based on environment"""
+        if self.USE_RAILWAY_STORAGE and os.path.exists(self.MODEL_DOCS_DIR):
+            return self.MODEL_DOCS_DIR
+        os.makedirs(self.LOCAL_MODEL_DOCS_DIR, exist_ok=True)
+        return self.LOCAL_MODEL_DOCS_DIR
 
     class Config:
         env_file = ".env"

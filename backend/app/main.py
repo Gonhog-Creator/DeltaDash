@@ -10,7 +10,10 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)),
 
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns, analytics, locations, protocols, shot_data, vests, admin, ballistic, anchor_points, geometries, fabric_estimation, geometry_material_configs
+from app.core.security import get_password_hash
+from app.db.session import SessionLocal
+from app.db.models.user import User
+from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns, analytics, locations, protocols, shot_data, vests, admin, ballistic, anchor_points, geometries, fabric_estimation, geometry_material_configs, covers, vest_models
 
 setup_logging()
 
@@ -49,6 +52,38 @@ app.include_router(anchor_points.router, prefix="/api/v1", tags=["anchor-points"
 app.include_router(geometries.router, prefix="/api/v1/geometries", tags=["geometries"])
 app.include_router(fabric_estimation.router, prefix="/api/v1/fabric-estimation", tags=["fabric-estimation"])
 app.include_router(geometry_material_configs.router, prefix="/api/v1/geometry-material-configs", tags=["geometry-material-configs"])
+app.include_router(covers.router, prefix="/api/v1/covers", tags=["covers"])
+app.include_router(vest_models.router, prefix="/api/v1/vest-models", tags=["vest-models"])
+
+
+@app.on_event("startup")
+def seed_dev_users():
+    if settings.APP_ENV != "development":
+        return
+    db = SessionLocal()
+    try:
+        dev_users = [
+            ("admin", "Administrator", "admin", True),
+            ("viewer", "Viewer", "viewer", False),
+        ]
+        for username, full_name, role, is_admin in dev_users:
+            existing = db.query(User).filter(User.username == username).first()
+            if not existing:
+                user = User(
+                    username=username,
+                    full_name=full_name,
+                    hashed_password=get_password_hash(username),
+                    role=role,
+                    is_active=True,
+                    is_admin=is_admin,
+                )
+                db.add(user)
+                db.commit()
+                print(f"Seeded dev user: {username}")
+    except Exception as e:
+        print(f"Dev user seeding skipped: {e}")
+    finally:
+        db.close()
 
 
 @app.get("/health")

@@ -35,6 +35,7 @@ export function Layout({ children }: LayoutProps) {
     { path: '/official-certifications', label: 'Official Certifications' },
     { path: '/materials', label: 'Materials' },
     { path: '/vests', label: 'Vests' },
+    { path: '/geometries', label: 'Geometries' },
     { path: '/ammunition', label: 'Ammunition' },
     { path: '/fabric-estimation', label: 'Fabric Estimation' },
     { path: '/analytics', label: 'Analytics' },
@@ -167,7 +168,14 @@ export function Layout({ children }: LayoutProps) {
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-end px-6">
-          <span className="text-sm text-gray-700 mr-4">{user?.email}</span>
+          <div className="flex items-center mr-4">
+            <span className="text-sm text-gray-700">
+              {user?.full_name || user?.username || user?.email || 'Unknown'}
+            </span>
+            <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full capitalize">
+              {user?.role || 'viewer'}
+            </span>
+          </div>
           {isAdmin && (
             <button
               onClick={() => setViewerMode(!isViewerMode)}

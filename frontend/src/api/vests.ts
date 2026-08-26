@@ -22,11 +22,17 @@ export interface Vest {
   vest_type: string | null;
   is_female: boolean | null;
   threat_level: string | null;
+  protection_class: string | null;
   total_layers: number | null;
   total_thickness_mm: number | null;
   sizes: Record<string, number> | null;
   construction_notes: string | null;
   stitch_pattern: string | null;
+  weight_g: number | null;
+  trauma_homologation: Record<string, unknown> | null;
+  flexibility_rating: number | null;
+  is_panel_sewn: boolean | null;
+  size_curve: Record<string, Record<string, number>> | null;
   notes: string | null;
   created_by_username: string | null;
   created_at: string;
@@ -39,11 +45,17 @@ export interface VestCreate {
   vest_type?: string | null;
   is_female?: boolean | null;
   threat_level?: string | null;
+  protection_class?: string | null;
   total_layers?: number | null;
   total_thickness_mm?: number | null;
   sizes?: Record<string, number> | null;
   construction_notes?: string | null;
   stitch_pattern?: string | null;
+  weight_g?: number | null;
+  trauma_homologation?: Record<string, unknown> | null;
+  flexibility_rating?: number | null;
+  is_panel_sewn?: boolean | null;
+  size_curve?: Record<string, Record<string, number>> | null;
   notes?: string | null;
   created_by_username?: string | null;
   layers?: VestLayerCreate[];
@@ -54,11 +66,17 @@ export interface VestUpdate {
   vest_type?: string | null;
   is_female?: boolean | null;
   threat_level?: string | null;
+  protection_class?: string | null;
   total_layers?: number | null;
   total_thickness_mm?: number | null;
   sizes?: Record<string, number> | null;
   construction_notes?: string | null;
   stitch_pattern?: string | null;
+  weight_g?: number | null;
+  trauma_homologation?: Record<string, unknown> | null;
+  flexibility_rating?: number | null;
+  is_panel_sewn?: boolean | null;
+  size_curve?: Record<string, Record<string, number>> | null;
   notes?: string | null;
   created_by_username?: string | null;
 }
@@ -75,6 +93,11 @@ export interface VestListItem {
   sizes: Record<string, number> | null;
   construction_notes: string | null;
   stitch_pattern: string | null;
+  weight_g: number | null;
+  trauma_homologation: Record<string, unknown> | null;
+  flexibility_rating: number | null;
+  is_panel_sewn: boolean | null;
+  size_curve: Record<string, Record<string, number>> | null;
   created_by_username: string | null;
   composition: string | null;
 }

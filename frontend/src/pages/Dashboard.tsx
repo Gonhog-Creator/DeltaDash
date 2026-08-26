@@ -3,7 +3,7 @@ import { useMaterials } from '../hooks/useMaterials';
 import { useShots } from '../hooks/useShots';
 import { useVests } from '../hooks/useVests';
 import { useEffect, useState } from 'react';
-import { apiClient } from '../api/client';
+import { apiClient, API_BASE_URL } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { normalizeString } from '../utils/string';
@@ -198,6 +198,9 @@ export function Dashboard() {
     { id: 'materials', label: 'Materials' },
     { id: 'vests', label: 'Vests' },
     { id: 'vest_layers', label: 'Vest Layers' },
+    { id: 'geometries', label: 'Geometries' },
+    { id: 'geometry_material_configs', label: 'Geometry Material Configs' },
+    { id: 'covers', label: 'Covers' },
     { id: 'test_sessions', label: 'Test Sessions' },
     { id: 'shot_data', label: 'Shot Data' },
     { id: 'protocols', label: 'Protocols' },
@@ -212,7 +215,7 @@ export function Dashboard() {
       const response = await apiClient.post<{ message: string; filename: string }>('/api/v1/admin/backup');
 
       // Download the backup file
-      const downloadResponse = await fetch(`/api/v1/admin/backups/${response.filename}`, {
+      const downloadResponse = await fetch(`${API_BASE_URL}/api/v1/admin/backups/${response.filename}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
@@ -254,7 +257,7 @@ export function Dashboard() {
 
   const handleDownloadBackup = async (filename: string) => {
     try {
-      const response = await fetch(`/api/v1/admin/backups/${filename}`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/admin/backups/${filename}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
@@ -344,7 +347,7 @@ export function Dashboard() {
       // Poll for progress
       const pollInterval = setInterval(async () => {
         try {
-          const progressResponse = await fetch(`/api/v1/admin/restore/progress/${response.task_id}`, {
+          const progressResponse = await fetch(`${API_BASE_URL}/api/v1/admin/restore/progress/${response.task_id}`, {
             headers: {
               'Authorization': `Bearer ${localStorage.getItem('token')}`,
             },

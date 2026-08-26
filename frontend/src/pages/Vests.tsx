@@ -109,7 +109,9 @@ export function Vests() {
     total_thickness_mm: null,
     sizes: {},
     construction_notes: '',
-    stitch_pattern: '',
+    weight_g: null,
+    flexibility_rating: null,
+    is_panel_sewn: false,
     notes: '',
     created_by_username: '',
     layers: [],
@@ -165,7 +167,9 @@ export function Vests() {
         total_thickness_mm: null,
         sizes: {},
         construction_notes: '',
-        stitch_pattern: '',
+        weight_g: null,
+        flexibility_rating: null,
+        is_panel_sewn: false,
         notes: '',
         layers: [],
       });
@@ -216,7 +220,9 @@ export function Vests() {
         total_thickness_mm: null,
         sizes: {},
         construction_notes: '',
-        stitch_pattern: '',
+        weight_g: null,
+        flexibility_rating: null,
+        is_panel_sewn: false,
         notes: '',
         layers: [],
       });
@@ -267,7 +273,9 @@ export function Vests() {
       total_thickness_mm: fullVest.total_thickness_mm,
       sizes: fullVest.sizes || {},
       construction_notes: fullVest.construction_notes || '',
-      stitch_pattern: fullVest.stitch_pattern || '',
+      weight_g: fullVest.weight_g ?? null,
+      flexibility_rating: fullVest.flexibility_rating ?? null,
+      is_panel_sewn: fullVest.is_panel_sewn ?? (fullVest.stitch_pattern === 'stitched'),
       notes: fullVest.notes || '',
       created_by_username: fullVest.created_by_username || '',
       layers: [],
@@ -294,7 +302,9 @@ export function Vests() {
       total_thickness_mm: null,
       sizes: {},
       construction_notes: '',
-      stitch_pattern: '',
+      weight_g: null,
+      flexibility_rating: null,
+      is_panel_sewn: false,
       notes: '',
       created_by_username: '',
       layers: [],
@@ -507,6 +517,28 @@ export function Vests() {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Weight (g)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.weight_g ?? ''}
+                  onChange={(e) => setFormData({ ...formData, weight_g: e.target.value ? parseFloat(e.target.value) : null })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Flexibility Rating</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  max={100}
+                  value={formData.flexibility_rating ?? ''}
+                  onChange={(e) => setFormData({ ...formData, flexibility_rating: e.target.value ? parseFloat(e.target.value) : null })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                />
+              </div>
               {formData.vest_type?.toLowerCase() === 'soft' && (
                 <>
                   <div>
@@ -529,8 +561,8 @@ export function Vests() {
                       <label className="flex items-center">
                         <input
                           type="checkbox"
-                          checked={formData.stitch_pattern === 'stitched'}
-                          onChange={(e) => setFormData({ ...formData, stitch_pattern: e.target.checked ? 'stitched' : null })}
+                          checked={formData.is_panel_sewn || false}
+                          onChange={(e) => setFormData({ ...formData, is_panel_sewn: e.target.checked })}
                           className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
                         />
                       <span className="text-sm text-gray-700">Stitched</span>
@@ -712,6 +744,8 @@ export function Vests() {
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-xs">Composition</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thickness</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Flexibility</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stitched</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Linked</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -734,7 +768,7 @@ export function Vests() {
                 }
               }
 
-              const isStitched = vest.stitch_pattern === 'stitched';
+              const isStitched = vest.is_panel_sewn || false;
               const shouldShowStitched = vest.vest_type?.toLowerCase() === 'soft';
               const isLinked = vestTestSessionCounts[vest.id] > 0;
 
@@ -746,6 +780,8 @@ export function Vests() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.total_layers || '-'}</td>
                   <td className="px-6 py-4 text-sm text-gray-500 max-w-xs break-words">{vest.composition || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{thicknessDisplay}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.weight_g ? `${Number(vest.weight_g).toFixed(0)} g` : '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.flexibility_rating ?? '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{shouldShowStitched ? (isStitched ? 'Yes' : 'No') : '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {isLinked ? (
@@ -778,7 +814,7 @@ export function Vests() {
             })}
             {vests?.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={11} className="px-6 py-4 text-center text-sm text-gray-500">
                   No vests found. Click "Add Vest" to create one.
                 </td>
               </tr>
@@ -906,13 +942,21 @@ export function Vests() {
                   <span className="ml-2 font-medium">{selectedVest.total_thickness_mm ? `${selectedVest.total_thickness_mm} mm` : '-'}</span>
                 </div>
                 <div>
+                  <span className="text-gray-500">Weight:</span>
+                  <span className="ml-2 font-medium">{selectedVest.weight_g ? `${selectedVest.weight_g} g` : '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Flexibility:</span>
+                  <span className="ml-2 font-medium">{selectedVest.flexibility_rating ?? '-'}</span>
+                </div>
+                <div>
                   <span className="text-gray-500">Protection Class:</span>
                   <span className="ml-2 font-medium">{selectedVest.protection_class || '-'}</span>
                 </div>
                 {selectedVest.vest_type?.toLowerCase() === 'soft' && (
                   <div className="md:col-span-2">
-                    <span className="text-gray-500">Stitch Pattern:</span>
-                    <span className="ml-2 font-medium">{selectedVest.stitch_pattern || '-'}</span>
+                    <span className="text-gray-500">Stitched:</span>
+                    <span className="ml-2 font-medium">{selectedVest.is_panel_sewn ? 'Yes' : 'No'}</span>
                   </div>
                 )}
               </div>

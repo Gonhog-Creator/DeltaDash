@@ -22,10 +22,27 @@ class Geometry(Base):
     
     # Whether this geometry includes hard plates
     includes_hard_plates = Column(Boolean, default=False)
-    
+
+    # Whether this geometral is approved for production
+    is_approved = Column(Boolean, default=False)
+
+    # Detailed size measurements (curva de talles)
+    # Format: { "S": {"chest_mm": 960, "waist_mm": 860, "length_mm": 480, "shoulder_mm": 420}, ... }
+    size_measurements = Column(JSON, nullable=True)
+
+    # Single geometry PDF (e.g., spec sheet with image and sizing table)
+    # Format: {"path": "uuid.pdf", "original_name": "geometry.pdf"}
+    pdf_document = Column(JSON, nullable=True)
+
     # Outer carrier fabric (for the vest cover)
     outer_carrier_material_id = Column(UUID(as_uuid=True), nullable=True)
     outer_carrier_layer_count = Column(Integer, nullable=True)
-    
+
+    # URL or path to the panel diagram image
+    image_url = Column(String, nullable=True)
+
+    # Compatibility text (e.g., "Compatible con: STOP II - STOP III - ULTRA STOP III")
+    compatibility = Column(String, nullable=True)
+
     # Notes
     notes = Column(String)
