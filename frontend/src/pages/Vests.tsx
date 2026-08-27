@@ -112,6 +112,7 @@ export function Vests() {
     weight_g: null,
     flexibility_rating: null,
     is_panel_sewn: false,
+    is_catalog_model: false,
     notes: '',
     created_by_username: '',
     layers: [],
@@ -170,6 +171,7 @@ export function Vests() {
         weight_g: null,
         flexibility_rating: null,
         is_panel_sewn: false,
+    is_catalog_model: false,
         notes: '',
         layers: [],
       });
@@ -223,6 +225,7 @@ export function Vests() {
         weight_g: null,
         flexibility_rating: null,
         is_panel_sewn: false,
+    is_catalog_model: false,
         notes: '',
         layers: [],
       });
@@ -276,6 +279,7 @@ export function Vests() {
       weight_g: fullVest.weight_g ?? null,
       flexibility_rating: fullVest.flexibility_rating ?? null,
       is_panel_sewn: fullVest.is_panel_sewn ?? (fullVest.stitch_pattern === 'stitched'),
+      is_catalog_model: fullVest.is_catalog_model ?? false,
       notes: fullVest.notes || '',
       created_by_username: fullVest.created_by_username || '',
       layers: [],
@@ -305,6 +309,7 @@ export function Vests() {
       weight_g: null,
       flexibility_rating: null,
       is_panel_sewn: false,
+    is_catalog_model: false,
       notes: '',
       created_by_username: '',
       layers: [],
@@ -569,6 +574,20 @@ export function Vests() {
                     </label>
                   </div>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Catalog Model</label>
+                  <div className="flex items-center gap-4 mt-1">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={formData.is_catalog_model || false}
+                        onChange={(e) => setFormData({ ...formData, is_catalog_model: e.target.checked })}
+                        className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                      />
+                      <span className="text-sm text-gray-700">Official catalog model (shows in compatibility & matching)</span>
+                    </label>
+                  </div>
+                </div>
               </>
             )}
             {editingVest && role === 'admin' && (
@@ -774,7 +793,14 @@ export function Vests() {
 
               return (
                 <tr key={vest.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => handleVestClick(vest)}>
-                  <td className="px-6 py-4 text-sm font-medium text-gray-900 max-w-[180px] break-words">{vest.vest_code?.toUpperCase()}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900 max-w-[180px] break-words">
+                    <div className="flex items-center gap-2">
+                      {vest.vest_code?.toUpperCase()}
+                      {vest.is_catalog_model && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">Catalog</span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-6 py-4 text-sm text-gray-500 max-w-32 break-words">{vest.vest_type ? vest.vest_type.charAt(0).toUpperCase() + vest.vest_type.slice(1).toLowerCase() : '-'}</td>
                   <td className="px-6 py-4 text-sm text-gray-500 max-w-40 break-words">{vest.threat_level || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.total_layers || '-'}</td>
@@ -959,6 +985,10 @@ export function Vests() {
                     <span className="ml-2 font-medium">{selectedVest.is_panel_sewn ? 'Yes' : 'No'}</span>
                   </div>
                 )}
+                <div className="md:col-span-2">
+                  <span className="text-gray-500">Catalog Model:</span>
+                  <span className="ml-2 font-medium">{selectedVest.is_catalog_model ? 'Yes' : 'No'}</span>
+                </div>
               </div>
             </div>
             

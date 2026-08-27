@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, Integer, DateTime, ForeignKey, func, JSON, Boolean
+from sqlalchemy import Column, String, Text, Numeric, Integer, DateTime, ForeignKey, func, JSON, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -28,9 +28,15 @@ class Vest(Base):
     is_panel_sewn = Column(Boolean, nullable=True)
     size_curve = Column(JSON, nullable=True)  # { "S": {"chest_mm": 960, "waist_mm": 860, "length_mm": 480}, ... }
 
+    # Merged from vest_models
+    composition = Column(Text, nullable=True)
+    is_catalog_model = Column(Boolean, default=False, nullable=False)
+
     notes = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationship to layers
     layers = relationship("VestLayer", backref="vest", cascade="all, delete-orphan", order_by="VestLayer.layer_index")
+    # Relationship to documents (merged from vest_models)
+    documents = relationship("ModelDocument", back_populates="vest", cascade="all, delete-orphan")

@@ -1,8 +1,16 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 from uuid import UUID
 from decimal import Decimal
-from typing import Optional, Dict
+from typing import Optional, Dict, List
+
+
+class ModelDocumentSchema(BaseModel):
+    model_config = ConfigDict(protected_namespaces=(), from_attributes=True)
+    id: UUID
+    vest_id: UUID
+    name: str
+    original_name: Optional[str] = None
 
 
 class VestLayerBase(BaseModel):
@@ -40,6 +48,8 @@ class VestBase(BaseModel):
     flexibility_rating: Optional[float] = Field(None, ge=0, le=100)
     is_panel_sewn: Optional[bool] = None
     size_curve: Optional[Dict] = None
+    composition: Optional[str] = None
+    is_catalog_model: bool = False
     notes: Optional[str] = None
 
 
@@ -63,6 +73,8 @@ class VestUpdate(BaseModel):
     flexibility_rating: Optional[float] = Field(None, ge=0, le=100)
     is_panel_sewn: Optional[bool] = None
     size_curve: Optional[Dict] = None
+    composition: Optional[str] = None
+    is_catalog_model: Optional[bool] = None
     notes: Optional[str] = None
 
 
@@ -77,6 +89,7 @@ class VestInDB(VestBase):
 
 class Vest(VestInDB):
     layers: list[VestLayer] = []
+    documents: list[ModelDocumentSchema] = []
 
 
 class VestListItem(BaseModel):
@@ -98,6 +111,7 @@ class VestListItem(BaseModel):
     size_curve: Optional[Dict] = None
     created_by_username: Optional[str] = None
     composition: Optional[str] = None
+    is_catalog_model: bool = False
 
     class Config:
         from_attributes = True

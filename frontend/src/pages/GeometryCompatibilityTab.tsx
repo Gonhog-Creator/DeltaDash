@@ -67,6 +67,12 @@ export function GeometryCompatibilityTab() {
     return geometries?.find(g => g.id === selectedGeometryId) || null;
   }, [geometries, selectedGeometryId]);
 
+  const compatibleModels = useMemo(() => {
+    if (!selectedGeometry) return allModels;
+    const compatModels = new Set(getModelsFromCompat(selectedGeometry.compatibility));
+    return allModels.filter(m => compatModels.has(m));
+  }, [allModels, selectedGeometry]);
+
   const selectedVestModel = useMemo(() => {
     return vestModels?.find(m => m.name === selectedModel) || null;
   }, [vestModels, selectedModel]);
@@ -191,7 +197,7 @@ export function GeometryCompatibilityTab() {
         </div>
         <div className="bg-white shadow rounded-lg px-4 py-3">
           <div className="text-xs font-medium text-gray-500">Modelos compatibles</div>
-          <div className="mt-0.5 text-lg font-semibold text-gray-900">{allModels.length}</div>
+          <div className="mt-0.5 text-lg font-semibold text-gray-900">{compatibleModels.length}</div>
         </div>
         <button
           onClick={handleExportPdf}
@@ -228,7 +234,7 @@ export function GeometryCompatibilityTab() {
               className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
             >
               <option value="">Todos los modelos</option>
-              {allModels.map(model => (
+              {compatibleModels.map(model => (
                 <option key={model} value={model}>{model}</option>
               ))}
             </select>
@@ -266,7 +272,7 @@ export function GeometryCompatibilityTab() {
               <div key={doc.id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50">
                 <span className="text-lg">PDF</span>
                 <a
-                  href={`${API_BASE_URL}/api/v1/vest-models/${selectedVestModel.id}/documents/${doc.id}/download`}
+                  href={`${API_BASE_URL}/api/v1/vests/${selectedVestModel.id}/documents/${doc.id}/download`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex-1 min-w-0 text-sm font-medium text-gray-900 hover:text-indigo-600 truncate"

@@ -33,11 +33,21 @@ export interface Vest {
   flexibility_rating: number | null;
   is_panel_sewn: boolean | null;
   size_curve: Record<string, Record<string, number>> | null;
+  composition: string | null;
+  is_catalog_model: boolean;
   notes: string | null;
   created_by_username: string | null;
   created_at: string;
   updated_at: string;
   layers: VestLayer[];
+  documents: VestDocument[];
+}
+
+export interface VestDocument {
+  id: string;
+  vest_id: string;
+  name: string;
+  original_name: string | null;
 }
 
 export interface VestCreate {
@@ -56,6 +66,8 @@ export interface VestCreate {
   flexibility_rating?: number | null;
   is_panel_sewn?: boolean | null;
   size_curve?: Record<string, Record<string, number>> | null;
+  composition?: string | null;
+  is_catalog_model?: boolean;
   notes?: string | null;
   created_by_username?: string | null;
   layers?: VestLayerCreate[];
@@ -77,6 +89,8 @@ export interface VestUpdate {
   flexibility_rating?: number | null;
   is_panel_sewn?: boolean | null;
   size_curve?: Record<string, Record<string, number>> | null;
+  composition?: string | null;
+  is_catalog_model?: boolean;
   notes?: string | null;
   created_by_username?: string | null;
 }
@@ -100,6 +114,7 @@ export interface VestListItem {
   size_curve: Record<string, Record<string, number>> | null;
   created_by_username: string | null;
   composition: string | null;
+  is_catalog_model: boolean;
 }
 
 export interface VestTestSession {
@@ -120,12 +135,13 @@ export interface VestTestSessionsResponse {
 }
 
 export const vestsApi = {
-  list: (params?: { skip?: number; limit?: number; vest_type?: string; threat_level?: string }) => {
+  list: (params?: { skip?: number; limit?: number; vest_type?: string; threat_level?: string; is_catalog_model?: boolean }) => {
     const searchParams = new URLSearchParams();
     if (params?.skip) searchParams.append('skip', params.skip.toString());
     if (params?.limit) searchParams.append('limit', params.limit.toString());
     if (params?.vest_type) searchParams.append('vest_type', params.vest_type);
     if (params?.threat_level) searchParams.append('threat_level', params.threat_level);
+  if (params?.is_catalog_model !== undefined) searchParams.append('is_catalog_model', String(params.is_catalog_model));
     const query = searchParams.toString();
     return apiClient.get<VestListItem[]>(`/api/v1/vests/${query ? `?${query}` : ''}`);
   },

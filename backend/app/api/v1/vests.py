@@ -1,14 +1,20 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, joinedload
+from pydantic import BaseModel, ConfigDict
+import os
+import uuid as uuid_mod
 from app.db.session import get_db
 from app.db.models import Vest as VestModel, VestLayer
+from app.db.models.vest_model import ModelDocument
 from app.db.models.material import Material
 from app.db.models.test_session import TestSession
 from app.db.models.shot_data import ShotData as ShotDataModel
 from app.api.v1.auth import get_current_active_user, require_write_access
-from app.schemas.vest import VestCreate, VestUpdate, Vest, VestListItem, VestLayerCreate
+from app.schemas.vest import VestCreate, VestUpdate, Vest, VestListItem, VestLayerCreate, ModelDocumentSchema
 from app.db.models.user import User as UserModel
+from app.core.config import settings
 
 
 
@@ -38,6 +44,7 @@ def list_vests(
     limit: int = 100,
     vest_type: Optional[str] = None,
     threat_level: Optional[str] = None,
+    is_catalog_model: Optional[bool] = None,
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
 ):
@@ -48,6 +55,9 @@ def list_vests(
     
     if threat_level:
         query = query.filter(VestModel.threat_level == threat_level)
+
+    if is_catalog_model is not None:
+        query = query.filter(VestModel.is_catalog_model == is_catalog_model)
     
     vests = query.offset(skip).limit(limit).all()
     
@@ -86,6 +96,7 @@ def list_vests(
             "flexibility_rating": vest.flexibility_rating,
             "is_panel_sewn": vest.is_panel_sewn,
             "size_curve": vest.size_curve,
+            "is_catalog_model": vest.is_catalog_model,
             "created_by_username": vest.created_by_username if hasattr(vest, 'created_by_username') else None,
             "composition": ", ".join(composition_parts) if composition_parts else None
         }
@@ -122,7 +133,7 @@ def create_vest(
     db.commit()
     db.refresh(db_vest)
     # Reload with layers
-    db_vest = db.query(VestModel).options(joinedload(VestModel.layers)).filter(VestModel.id == db_vest.id).first()
+    db_vest = db.query(VestModel).options(joinedload(VestModel.layers), joinedload(VestModel.documents)).filter(VestModel.id == db_vest.id).first()
     return db_vest
 
 
@@ -132,7 +143,7 @@ def get_vest(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
 ):
-    vest = db.query(VestModel).options(joinedload(VestModel.layers)).filter(VestModel.id == vest_id).first()
+    vest = db.query(VestModel).options(joinedload(VestModel.layers), joinedload(VestModel.documents)).filter(VestModel.id == vest_id).first()
     if not vest:
         raise HTTPException(status_code=404, detail="Vest not found")
     return vest
@@ -156,7 +167,7 @@ def update_vest(
     db.commit()
     db.refresh(vest)
     # Reload with layers
-    vest = db.query(VestModel).options(joinedload(VestModel.layers)).filter(VestModel.id == vest_id).first()
+    vest = db.query(VestModel).options(joinedload(VestModel.layers), joinedload(VestModel.documents)).filter(VestModel.id == vest_id).first()
     return vest
 
 
@@ -306,3 +317,87 @@ def get_vest_test_sessions(
         "vest_code": vest.vest_code,
         "test_sessions": result
     }
+
+
+# --- Document endpoints (merged from vest_models) ---
+
+@router.post("/{vest_id}/documents", response_model=ModelDocumentSchema)
+def upload_vest_document(
+    vest_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access)
+):
+    """Upload a document (e.g., spec sheet, homologation PDF) for a vest."""
+    vest = db.query(VestModel).filter(VestModel.id == vest_id).first()
+    if not vest:
+        raise HTTPException(status_code=404, detail="Vest not found")
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+
+    os.makedirs(settings.model_docs_dir, exist_ok=True)
+
+    ext = os.path.splitext(file.filename)[1].lower() or ''
+    unique_filename = f"{uuid_mod.uuid4()}{ext}"
+    file_path = os.path.join(settings.model_docs_dir, unique_filename)
+
+    with open(file_path, 'wb') as f:
+        f.write(file.file.read())
+
+    doc = ModelDocument(
+        vest_id=vest.id,
+        name=file.filename,
+        file_path=unique_filename,
+        original_name=file.filename,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return ModelDocumentSchema.model_validate(doc)
+
+
+@router.get("/{vest_id}/documents/{doc_id}/download")
+def download_vest_document(
+    vest_id: str,
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user)
+):
+    """Download a document for a vest. Authenticated users only."""
+    doc = db.query(ModelDocument).filter(
+        ModelDocument.id == doc_id,
+        ModelDocument.vest_id == vest_id,
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    full_path = os.path.join(settings.model_docs_dir, doc.file_path)
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    return FileResponse(full_path, filename=doc.original_name or doc.name)
+
+
+@router.delete("/{vest_id}/documents/{doc_id}")
+def delete_vest_document(
+    vest_id: str,
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access)
+):
+    """Delete a document for a vest."""
+    doc = db.query(ModelDocument).filter(
+        ModelDocument.id == doc_id,
+        ModelDocument.vest_id == vest_id,
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    full_path = os.path.join(settings.model_docs_dir, doc.file_path)
+    if os.path.exists(full_path):
+        os.remove(full_path)
+
+    db.delete(doc)
+    db.commit()
+    return {"message": "Document deleted successfully"}
