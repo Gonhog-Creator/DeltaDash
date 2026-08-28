@@ -303,7 +303,6 @@ def create_anchor_points_batch(
     current_user: User = Depends(require_write_access)
 ):
     """Create multiple anchor points - one for each material in the composition."""
-    print(f"DEBUG: Creating batch anchor point with data: {anchor_point}")
     # Validate ammunition scope
     if anchor_point.ammunition_scope not in ['all', 'calibers']:
         raise HTTPException(status_code=400, detail="ammunition_scope must be 'all' or 'calibers'")
@@ -403,7 +402,6 @@ def create_anchor_point(
     current_user: User = Depends(require_write_access)
 ):
     """Create a new anchor point."""
-    print(f"DEBUG: Creating anchor point with data: {anchor_point}")
     # Validate ammunition scope
     if anchor_point.ammunition_scope not in ['all', 'calibers']:
         raise HTTPException(status_code=400, detail="ammunition_scope must be 'all' or 'calibers'")

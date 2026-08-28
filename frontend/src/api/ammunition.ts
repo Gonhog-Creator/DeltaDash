@@ -31,6 +31,7 @@ export interface AmmunitionCreate {
   projectile_type?: string | null;
   projectile_mass_grains: number;
   nominal_velocity_fps: number;
+  nominal_velocity_m_s?: number | null;
   manufacturer?: string | null;
   lot_number?: string | null;
   standard_reference?: string | null;
@@ -47,6 +48,7 @@ export interface AmmunitionUpdate {
   projectile_type?: string | null;
   projectile_mass_grains?: number | null;
   nominal_velocity_fps?: number | null;
+  nominal_velocity_m_s?: number | null;
   manufacturer?: string | null;
   lot_number?: string | null;
   standard_reference?: string | null;

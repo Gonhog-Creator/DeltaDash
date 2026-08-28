@@ -1063,7 +1063,6 @@ def train_from_database(
         # Use training data count from metadata (training points, not test points)
         training_row_count = metadata.get("training_data_count")
         if training_row_count is None:
-            print("WARNING: Model metadata is missing training_data_count, using len(df)")
             training_row_count = len(df)
         
         # Create or update ModelRun record
@@ -1100,18 +1099,14 @@ def train_from_database(
         db_session.commit()
     except Exception as e:
         db_session.rollback()
-        print(f"WARNING: Failed to save ModelRun record: {e}")
         # Don't fail the training if ModelRun save fails
     
     # Run model health evaluation automatically after training (now that model is in database)
-    print("Starting health evaluation...")
     health_result = None
     try:
         health_result = evaluate_model_on_test_sessions(db_session, version=metadata["version"])
         overall_avg_error = health_result.get("overall_average_error")
-        print("Health evaluation completed successfully")
     except Exception as e:
-        print(f"WARNING: Failed to run health evaluation after training: {e}")
         overall_avg_error = None
     
     # Update ModelRun with health evaluation results
@@ -1125,7 +1120,6 @@ def train_from_database(
                 db_session.commit()
         except Exception as e:
             db_session.rollback()
-            print(f"WARNING: Failed to update ModelRun with health evaluation results: {e}")
     
     return metadata, health_result
 
@@ -1468,7 +1462,7 @@ def load_model(target: str, db_session=None):
                     # Old format - wrap in dict
                     return {"model": loaded, "use_log_transform": False}
             except Exception as e:
-                print(f"ERROR: Failed to load model from database: {e}")
+                pass
 
     # Fallback to filesystem
     model_path = os.path.join(MODEL_DIR, f"{target}.pkl")
@@ -1500,17 +1494,15 @@ def load_preprocessor(db_session=None):
             try:
                 return joblib.load(io.BytesIO(model_run.preprocessor_file))
             except Exception as e:
-                print(f"ERROR: Failed to load preprocessor from database: {e}")
-    
+                pass
+
     # Fallback to filesystem
     preprocessor_path = os.path.join(MODEL_DIR, "preprocessor.pkl")
     if not os.path.exists(preprocessor_path):
-        print(f"WARNING: Preprocessor not found at {preprocessor_path}")
         return None
     try:
         return joblib.load(preprocessor_path)
     except Exception as e:
-        print(f"ERROR: Failed to load preprocessor: {e}")
         return None
 
 
@@ -1753,30 +1745,6 @@ def predict(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float
 
     X_processed = preprocessor.transform(X)
 
-    # Log weighted average material properties for debugging
-    if "composition_weighted_tensile_strength_mpa" in X.columns:
-        print(f"DEBUG: Weighted Tensile Strength: {X['composition_weighted_tensile_strength_mpa'].iloc[0]:.2f} MPa")
-    if "composition_weighted_modulus_gpa" in X.columns:
-        print(f"DEBUG: Weighted Modulus: {X['composition_weighted_modulus_gpa'].iloc[0]:.2f} GPa")
-    if "composition_weighted_elongation_percent" in X.columns:
-        print(f"DEBUG: Weighted Elongation: {X['composition_weighted_elongation_percent'].iloc[0]:.2f}%")
-    if "composition_weighted_density_g_cm3" in X.columns:
-        print(f"DEBUG: Weighted Density: {X['composition_weighted_density_g_cm3'].iloc[0]:.2f} g/cm³")
-
-    # Load and apply preprocessor
-    preprocessor = load_preprocessor()
-    if preprocessor is None:
-        print(f"ERROR: Preprocessor is None, cannot proceed with prediction")
-        raise HTTPException(
-            status_code=500,
-            detail="Preprocessor not found. The model may have been trained with an older version. Please retrain the model.",
-        )
-
-    print(f"INFO: Preprocessor loaded successfully, applying transform")
-    print(f"INFO: Input columns: {X.columns.tolist()}")
-    X_processed = preprocessor.transform(X)
-    print(f"INFO: Processed shape: {X_processed.shape}")
-    
     metrics = metadata.get("metrics", {})
 
     bfd_prediction = None
@@ -2102,7 +2070,6 @@ def evaluate_model_on_test_sessions(
                 "velocity": batch_rows[i]["impact_velocity_mps"],
             })
     except Exception as e:
-        print(f"ERROR: Batch prediction failed: {e}")
         import traceback
         traceback.print_exc()
     
@@ -2151,7 +2118,7 @@ def evaluate_model_on_test_sessions(
                 existing_cols = [col for col in feature_columns if col in anchor_input_df.columns]
                 missing_cols = set(feature_columns) - set(existing_cols)
                 if missing_cols:
-                    print(f"Warning: Columns missing after addition: {missing_cols}")
+                    pass
                 anchor_input_df = anchor_input_df[existing_cols]
 
             for col in anchor_input_df.columns:
@@ -2200,7 +2167,6 @@ def evaluate_model_on_test_sessions(
             anchor_avg_error = 0
             anchor_point_material_averages = []
     except Exception as e:
-        print(f"ERROR: Failed to evaluate anchor points: {e}")
         anchor_avg_error = 0
         anchor_point_material_averages = []
     

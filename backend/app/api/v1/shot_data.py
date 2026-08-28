@@ -28,7 +28,7 @@ def list_shot_data(
         try:
             test_session_uuid = uuid.UUID(test_session_id)
         except ValueError:
-            print(f"Invalid test_session_id format: {test_session_id}")
+            test_session_uuid = None
     
     # Try ShotData table first (Excel uploads)
     shot_data_query = db.query(ShotDataModel)
@@ -36,7 +36,6 @@ def list_shot_data(
         shot_data_query = shot_data_query.filter(ShotDataModel.test_session_id == test_session_uuid)
     shot_data = shot_data_query.offset(skip).limit(limit).all()
     
-    print(f"ShotData query result for test_session_id {test_session_id}: {shot_data}")
     
     # If no ShotData, try Shot table (manual entries)
     if not shot_data:
@@ -44,7 +43,6 @@ def list_shot_data(
         if test_session_uuid:
             shot_query = shot_query.filter(ShotModel.test_session_id == test_session_uuid)
         shots = shot_query.offset(skip).limit(limit).all()
-        print(f"Shot query result for test_session_id {test_session_id}: {shots}")
         return shots
     
     return shot_data

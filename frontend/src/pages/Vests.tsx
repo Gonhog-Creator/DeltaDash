@@ -710,13 +710,13 @@ export function Vests() {
           <thead className="bg-gray-50">
             <tr>
               <th
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 max-w-[180px] truncate"
+                className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 max-w-[180px] truncate"
                 onClick={() => handleSort('vest_code')}
               >
                 Vest Code {sortField === 'vest_code' && (sortDirection === 'asc' ? '↑' : '↓')}
               </th>
               <th
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 max-w-32 truncate"
+                className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 max-w-32 truncate"
                 onClick={() => handleSort('vest_type')}
               >
                 <div className="flex items-center gap-1">
@@ -736,7 +736,7 @@ export function Vests() {
                 </div>
               </th>
               <th
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 max-w-40 truncate"
+                className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 max-w-40 truncate"
                 onClick={() => handleSort('threat_level')}
               >
                 <div className="flex items-center gap-1">
@@ -756,18 +756,18 @@ export function Vests() {
                 </div>
               </th>
               <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('total_layers')}
               >
                 Total Layers {sortField === 'total_layers' && (sortDirection === 'asc' ? '↑' : '↓')}
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-xs">Composition</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thickness</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Flexibility</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stitched</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Linked</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-[200px]">Composition</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thickness</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Flexibility</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stitched</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Linked</th>
+              <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -793,30 +793,30 @@ export function Vests() {
 
               return (
                 <tr key={vest.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => handleVestClick(vest)}>
-                  <td className="px-6 py-4 text-sm font-medium text-gray-900 max-w-[180px] break-words">
+                  <td className="px-3 py-1.5 text-sm font-medium text-gray-900 max-w-[180px]">
                     <div className="flex items-center gap-2">
-                      {vest.vest_code?.toUpperCase()}
+                      <span className="truncate">{vest.vest_code?.toUpperCase()}</span>
                       {vest.is_catalog_model && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">Catalog</span>
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 shrink-0">Catalog</span>
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 max-w-32 break-words">{vest.vest_type ? vest.vest_type.charAt(0).toUpperCase() + vest.vest_type.slice(1).toLowerCase() : '-'}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 max-w-40 break-words">{vest.threat_level || '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.total_layers || '-'}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500 max-w-xs break-words">{vest.composition || '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{thicknessDisplay}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.weight_g ? `${Number(vest.weight_g).toFixed(0)} g` : '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vest.flexibility_rating ?? '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{shouldShowStitched ? (isStitched ? 'Yes' : 'No') : '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-3 py-1.5 text-sm text-gray-500 max-w-32 truncate">{vest.vest_type ? vest.vest_type.charAt(0).toUpperCase() + vest.vest_type.slice(1).toLowerCase() : '-'}</td>
+                  <td className="px-3 py-1.5 text-sm text-gray-500 max-w-40 truncate">{vest.threat_level || '-'}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{vest.total_layers || '-'}</td>
+                  <td className="px-3 py-1.5 text-sm text-gray-500 max-w-[200px] truncate" title={vest.composition || ''}>{vest.composition || '-'}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{thicknessDisplay}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{vest.weight_g ? `${Number(vest.weight_g).toFixed(0)} g` : '-'}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{vest.flexibility_rating ?? '-'}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{shouldShowStitched ? (isStitched ? 'Yes' : 'No') : '-'}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">
                     {isLinked ? (
                       <span className="text-green-500 text-lg">✓</span>
                     ) : (
                       <span className="text-red-500 text-lg">✗</span>
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <td className="px-3 py-1.5 whitespace-nowrap text-right text-sm font-medium">
                   {role !== 'viewer' && (
                     <>
                       <button

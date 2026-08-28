@@ -111,7 +111,6 @@ def serialize_value(value: Any) -> Any:
 
 def get_preview_changes(remote_cursor, local_db: Session) -> SyncPreview:
     """Generate preview of all changes that would occur during sync."""
-    print("Starting preview changes generation...")
     all_changes = []
     summary = {"new": 0, "updated": 0, "deleted": 0}
     
@@ -132,36 +131,26 @@ def get_preview_changes(remote_cursor, local_db: Session) -> SyncPreview:
         ("anchor_point_layers", AnchorPointLayer, "SELECT * FROM anchor_point_layers"),
     ]
     
-    print(f"Processing {len(entities)} entities...")
     for idx, (entity_name, model_class, query) in enumerate(entities):
-        print(f"  [{idx+1}/{len(entities)}] Processing {entity_name}...")
         try:
-            print(f"    Executing remote query...")
             remote_cursor.execute(query)
-            print(f"    Fetching columns...")
             columns = [desc[0] for desc in remote_cursor.description]
-            print(f"    Fetching data...")
             remote_data = remote_cursor.fetchall()
-            print(f"    Found {len(remote_data)} remote records")
             
             new_records = []
             updated_records = []
             deleted_records = []
             
             # Get all local records as a hash map for O(1) lookups
-            print(f"    Loading local records for {entity_name}...")
             local_records = {}
             local_query = local_db.query(model_class).all()
-            print(f"    Executed local query, iterating results...")
             for item in local_query:
                 local_records[str(getattr(item, 'id'))] = item
-            print(f"    Found {len(local_records)} local records")
             
             remote_ids = set()
-            print(f"    Comparing {len(remote_data)} remote records...")
             for idx2, row in enumerate(remote_data):
                 if idx2 > 0 and idx2 % 100 == 0:
-                    print(f"      Processed {idx2}/{len(remote_data)} records...")
+                    pass
                 data_dict = dict(zip(columns, row))
                 remote_id = str(data_dict.get('id'))
                 remote_ids.add(remote_id)
@@ -200,7 +189,6 @@ def get_preview_changes(remote_cursor, local_db: Session) -> SyncPreview:
                             record_data=valid_columns
                         ))
                         summary["updated"] += 1
-            print(f"    Comparison complete")
         
             # Check for deleted records
             deleted_ids = set(local_records.keys()) - remote_ids
@@ -211,7 +199,6 @@ def get_preview_changes(remote_cursor, local_db: Session) -> SyncPreview:
                 ))
                 summary["deleted"] += 1
             
-            print(f"    Summary: {len(new_records)} new, {len(updated_records)} updated, {len(deleted_records)} deleted")
             
             if new_records or updated_records or deleted_records:
                 all_changes.append(EntityChanges(
@@ -221,12 +208,10 @@ def get_preview_changes(remote_cursor, local_db: Session) -> SyncPreview:
                     deleted_records=deleted_records
                 ))
         except Exception as e:
-            print(f"    ERROR processing {entity_name}: {str(e)}")
             import traceback
             traceback.print_exc()
             raise
     
-    print(f"Total summary: {summary}")
     return SyncPreview(changes=all_changes, summary=summary)
 
 @router.get("/preview-sync")
@@ -237,48 +222,36 @@ def preview_sync(
     
     Performs field-level comparison to detect all changes including material properties.
     """
-    print("=== PREVIEW SYNC STARTED (DETAILED) ===")
-    print(f"User ID: {current_user.id}, is_admin: {current_user.is_admin}")
     
     if not current_user.is_admin:
-        print("ERROR: Admin access required")
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    print("Fetching REMOTE_DATABASE_URL...")
     remote_db_url = os.getenv("REMOTE_DATABASE_URL")
     if not remote_db_url:
-        print("ERROR: REMOTE_DATABASE_URL not configured")
         raise HTTPException(status_code=500, detail="REMOTE_DATABASE_URL not configured")
     
-    print(f"REMOTE_DATABASE_URL found (length: {len(remote_db_url)})")
     
     try:
-        print("Connecting to remote database for preview...")
         remote_conn = psycopg2.connect(remote_db_url, connect_timeout=30)
         remote_conn.autocommit = True
         remote_cursor = remote_conn.cursor()
-        print("Connected to remote database")
         
         local_db: Session = SessionLocal()
         
         try:
-            print("Generating detailed field-level preview...")
             preview = get_preview_changes(remote_cursor, local_db)
-            print("Preview generated successfully")
             return preview
         finally:
             local_db.close()
             remote_cursor.close()
             remote_conn.close()
     except Exception as e:
-        print(f"Preview error: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to preview sync: {str(e)}")
 
 def get_count_preview(remote_cursor, local_db: Session) -> SyncPreview:
     """Generate a simplified preview based on record counts only."""
-    print("Starting count-based preview generation...")
     all_changes = []
     summary = {"new": 0, "updated": 0, "deleted": 0}
     
@@ -300,28 +273,22 @@ def get_count_preview(remote_cursor, local_db: Session) -> SyncPreview:
         ("anchor_point_layers", AnchorPointLayer, "SELECT COUNT(*) FROM anchor_point_layers"),
     ]
     
-    print(f"Processing {len(entities)} entities...")
     for idx, (entity_name, model_class, query) in enumerate(entities):
-        print(f"  [{idx+1}/{len(entities)}] Counting {entity_name}...")
         try:
             # Get remote count
             remote_cursor.execute(query)
             remote_count = remote_cursor.fetchone()[0]
-            print(f"    Remote count: {remote_count}")
             
             # Get local count
             local_count = local_db.query(model_class).count()
-            print(f"    Local count: {local_count}")
             
             # If counts differ, add to changes (simplified - just mark as needs sync)
             if remote_count != local_count:
                 diff = remote_count - local_count
                 if diff > 0:
                     summary["new"] += diff
-                    print(f"    Difference: {diff} more on remote")
                 else:
                     summary["deleted"] += abs(diff)
-                    print(f"    Difference: {abs(diff)} fewer on remote")
                 
                 all_changes.append(EntityChanges(
                     entity_name=entity_name,
@@ -330,12 +297,10 @@ def get_count_preview(remote_cursor, local_db: Session) -> SyncPreview:
                     deleted_records=[RecordChange(id="count", change_type="deleted", record_data={"count": local_count})] if local_count > remote_count else []
                 ))
         except Exception as e:
-            print(f"    ERROR processing {entity_name}: {str(e)}")
             import traceback
             traceback.print_exc()
             raise
     
-    print(f"Total summary: {summary}")
     return SyncPreview(changes=all_changes, summary=summary)
 
 @router.post("/sync-database")
@@ -366,10 +331,8 @@ def sync_database(
     
     try:
         # Connect to remote database
-        print(f"Attempting to connect to remote database: {remote_db_url}")
         remote_conn = psycopg2.connect(remote_db_url, connect_timeout=10)
         remote_cursor = remote_conn.cursor()
-        print("Successfully connected to remote database")
         
         # Get local database session
         local_db: Session = SessionLocal()
@@ -423,15 +386,13 @@ def sync_database(
                 return "count" in confirmed_ids
             
             # Sync ammunition
-            print("Syncing ammunition...")
             remote_cursor.execute("SELECT * FROM ammunition")
             columns = [desc[0] for desc in remote_cursor.description]
             ammunition_data = remote_cursor.fetchall()
-            print(f"Found {len(ammunition_data)} ammunition records")
             
             # Skip if no remote data
             if not ammunition_data:
-                print("  No ammunition records to sync")
+                pass
             else:
                 # Check if we should sync all records (count-based)
                 sync_all_new = should_sync_all("ammunition", "new")
@@ -460,27 +421,22 @@ def sync_database(
                 if new_ammunition:
                     local_db.bulk_insert_mappings(Ammunition, new_ammunition)
                     applied_changes["new"] += len(new_ammunition)
-                    print(f"  Bulk inserted {len(new_ammunition)} new ammunition records")
                 
                 # Bulk update existing records
                 if updated_ammunition:
                     local_db.bulk_update_mappings(Ammunition, updated_ammunition)
                     applied_changes["updated"] += len(updated_ammunition)
-                    print(f"  Bulk updated {len(updated_ammunition)} ammunition records")
                 
                 local_db.commit()
-                print("Ammunition synced successfully")
             
             # Sync materials
-            print("Syncing materials...")
             remote_cursor.execute("SELECT * FROM materials")
             columns = [desc[0] for desc in remote_cursor.description]
             materials_data = remote_cursor.fetchall()
-            print(f"Found {len(materials_data)} material records")
             
             # Skip if no remote data
             if not materials_data:
-                print("  No material records to sync")
+                pass
             else:
                 # Check if we should sync all records (count-based)
                 sync_all_new = should_sync_all("materials", "new")
@@ -511,27 +467,22 @@ def sync_database(
                 if new_materials:
                     local_db.bulk_insert_mappings(Material, new_materials)
                     applied_changes["new"] += len(new_materials)
-                    print(f"  Bulk inserted {len(new_materials)} new material records")
                 
                 # Bulk update existing records
                 if updated_materials:
                     local_db.bulk_update_mappings(Material, updated_materials)
                     applied_changes["updated"] += len(updated_materials)
-                    print(f"  Bulk updated {len(updated_materials)} material records")
                 
                 local_db.commit()
-                print("Materials synced successfully")
             
             # Sync vests
-            print("Syncing vests...")
             remote_cursor.execute("SELECT * FROM vests")
             columns = [desc[0] for desc in remote_cursor.description]
             vests_data = remote_cursor.fetchall()
-            print(f"Found {len(vests_data)} vest records")
             
             # Skip if no remote data
             if not vests_data:
-                print("  No vest records to sync")
+                pass
             else:
                 # Check if we should sync all records (count-based)
                 sync_all_new = should_sync_all("vests", "new")
@@ -560,26 +511,21 @@ def sync_database(
                 if new_vests:
                     local_db.bulk_insert_mappings(Vest, new_vests)
                     applied_changes["new"] += len(new_vests)
-                    print(f"  Bulk inserted {len(new_vests)} new vest records")
                 
                 if updated_vests:
                     local_db.bulk_update_mappings(Vest, updated_vests)
                     applied_changes["updated"] += len(updated_vests)
-                    print(f"  Bulk updated {len(updated_vests)} vest records")
                 
                 local_db.commit()
-                print("Vests synced successfully")
             
             # Sync vest layers
-            print("Syncing vest layers...")
             remote_cursor.execute("SELECT * FROM vest_layers")
             columns = [desc[0] for desc in remote_cursor.description]
             vest_layers_data = remote_cursor.fetchall()
-            print(f"Found {len(vest_layers_data)} vest layer records")
             
             # Skip if no remote data
             if not vest_layers_data:
-                print("  No vest layer records to sync")
+                pass
             else:
                 # Check if we should sync all records (count-based)
                 sync_all_new = should_sync_all("vest_layers", "new")
@@ -608,26 +554,21 @@ def sync_database(
                 if new_vest_layers:
                     local_db.bulk_insert_mappings(VestLayer, new_vest_layers)
                     applied_changes["new"] += len(new_vest_layers)
-                    print(f"  Bulk inserted {len(new_vest_layers)} new vest layer records")
                 
                 if updated_vest_layers:
                     local_db.bulk_update_mappings(VestLayer, updated_vest_layers)
                     applied_changes["updated"] += len(updated_vest_layers)
-                    print(f"  Bulk updated {len(updated_vest_layers)} vest layer records")
                 
                 local_db.commit()
-                print("Vest layers synced successfully")
             
             # Sync test sessions
-            print("Syncing test sessions...")
             remote_cursor.execute("SELECT * FROM test_sessions")
             columns = [desc[0] for desc in remote_cursor.description]
             test_sessions_data = remote_cursor.fetchall()
-            print(f"Found {len(test_sessions_data)} test session records")
             
             # Skip if no remote data
             if not test_sessions_data:
-                print("  No test session records to sync")
+                pass
             else:
                 # Check if we should sync all records (count-based)
                 sync_all_new = should_sync_all("test_sessions", "new")
@@ -678,18 +619,15 @@ def sync_database(
                 if new_test_sessions:
                     local_db.bulk_insert_mappings(TestSession, new_test_sessions)
                     applied_changes["new"] += len(new_test_sessions)
-                    print(f"  Bulk inserted {len(new_test_sessions)} new test session records")
                 
                 if updated_test_sessions:
                     local_db.bulk_update_mappings(TestSession, updated_test_sessions)
                     applied_changes["updated"] += len(updated_test_sessions)
-                    print(f"  Bulk updated {len(updated_test_sessions)} test session records")
                 
                 local_db.commit()
                 
                 # Second pass: update parent_test_group_id for records that had missing parents
                 if parent_fk_updates:
-                    print(f"  Updating {len(parent_fk_updates)} parent foreign keys...")
                     for update in parent_fk_updates:
                         parent_id_str = str(update['parent_test_group_id'])
                         # Check if parent now exists after insert
@@ -699,20 +637,16 @@ def sync_database(
                                 'parent_test_group_id': update['parent_test_group_id']
                             })
                     local_db.commit()
-                    print(f"  Updated {len(parent_fk_updates)} parent foreign keys")
                 
-                print("Test sessions synced successfully")
             
             # Sync shot data
-            print("Syncing shot data...")
             remote_cursor.execute("SELECT * FROM shot_data")
             columns = [desc[0] for desc in remote_cursor.description]
             shot_data = remote_cursor.fetchall()
-            print(f"Found {len(shot_data)} shot data records")
             
             # Skip if no remote data
             if not shot_data:
-                print("  No shot data records to sync")
+                pass
             else:
                 # Check if we should sync all records (count-based)
                 sync_all_new = should_sync_all("shot_data", "new")
@@ -761,18 +695,15 @@ def sync_database(
                 if new_shot_data:
                     local_db.bulk_insert_mappings(ShotData, new_shot_data)
                     applied_changes["new"] += len(new_shot_data)
-                    print(f"  Bulk inserted {len(new_shot_data)} new shot data records")
                 
                 if updated_shot_data:
                     local_db.bulk_update_mappings(ShotData, updated_shot_data)
                     applied_changes["updated"] += len(updated_shot_data)
-                    print(f"  Bulk updated {len(updated_shot_data)} shot data records")
                 
                 local_db.commit()
                 
                 # Second pass: update test_session_id for records that had missing test sessions
                 if test_session_fk_updates:
-                    print(f"  Updating {len(test_session_fk_updates)} test session foreign keys...")
                     for update in test_session_fk_updates:
                         test_session_id_str = str(update['test_session_id'])
                         # Check if test session now exists after insert
@@ -782,21 +713,17 @@ def sync_database(
                                 'test_session_id': update['test_session_id']
                             })
                     local_db.commit()
-                    print(f"  Updated {len(test_session_fk_updates)} test session foreign keys")
                 
-                print("Shot data synced successfully")
 
             
             # Sync protocols
-            print("Syncing protocols...")
             remote_cursor.execute("SELECT * FROM protocols")
             columns = [desc[0] for desc in remote_cursor.description]
             protocols_data = remote_cursor.fetchall()
-            print(f"Found {len(protocols_data)} protocol records")
             
             # Skip if no remote data
             if not protocols_data:
-                print("  No protocol records to sync")
+                pass
             else:
                 # Check if we should sync all records (count-based)
                 sync_all_new = should_sync_all("protocols", "new")
@@ -825,26 +752,21 @@ def sync_database(
                 if new_protocols:
                     local_db.bulk_insert_mappings(Protocol, new_protocols)
                     applied_changes["new"] += len(new_protocols)
-                    print(f"  Bulk inserted {len(new_protocols)} new protocol records")
                 
                 if updated_protocols:
                     local_db.bulk_update_mappings(Protocol, updated_protocols)
                     applied_changes["updated"] += len(updated_protocols)
-                    print(f"  Bulk updated {len(updated_protocols)} protocol records")
                 
                 local_db.commit()
-                print("Protocols synced successfully")
             
             # Sync locations (labs)
-            print("Syncing locations...")
             remote_cursor.execute("SELECT * FROM locations")
             columns = [desc[0] for desc in remote_cursor.description]
             locations_data = remote_cursor.fetchall()
-            print(f"Found {len(locations_data)} location records")
             
             # Skip if no remote data
             if not locations_data:
-                print("  No location records to sync")
+                pass
             else:
                 # Check if we should sync all records (count-based)
                 sync_all_new = should_sync_all("locations", "new")
@@ -873,28 +795,23 @@ def sync_database(
                 if new_locations:
                     local_db.bulk_insert_mappings(Location, new_locations)
                     applied_changes["new"] += len(new_locations)
-                    print(f"  Bulk inserted {len(new_locations)} new location records")
                 
                 if updated_locations:
                     local_db.bulk_update_mappings(Location, updated_locations)
                     applied_changes["updated"] += len(updated_locations)
-                    print(f"  Bulk updated {len(updated_locations)} location records")
                 
                 local_db.commit()
-                print("Locations synced successfully")
             
             # Sync users (must be before anchor_points due to FK constraint)
             remote_to_local_user_id = {}
             fallback_user_id = None
-            print("Syncing users...")
             remote_cursor.execute("SELECT * FROM users")
             columns = [desc[0] for desc in remote_cursor.description]
             users_data = remote_cursor.fetchall()
-            print(f"Found {len(users_data)} user records")
             
             # Skip if no remote data
             if not users_data:
-                print("  No user records to sync")
+                pass
             else:
                 # Check if we should sync all records (count-based)
                 sync_all_new = should_sync_all("users", "new")
@@ -931,15 +848,12 @@ def sync_database(
                 if new_users:
                     local_db.bulk_insert_mappings(User, new_users)
                     applied_changes["new"] += len(new_users)
-                    print(f"  Bulk inserted {len(new_users)} new user records")
                 
                 if updated_users:
                     local_db.bulk_update_mappings(User, updated_users)
                     applied_changes["updated"] += len(updated_users)
-                    print(f"  Bulk updated {len(updated_users)} user records")
                 
                 local_db.commit()
-                print("Users synced successfully")
 
                 # Build remote-to-local user ID mapping for FK remapping
                 # Remote users matched by username have different IDs than local
@@ -961,15 +875,13 @@ def sync_database(
                     fallback_user_id = fallback_user.id
 
             # Sync anchor points
-            print("Syncing anchor points...")
             remote_cursor.execute("SELECT * FROM anchor_points")
             columns = [desc[0] for desc in remote_cursor.description]
             anchor_points_data = remote_cursor.fetchall()
-            print(f"Found {len(anchor_points_data)} anchor point records")
             
             # Skip if no remote data
             if not anchor_points_data:
-                print("  No anchor point records to sync")
+                pass
             else:
                 # Check if we should sync all records (count-based)
                 sync_all_new = should_sync_all("anchor_points", "new")
@@ -1010,26 +922,21 @@ def sync_database(
                 if new_anchor_points:
                     local_db.bulk_insert_mappings(AnchorPoint, new_anchor_points)
                     applied_changes["new"] += len(new_anchor_points)
-                    print(f"  Bulk inserted {len(new_anchor_points)} new anchor point records")
                 
                 if updated_anchor_points:
                     local_db.bulk_update_mappings(AnchorPoint, updated_anchor_points)
                     applied_changes["updated"] += len(updated_anchor_points)
-                    print(f"  Bulk updated {len(updated_anchor_points)} anchor point records")
                 
                 local_db.commit()
-                print("Anchor points synced successfully")
             
             # Sync anchor point layers
-            print("Syncing anchor point layers...")
             remote_cursor.execute("SELECT * FROM anchor_point_layers")
             columns = [desc[0] for desc in remote_cursor.description]
             anchor_point_layers_data = remote_cursor.fetchall()
-            print(f"Found {len(anchor_point_layers_data)} anchor point layer records")
             
             # Skip if no remote data
             if not anchor_point_layers_data:
-                print("  No anchor point layer records to sync")
+                pass
             else:
                 # Check if we should sync all records (count-based)
                 sync_all_new = should_sync_all("anchor_point_layers", "new")
@@ -1057,25 +964,20 @@ def sync_database(
                 if new_anchor_point_layers:
                     local_db.bulk_insert_mappings(AnchorPointLayer, new_anchor_point_layers)
                     applied_changes["new"] += len(new_anchor_point_layers)
-                    print(f"  Bulk inserted {len(new_anchor_point_layers)} new anchor point layer records")
                 
                 if updated_anchor_point_layers:
                     local_db.bulk_update_mappings(AnchorPointLayer, updated_anchor_point_layers)
                     applied_changes["updated"] += len(updated_anchor_point_layers)
-                    print(f"  Bulk updated {len(updated_anchor_point_layers)} anchor point layer records")
                 
                 local_db.commit()
-                print("Anchor point layers synced successfully")
             
             # Sync geometries
-            print("Syncing geometries...")
             remote_cursor.execute("SELECT * FROM geometries")
             columns = [desc[0] for desc in remote_cursor.description]
             geometries_data = remote_cursor.fetchall()
-            print(f"Found {len(geometries_data)} geometry records")
             
             if not geometries_data:
-                print("  No geometry records to sync")
+                pass
             else:
                 sync_all_new = should_sync_all("geometries", "new")
                 sync_all_updated = should_sync_all("geometries", "updated")
@@ -1102,25 +1004,20 @@ def sync_database(
                 if new_geometries:
                     local_db.bulk_insert_mappings(Geometry, new_geometries)
                     applied_changes["new"] += len(new_geometries)
-                    print(f"  Bulk inserted {len(new_geometries)} new geometry records")
                 
                 if updated_geometries:
                     local_db.bulk_update_mappings(Geometry, updated_geometries)
                     applied_changes["updated"] += len(updated_geometries)
-                    print(f"  Bulk updated {len(updated_geometries)} geometry records")
                 
                 local_db.commit()
-                print("Geometries synced successfully")
             
             # Sync geometry material configs
-            print("Syncing geometry material configs...")
             remote_cursor.execute("SELECT * FROM geometry_material_configs")
             columns = [desc[0] for desc in remote_cursor.description]
             geometry_material_configs_data = remote_cursor.fetchall()
-            print(f"Found {len(geometry_material_configs_data)} geometry material config records")
             
             if not geometry_material_configs_data:
-                print("  No geometry material config records to sync")
+                pass
             else:
                 sync_all_new = should_sync_all("geometry_material_configs", "new")
                 sync_all_updated = should_sync_all("geometry_material_configs", "updated")
@@ -1147,25 +1044,20 @@ def sync_database(
                 if new_geometry_material_configs:
                     local_db.bulk_insert_mappings(GeometryMaterialConfig, new_geometry_material_configs)
                     applied_changes["new"] += len(new_geometry_material_configs)
-                    print(f"  Bulk inserted {len(new_geometry_material_configs)} new geometry material config records")
                 
                 if updated_geometry_material_configs:
                     local_db.bulk_update_mappings(GeometryMaterialConfig, updated_geometry_material_configs)
                     applied_changes["updated"] += len(updated_geometry_material_configs)
-                    print(f"  Bulk updated {len(updated_geometry_material_configs)} geometry material config records")
                 
                 local_db.commit()
-                print("Geometry material configs synced successfully")
             
             # Sync covers
-            print("Syncing covers...")
             remote_cursor.execute("SELECT * FROM covers")
             columns = [desc[0] for desc in remote_cursor.description]
             covers_data = remote_cursor.fetchall()
-            print(f"Found {len(covers_data)} cover records")
             
             if not covers_data:
-                print("  No cover records to sync")
+                pass
             else:
                 sync_all_new = should_sync_all("covers", "new")
                 sync_all_updated = should_sync_all("covers", "updated")
@@ -1192,15 +1084,12 @@ def sync_database(
                 if new_covers:
                     local_db.bulk_insert_mappings(Cover, new_covers)
                     applied_changes["new"] += len(new_covers)
-                    print(f"  Bulk inserted {len(new_covers)} new cover records")
                 
                 if updated_covers:
                     local_db.bulk_update_mappings(Cover, updated_covers)
                     applied_changes["updated"] += len(updated_covers)
-                    print(f"  Bulk updated {len(updated_covers)} cover records")
                 
                 local_db.commit()
-                print("Covers synced successfully")
             
             # Handle deletions based on confirmation - order matters for foreign key constraints
             # Delete in reverse dependency order: children before parents
@@ -1226,7 +1115,6 @@ def sync_database(
                     if deleted_ids:
                         # Check if "count" marker is present - means delete all local records not on remote
                         if "count" in deleted_ids:
-                            print(f"Processing bulk deletions for {entity_name} (local has more than remote)")
                             # Get all local record IDs
                             local_ids = set(str(item.id) for item in local_db.query(model_class).all())
                             # Get all remote record IDs
@@ -1265,14 +1153,12 @@ def sync_database(
                             
                             # Find IDs to delete (local but not remote)
                             actual_deleted_ids = list(local_ids - remote_ids)
-                            print(f"  Found {len(actual_deleted_ids)} local records not on remote")
                         else:
                             # Filter out "count" marker which is used for syncing all records
                             actual_deleted_ids = [id for id in deleted_ids if id != "count"]
                         
                         if not actual_deleted_ids:
                             continue
-                        print(f"Processing {len(actual_deleted_ids)} deletions for {entity_name}")
                         # For test_sessions, handle self-referential FK by setting parent_test_group_id to NULL
                         if entity_name == "test_sessions":
                             # Set parent_test_group_id to NULL for any test_sessions that reference deleted ones
@@ -1288,10 +1174,8 @@ def sync_database(
                             if existing:
                                 local_db.delete(existing)
                                 applied_changes["deleted"] += 1
-                                print(f"  Deleted {entity_name}: {record_id}")
             
             local_db.commit()
-            print("Deletions processed successfully")
             
             return {"message": "Database sync completed successfully", "synced_records": {
                 "ammunition": len(ammunition_data),
@@ -1312,7 +1196,6 @@ def sync_database(
             
         except Exception as e:
             local_db.rollback()
-            print(f"Sync error: {str(e)}")
             import traceback
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
@@ -1390,25 +1273,18 @@ def reset_database(
         # Delete local data
         # If entities are selected, delete all of them (in proper order)
         # If no entities selected, delete all
-        print("Deleting local database data...")
         if entities_to_reset:
-            print(f"Resetting selected entities: {entities_to_reset}")
             for entity_name, model_class in deletion_order:
                 if entity_name in entities_to_reset:
-                    print(f"  Deleting {entity_name}...")
                     local_db.query(model_class).delete()
         else:
-            print("Deleting all entities...")
             for entity_name, model_class in deletion_order:
                 local_db.query(model_class).delete()
         local_db.commit()
-        print("Local data deleted successfully")
         
         # Connect to remote database
-        print(f"Attempting to connect to remote database: {remote_db_url}")
         remote_conn = psycopg2.connect(remote_db_url, connect_timeout=10)
         remote_cursor = remote_conn.cursor()
-        print("Successfully connected to remote database")
         
         try:
             # Initialize data variables for return statement
@@ -1429,11 +1305,9 @@ def reset_database(
             
             # Sync ammunition
             if not entities_to_reset or "ammunition" in entities_to_reset:
-                print("Syncing ammunition...")
                 remote_cursor.execute("SELECT * FROM ammunition")
                 columns = [desc[0] for desc in remote_cursor.description]
                 ammunition_data = remote_cursor.fetchall()
-                print(f"Found {len(ammunition_data)} ammunition records")
                 
                 for row in ammunition_data:
                     ammo_dict = dict(zip(columns, row))
@@ -1441,11 +1315,9 @@ def reset_database(
                     local_db.add(new_ammo)
                 
                 local_db.commit()
-                print("Ammunition synced successfully")
             
             # Sync materials
             if not entities_to_reset or "materials" in entities_to_reset:
-                print("Syncing materials...")
                 remote_cursor.execute("SELECT * FROM materials")
                 columns = [desc[0] for desc in remote_cursor.description]
                 materials_data = remote_cursor.fetchall()
@@ -1457,11 +1329,9 @@ def reset_database(
                     local_db.add(new_material)
                 
                 local_db.commit()
-                print("Materials synced successfully")
             
             # Sync vests
             if not entities_to_reset or "vests" in entities_to_reset:
-                print("Syncing vests...")
                 remote_cursor.execute("SELECT * FROM vests")
                 columns = [desc[0] for desc in remote_cursor.description]
                 vests_data = remote_cursor.fetchall()
@@ -1473,11 +1343,9 @@ def reset_database(
                     local_db.add(new_vest)
                 
                 local_db.commit()
-                print("Vests synced successfully")
             
             # Sync vest layers
             if not entities_to_reset or "vest_layers" in entities_to_reset:
-                print("Syncing vest layers...")
                 remote_cursor.execute("SELECT * FROM vest_layers")
                 columns = [desc[0] for desc in remote_cursor.description]
                 vest_layers_data = remote_cursor.fetchall()
@@ -1489,11 +1357,9 @@ def reset_database(
                     local_db.add(new_vest_layer)
                 
                 local_db.commit()
-                print("Vest layers synced successfully")
             
             # Sync test sessions
             if not entities_to_reset or "test_sessions" in entities_to_reset:
-                print("Syncing test sessions...")
                 remote_cursor.execute("SELECT * FROM test_sessions")
                 columns = [desc[0] for desc in remote_cursor.description]
                 test_sessions_data = remote_cursor.fetchall()
@@ -1505,11 +1371,9 @@ def reset_database(
                     local_db.add(new_test_session)
                 
                 local_db.commit()
-                print("Test sessions synced successfully")
             
             # Sync shot data
             if not entities_to_reset or "shot_data" in entities_to_reset:
-                print("Syncing shot data...")
                 remote_cursor.execute("SELECT * FROM shot_data")
                 columns = [desc[0] for desc in remote_cursor.description]
                 shot_data = remote_cursor.fetchall()
@@ -1521,11 +1385,9 @@ def reset_database(
                     local_db.add(new_shot)
                 
                 local_db.commit()
-                print("Shot data synced successfully")
             
             # Sync protocols
             if not entities_to_reset or "protocols" in entities_to_reset:
-                print("Syncing protocols...")
                 remote_cursor.execute("SELECT * FROM protocols")
                 columns = [desc[0] for desc in remote_cursor.description]
                 protocols_data = remote_cursor.fetchall()
@@ -1537,11 +1399,9 @@ def reset_database(
                     local_db.add(new_protocol)
                 
                 local_db.commit()
-                print("Protocols synced successfully")
             
             # Sync locations
             if not entities_to_reset or "locations" in entities_to_reset:
-                print("Syncing locations...")
                 remote_cursor.execute("SELECT * FROM locations")
                 columns = [desc[0] for desc in remote_cursor.description]
                 locations_data = remote_cursor.fetchall()
@@ -1553,15 +1413,12 @@ def reset_database(
                     local_db.add(new_location)
                 
                 local_db.commit()
-                print("Locations synced successfully")
             
             # Sync users (must be before anchor_points due to FK constraint)
             if not entities_to_reset or "users" in entities_to_reset:
-                print("Syncing users...")
                 remote_cursor.execute("SELECT * FROM users")
                 columns = [desc[0] for desc in remote_cursor.description]
                 users_data = remote_cursor.fetchall()
-                print(f"Found {len(users_data)} user records")
                 
                 # Get existing users by username to avoid duplicates
                 existing_users = {}
@@ -1588,15 +1445,12 @@ def reset_database(
                         local_db.add(new_user)
                 
                 local_db.commit()
-                print("Users synced successfully")
             
             # Sync anchor points
             if not entities_to_reset or "anchor_points" in entities_to_reset:
-                print("Syncing anchor points...")
                 remote_cursor.execute("SELECT * FROM anchor_points")
                 columns = [desc[0] for desc in remote_cursor.description]
                 anchor_points_data = remote_cursor.fetchall()
-                print(f"Found {len(anchor_points_data)} anchor point records")
                 
                 for row in anchor_points_data:
                     anchor_point_dict = dict(zip(columns, row))
@@ -1612,15 +1466,12 @@ def reset_database(
                     local_db.add(new_anchor_point)
                 
                 local_db.commit()
-                print("Anchor points synced successfully")
             
             # Sync anchor point layers
             if not entities_to_reset or "anchor_point_layers" in entities_to_reset:
-                print("Syncing anchor point layers...")
                 remote_cursor.execute("SELECT * FROM anchor_point_layers")
                 columns = [desc[0] for desc in remote_cursor.description]
                 anchor_point_layers_data = remote_cursor.fetchall()
-                print(f"Found {len(anchor_point_layers_data)} anchor point layer records")
                 
                 for row in anchor_point_layers_data:
                     anchor_point_layer_dict = dict(zip(columns, row))
@@ -1629,15 +1480,12 @@ def reset_database(
                     local_db.add(new_anchor_point_layer)
                 
                 local_db.commit()
-                print("Anchor point layers synced successfully")
             
             # Sync geometries
             if not entities_to_reset or "geometries" in entities_to_reset:
-                print("Syncing geometries...")
                 remote_cursor.execute("SELECT * FROM geometries")
                 columns = [desc[0] for desc in remote_cursor.description]
                 geometries_data = remote_cursor.fetchall()
-                print(f"Found {len(geometries_data)} geometry records")
                 
                 for row in geometries_data:
                     geometry_dict = dict(zip(columns, row))
@@ -1646,15 +1494,12 @@ def reset_database(
                     local_db.add(new_geometry)
                 
                 local_db.commit()
-                print("Geometries synced successfully")
             
             # Sync geometry material configs
             if not entities_to_reset or "geometry_material_configs" in entities_to_reset:
-                print("Syncing geometry material configs...")
                 remote_cursor.execute("SELECT * FROM geometry_material_configs")
                 columns = [desc[0] for desc in remote_cursor.description]
                 geometry_material_configs_data = remote_cursor.fetchall()
-                print(f"Found {len(geometry_material_configs_data)} geometry material config records")
                 
                 for row in geometry_material_configs_data:
                     gmc_dict = dict(zip(columns, row))
@@ -1663,15 +1508,12 @@ def reset_database(
                     local_db.add(new_gmc)
                 
                 local_db.commit()
-                print("Geometry material configs synced successfully")
             
             # Sync covers
             if not entities_to_reset or "covers" in entities_to_reset:
-                print("Syncing covers...")
                 remote_cursor.execute("SELECT * FROM covers")
                 columns = [desc[0] for desc in remote_cursor.description]
                 covers_data = remote_cursor.fetchall()
-                print(f"Found {len(covers_data)} cover records")
                 
                 for row in covers_data:
                     cover_dict = dict(zip(columns, row))
@@ -1680,7 +1522,6 @@ def reset_database(
                     local_db.add(new_cover)
                 
                 local_db.commit()
-                print("Covers synced successfully")
             
             return {"message": "Database reset completed successfully", "synced_records": {
                 "ammunition": len(ammunition_data),
@@ -1701,7 +1542,6 @@ def reset_database(
             
         except Exception as e:
             local_db.rollback()
-            print(f"Sync error: {str(e)}")
             import traceback
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Reset failed: {str(e)}")
@@ -1772,7 +1612,6 @@ def create_backup(
                 except subprocess.CalledProcessError as e:
                     # pg_dump failed, try to provide more detailed error
                     stderr = e.stderr.decode() if e.stderr else str(e)
-                    print(f"pg_dump failed: {stderr}")
                     raise HTTPException(status_code=500, detail=f"Database dump failed: {stderr}")
 
             # Add storage files to the zip
@@ -1800,7 +1639,6 @@ def create_backup(
                             file_size = os.path.getsize(file_path)
                             dir_size += file_size
                             file_count += 1
-                    print(f"Backup: Adding {storage_dir} - {file_count} files, {dir_size / (1024*1024):.2f} MB")
                     
                     for root, dirs, files in os.walk(storage_dir):
                         # Skip backups directory
@@ -2059,63 +1897,44 @@ def assemble_backup(
 
 def perform_restore(task_id: str, backup_path: str, temp_dir: str):
     """Background task to perform the actual restore."""
-    print(f"[BACKGROUND TASK] Starting restore for task {task_id}")
-    print(f"[BACKGROUND TASK] backup_path: {backup_path}")
-    print(f"[BACKGROUND TASK] temp_dir: {temp_dir}")
-    print(f"[BACKGROUND TASK] File exists: {os.path.exists(backup_path)}")
     
     try:
         restore_progress[task_id] = {"status": "extracting", "progress": 10, "message": "Extracting backup file..."}
-        print(f"[BACKGROUND TASK] Progress updated to extracting")
         
         # Extract the zip file
         with zipfile.ZipFile(backup_path, 'r') as zipf:
             zipf.extractall(temp_dir)
-        print(f"[BACKGROUND TASK] Extraction complete")
         
         restore_progress[task_id] = {"status": "restoring_db", "progress": 30, "message": "Restoring database..."}
-        print(f"[BACKGROUND TASK] Progress updated to restoring_db")
         
         # Restore the database
         db_backup_file = os.path.join(temp_dir, 'database_dump.sql')
         db_backup_file_gz = os.path.join(temp_dir, 'database_dump.sql.gz')
-        print(f"[BACKGROUND TASK] Checking for db_backup_file: {db_backup_file}")
-        print(f"[BACKGROUND TASK] db_backup_file exists: {os.path.exists(db_backup_file)}")
-        print(f"[BACKGROUND TASK] Checking for db_backup_file_gz: {db_backup_file_gz}")
-        print(f"[BACKGROUND TASK] db_backup_file_gz exists: {os.path.exists(db_backup_file_gz)}")
 
         # Decompress if needed
         if os.path.exists(db_backup_file_gz):
-            print(f"[BACKGROUND TASK] Decompressing SQL file...")
             subprocess.run(
                 ['gunzip', '-k', db_backup_file_gz],
                 check=True,
                 capture_output=True
             )
-            print(f"[BACKGROUND TASK] Decompression complete")
 
         if os.path.exists(db_backup_file):
             db_url = os.getenv("DATABASE_URL")
-            print(f"[BACKGROUND TASK] DATABASE_URL found: {bool(db_url)}")
             if db_url:
                 try:
-                    print(f"[BACKGROUND TASK] Parsing DATABASE_URL...")
                     # Parse DATABASE_URL to get connection details
                     match = re.match(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', db_url)
                     if not match:
-                        print(f"[BACKGROUND TASK] DATABASE_URL format invalid")
                         restore_progress[task_id] = {"status": "error", "progress": 0, "message": "Invalid DATABASE_URL format"}
                         return
                     
                     user, password, host, port, database = match.groups()
-                    print(f"[BACKGROUND TASK] Parsed: host={host}, port={port}, database={database}, user={user}")
                     
                     # Set environment variables for psql
                     env = os.environ.copy()
                     env['PGPASSWORD'] = password
-                    print(f"[BACKGROUND TASK] PGPASSWORD set")
                     
-                    print(f"[BACKGROUND TASK] Starting psql command with Popen...")
                     # Use Popen with proper stream handling
                     process = subprocess.Popen(
                         ['psql', '-h', host, '-p', port, '-U', user, '-d', database, '-f', db_backup_file],
@@ -2126,19 +1945,14 @@ def perform_restore(task_id: str, backup_path: str, temp_dir: str):
                         text=True
                     )
                     
-                    print(f"[BACKGROUND TASK] Waiting for psql to complete...")
                     stdout, stderr = process.communicate(timeout=300)
                     
                     if process.returncode != 0:
-                        print(f"[BACKGROUND TASK] psql failed with return code {process.returncode}")
-                        print(f"[BACKGROUND TASK] stderr: {stderr}")
                         raise Exception(f"psql failed: {stderr}")
                     
-                    print(f"[BACKGROUND TASK] psql completed successfully")
                     
                     restore_progress[task_id] = {"status": "restoring_files", "progress": 70, "message": "Restoring storage files..."}
                 except Exception as e:
-                    print(f"[BACKGROUND TASK] Database restore error: {str(e)}")
                     import traceback
                     traceback.print_exc()
                     restore_progress[task_id] = {"status": "error", "progress": 0, "message": f"Database restore failed: {str(e)}"}
@@ -2191,40 +2005,32 @@ def restore_backup(
         raise HTTPException(status_code=403, detail="Admin access required")
 
     try:
-        print("[RESTORE ENDPOINT] Starting restore endpoint")
         # Create a unique task ID
         task_id = str(uuid.uuid4())
-        print(f"[RESTORE ENDPOINT] Task ID: {task_id}")
 
         # Get backup path from storage
         backup_dir = os.path.join(settings.upload_dir, 'backups')
         backup_path = os.path.join(backup_dir, filename)
-        print(f"[RESTORE ENDPOINT] backup_path: {backup_path}")
 
         if not os.path.exists(backup_path):
             raise HTTPException(status_code=404, detail="Backup file not found")
 
         # Create a temporary directory for extraction
         temp_dir = tempfile.mkdtemp()
-        print(f"[RESTORE ENDPOINT] temp_dir: {temp_dir}")
 
         # Initialize progress
         restore_progress[task_id] = {"status": "starting", "progress": 0, "message": "Starting restore..."}
-        print(f"[RESTORE ENDPOINT] Progress initialized for task {task_id}")
 
         # Start background thread
-        print(f"[RESTORE ENDPOINT] Starting background thread...")
         thread = threading.Thread(target=perform_restore, args=(task_id, backup_path, temp_dir))
         thread.daemon = True
         thread.start()
-        print(f"[RESTORE ENDPOINT] Background thread started")
 
         return {"task_id": task_id, "message": "Restore started"}
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[RESTORE ENDPOINT] Error: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to start restore: {str(e)}")
@@ -2258,40 +2064,10 @@ def get_restore_progress(
 def get_version(
     current_user: User = Depends(get_current_user)
 ):
-    """Get the current version from environment variable or git commits."""
-    # Use environment variable if explicitly set (production override)
+    """Get the current application version."""
     if settings.VERSION:
         return {"version": settings.VERSION}
-    
-    # Fallback to git in development
-    try:
-        # Get the latest commit message
-        result = subprocess.run(
-            ['git', 'log', '-1', '--pretty=%B'],
-            capture_output=True,
-            text=True,
-            cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        )
-
-        commit_message = result.stdout.strip()
-
-        # Try to extract version from commit message (semantic versioning pattern)
-        version_match = re.match(r'^(\d+\.\d+(?:\.\d+)?)', commit_message)
-        if version_match:
-            return {"version": version_match.group(1)}
-        else:
-            # If no version found, return commit hash
-            hash_result = subprocess.run(
-                ['git', 'rev-parse', '--short', 'HEAD'],
-                capture_output=True,
-                text=True,
-                cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            )
-            return {"version": hash_result.stdout.strip()}
-
-    except Exception as e:
-        # If git is not available or fails, return default version
-        return {"version": "1.0.0"}
+    return {"version": "1.0.0"}
 
 
 @router.get("/alembic/status")

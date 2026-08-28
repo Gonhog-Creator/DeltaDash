@@ -148,7 +148,6 @@ def bulk_upload_excel(
             created_sessions.extend(sessions)
         except Exception as e:
             # Log error but continue with other files
-            print(f"Error uploading {excel_file.filename}: {e}")
             continue
     
     return created_sessions
@@ -284,7 +283,6 @@ def get_stats(
     # Count manual shots
     manual_shots_count = db.query(ShotModel).count()
     
-    print(f"DEBUG: test_session_count={test_session_count}, shot_data_count={shot_data_count}, manual_shots_count={manual_shots_count}")
     
     return {
         "test_session_count": test_session_count,
@@ -605,7 +603,6 @@ def bulk_reupload_all_test_sessions(
             if os.path.exists(alt_path):
                 original_file_path = alt_path
             else:
-                print(f"Excel file not found for {parent_session.name}: {excel_file_path}")
                 continue
         
         # Re-upload the Excel file

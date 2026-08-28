@@ -137,10 +137,10 @@ export function AmmunitionPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {item.caliber_unit === 'mm'
                       ? `${item.caliber_diameter_mm && item.caliber_length_mm
-                          ? `${parseFloat(item.caliber_diameter_mm).toFixed(2).replace(/\.00$/, '')}x${parseFloat(item.caliber_length_mm).toFixed(2).replace(/\.00$/, '')}mm`
+                          ? `${Number(item.caliber_diameter_mm).toFixed(2).replace(/\.00$/, '')}x${Number(item.caliber_length_mm).toFixed(2).replace(/\.00$/, '')}mm`
                           : '-'
                         }`
-                      : item.caliber_inch ? `${parseFloat(item.caliber_inch).toFixed(4).replace(/\.?0+$/, '')} in` : '-'
+                      : item.caliber_inch ? `${Number(item.caliber_inch).toFixed(4).replace(/\.?0+$/, '')} in` : '-'
                     }
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.projectile_type || '-'}</td>
@@ -268,7 +268,7 @@ export function AmmunitionPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700">Projectile Type</label>
                 <select
-                  value={formData.projectile_type}
+                  value={formData.projectile_type || ''}
                   onChange={(e) => setFormData({ ...formData, projectile_type: e.target.value })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 >
@@ -285,7 +285,7 @@ export function AmmunitionPage() {
                 <label className="block text-sm font-medium text-gray-700">Manufacturer</label>
                 <input
                   type="text"
-                  value={formData.manufacturer}
+                  value={formData.manufacturer || ''}
                   onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />

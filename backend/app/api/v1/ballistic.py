@@ -276,7 +276,6 @@ def analyze_features(db: Session = Depends(get_db), request: Optional[TrainReque
         analysis_model_versions = []
 
         # Train baseline with all features
-        print("Training baseline with all features...")
         baseline_metadata, _ = train_from_database(
             db,
             model_name="analysis_baseline",
@@ -305,7 +304,6 @@ def analyze_features(db: Session = Depends(get_db), request: Optional[TrainReque
             # Create toggles with just this feature disabled
             test_toggles = {**all_features, feature: False}
 
-            print(f"Testing without {feature}...")
             test_metadata, _ = train_from_database(
                 db,
                 model_name=f"analysis_no_{feature}",
@@ -342,9 +340,8 @@ def analyze_features(db: Session = Depends(get_db), request: Optional[TrainReque
         for version in analysis_model_versions:
             try:
                 delete_model_version(version, db)
-                print(f"Cleaned up temporary analysis model version: {version}")
             except Exception as cleanup_error:
-                print(f"Failed to clean up analysis model version {version}: {str(cleanup_error)}")
+                pass
 
         return results
 
@@ -382,7 +379,6 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
         from sklearn.model_selection import cross_val_score
         from app.services.ml.ballistic_ml import train_from_database, fetch_training_data, fetch_material_properties
 
-        print("Starting hyperparameter optimization...")
 
         # Get base parameters from request
         use_log_transform = request.use_log_transform if request else True
@@ -410,45 +406,31 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
 
         # List all models for debugging
         all_models = db.query(ModelRun).filter(ModelRun.model_type == "ballistic").all()
-        print(f"All ballistic models in database: {len(all_models)}")
-        for m in all_models:
-            print(f"  - {m.version}: training_avg_error={m.training_avg_error}, hyperparameters_json={'present' if m.hyperparameters_json else 'None'}")
 
         starting_hyperparams = None
         if best_existing_model:
-            print(f"Found best existing model: {best_existing_model.version} with {best_existing_model.training_avg_error:.2f}% avg error")
-            print(f"Best model hyperparameters_json: {best_existing_model.hyperparameters_json}")
             # Load its hyperparameters as starting point
             try:
                 version_metadata = load_model_version(best_existing_model.version)
-                print(f"Loaded version metadata: {version_metadata is not None}")
                 if version_metadata:
-                    print(f"Version metadata keys: {list(version_metadata.keys())}")
                     if version_metadata.get('hyperparameters'):
                         starting_hyperparams = version_metadata['hyperparameters']
-                        print(f"Using hyperparameters from best model as starting point")
                     else:
-                        print("No hyperparameters in version metadata, trying filesystem")
                         # Try to load from filesystem metadata as fallback
                         from app.services.ml.ballistic_ml import load_metadata
                         fs_metadata = load_metadata()
                         if fs_metadata and fs_metadata.get('hyperparameters'):
                             starting_hyperparams = fs_metadata['hyperparameters']
-                            print(f"Using hyperparameters from filesystem metadata as starting point")
                         else:
-                            print("No hyperparameters in filesystem metadata either")
+                            pass
             except Exception as e:
-                print(f"Could not load hyperparameters from best model: {str(e)}")
-                import traceback
-                traceback.print_exc()
+                pass
         else:
-            print("No existing model with training_avg_error found")
+            pass
 
         # Fetch training data once
-        print("Fetching training data...")
         material_properties = fetch_material_properties(db)
         df, _, _ = fetch_training_data(db, verbose=False, ignore_anchor_points=ignore_anchor_points)
-        print(f"Training data fetched: {len(df)} samples")
 
         if len(df) < 50:
             raise HTTPException(
@@ -458,13 +440,11 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
 
         # Simple hill-climbing optimization if starting hyperparameters available
         if starting_hyperparams:
-            print("Using hill-climbing optimization around best hyperparameters")
             current_best_hyperparams = starting_hyperparams.copy()
             current_best_value = float('inf')
             best_trial_metadata = None
             
             # First, evaluate the starting point
-            print("Evaluating starting hyperparameters...")
             try:
                 metadata, health_result = train_from_database(
                     db,
@@ -492,18 +472,14 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                 trial_results.append({"trial": 0, "error": mae})
                 best_trial_metadata = metadata
                 best_trial_metadata['health_check_error'] = mae
-                print(f"Starting point: {mae:.2f}%")
             except Exception as e:
-                print(f"Failed to evaluate starting point: {str(e)}")
                 current_best_value = float('inf')
             
             # Hill-climbing loop
             for trial_num in range(1, n_trials + 1):
                 if stop_optimization_flag:
-                    print("Stop requested, halting optimization")
                     break
                 
-                print(f"Trial {trial_num}...")
                 
                 # Generate very small random variations around current best
                 import random
@@ -543,7 +519,6 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                     else:
                         mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
                     
-                    print(f"Trial {trial_num}: {mae:.2f}%")
                     trial_results.append({"trial": trial_num, "error": mae})
                     
                     # If better, update best and continue from there
@@ -552,12 +527,9 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                         current_best_hyperparams = hyperparams.copy()
                         best_trial_metadata = metadata
                         best_trial_metadata['health_check_error'] = mae
-                        print(f"New best found: {mae:.2f}%")
                 except Exception as e:
-                    print(f"Trial {trial_num} failed: {str(e)}")
                     trial_results.append({"trial": trial_num, "error": float('inf')})
             
-            print("Hill-climbing optimization completed")
             best_params = current_best_hyperparams
             best_value = current_best_value
             best_hyperparameters = best_params
@@ -571,10 +543,8 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                 # Check if stop was requested
                 global stop_optimization_flag
                 if stop_optimization_flag:
-                    print("Stop requested, raising exception to halt optimization")
                     raise optuna.TrialPruned()
 
-                print(f"Trial {trial.number}...")
 
                 # Use wide bounds when no starting point
                 hyperparams = {
@@ -618,7 +588,6 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                         mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
                         objective_value = mae
 
-                    print(f"Trial {trial.number}: {objective_value:.2f}%")
 
                     # Add trial result to global list
                     global trial_results
@@ -635,17 +604,14 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
 
                     return objective_value
                 except Exception as e:
-                    print(f"Trial {trial.number} failed: {str(e)}")
                     import traceback
                     traceback.print_exc()
                     return float('inf')  # Return worst score on failure
 
-            print(f"Starting optimization with {n_trials} trials...")
             try:
                 study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
             except optuna.TrialPruned:
-                print("Optimization stopped by user")
-            print("Optimization completed")
+                pass
 
             # Get best parameters
             best_params = study.best_params
@@ -693,19 +659,16 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
         raise he
     except Exception as e:
         error_msg = str(e)
-        print(f"ERROR: Exception during hyperparameter optimization: {error_msg}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Optimization failed: {error_msg}")
     finally:
         # Delete optimization trial models from the library
-        print(f"Deleting {len(optimization_model_names)} optimization trial models from library")
         for version in optimization_model_names:
             try:
                 delete_model_version(version, db)
-                print(f"Deleted optimization trial model version: {version}")
             except Exception as cleanup_error:
-                print(f"Failed to delete optimization trial model version {version}: {str(cleanup_error)}")
+                pass
 
 
 @router.post("/train")
@@ -751,12 +714,10 @@ def train(db: Session = Depends(get_db), request: Optional[TrainRequest] = None)
             "health_result": health_result,  # Full health check results for caching
         }
     except ValueError as e:
-        print(f"ERROR: ValueError during training: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        print(f"ERROR: Exception during training: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Training failed: {str(e)}")
@@ -813,11 +774,9 @@ def predict_protocol_endpoint(data: ProtocolPredictionInput, db: Session = Depen
 
     # Validate that either vest_id or custom_vest is provided
     if not data.vest_id and not data.custom_vest:
-        print(f"ERROR: Neither vest_id nor custom_vest provided. vest_id={data.vest_id}, custom_vest={data.custom_vest}")
         raise HTTPException(status_code=400, detail="Either vest_id or custom_vest must be provided")
 
     try:
-        print(f"DEBUG: predict_protocol called with vest_id={data.vest_id}, protocol_id={data.protocol_id}, level_index={data.level_index}, version={version}")
         if data.custom_vest:
             # Handle custom vest prediction
             result = prediction_service.predict_bfd_for_custom_vest(
@@ -831,12 +790,10 @@ def predict_protocol_endpoint(data: ProtocolPredictionInput, db: Session = Depen
             result = prediction_service.predict_bfd_for_protocol(data.vest_id, data.protocol_id, data.level_index, version)
         return result
     except ValueError as e:
-        print(f"ERROR: ValueError in predict_protocol: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        print(f"ERROR: Exception in predict_protocol: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
@@ -1191,12 +1148,10 @@ def model_health(
         result = evaluate_model_on_test_sessions(db, version=version, protocol_filter=protocol)
         return result
     except ValueError as e:
-        print(f"ERROR: ValueError during model health evaluation: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        print(f"ERROR: Exception during model health evaluation: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Model health evaluation failed: {str(e)}")
@@ -1226,7 +1181,6 @@ def calculate_missing_metrics(db: Session = Depends(get_db)):
             # Get training data count from database
             training_row_count = model_run.training_row_count
             if training_row_count is None:
-                print(f"WARNING: Version {version_str} is missing training_row_count, skipping")
                 continue
             
             # Run model health evaluation to get actual test error
@@ -1246,7 +1200,6 @@ def calculate_missing_metrics(db: Session = Depends(get_db)):
                             bfd_metrics = metrics["backface_deformation_mm_regression"]
                             bfd_mae = bfd_metrics.get("mae")
             except Exception as e:
-                print(f"WARNING: Failed to run health evaluation for {version_str}: {e}")
                 # Fallback to existing metrics
                 bfd_mae = model_run.training_avg_error
                 if bfd_mae is None and model_run.metrics_json:
@@ -1329,7 +1282,6 @@ def recalculate_metrics_for_version(version: str, db: Session = Depends(get_db))
                             bfd_metrics = metrics["backface_deformation_mm_regression"]
                             bfd_mae = bfd_metrics.get("mae")
             except Exception as e:
-                print(f"WARNING: Failed to run health evaluation for {version}: {e}")
                 # Fallback to metadata MAE
                 bfd_mae = None
                 if "metrics" in metadata:

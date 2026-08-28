@@ -81,17 +81,13 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
     if verbose:
         if missing_thickness:
             msg = f"{len(missing_thickness)} materials missing thickness: {', '.join(missing_thickness[:10])}{'...' if len(missing_thickness) > 10 else ''}"
-            print(f"WARNING: {msg}")
             warnings_list.append(msg)
         if missing_density:
             msg = f"{len(missing_density)} materials missing areal density (g/m²): {', '.join(missing_density[:10])}{'...' if len(missing_density) > 10 else ''}"
-            print(f"WARNING: {msg}")
             warnings_list.append(msg)
         if missing_ply:
             msg = f"{len(missing_ply)} materials missing ply count: {', '.join(missing_ply[:10])}{'...' if len(missing_ply) > 10 else ''}"
-            print(f"WARNING: {msg}")
             warnings_list.append(msg)
-        print(f"INFO: Total materials in database: {len(materials)}")
 
     # Query all shot data with relationships - less restrictive
     query = (
