@@ -36,6 +36,7 @@ export function Layout({ children }: LayoutProps) {
     { path: '/materials', label: 'Materials' },
     { path: '/vests', label: 'Vests' },
     { path: '/geometries', label: 'Geometries' },
+    { path: '/covers', label: 'Covers' },
     { path: '/ammunition', label: 'Ammunition' },
     { path: '/fabric-estimation', label: 'Fabric Estimation' },
     { path: '/analytics', label: 'Analytics' },
@@ -168,6 +169,22 @@ export function Layout({ children }: LayoutProps) {
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-end px-6">
+          <select
+            onChange={(e) => {
+              const lang = e.target.value;
+              if (lang === 'en') {
+                document.cookie = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+              } else {
+                document.cookie = `googtrans=/en/${lang}; path=/`;
+              }
+              window.location.reload();
+            }}
+            className="mr-4 text-sm border border-gray-300 rounded px-2 py-1 text-gray-600 bg-white"
+            value={document.cookie.match(/googtrans=\/en\/(\w+)/)?.[1] || 'en'}
+          >
+            <option value="en">EN</option>
+            <option value="es">ES</option>
+          </select>
           <div className="flex items-center mr-4">
             <span className="text-sm text-gray-700">
               {user?.full_name || user?.username || user?.email || 'Unknown'}

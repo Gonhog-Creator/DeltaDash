@@ -17,6 +17,7 @@ import { Protocols } from './pages/Protocols'
 import { Comparison } from './pages/Comparison'
 import { FabricEstimation } from './pages/FabricEstimation'
 import { Geometries } from './pages/Geometries'
+import { Covers } from './pages/Covers'
 import { ViewerModeProvider } from './contexts/ViewerModeContext'
 
 const queryClient = new QueryClient({
@@ -49,6 +50,7 @@ function App() {
                       <Route path="/test-sessions/:id" element={<TestSessionDetail />} />
                       <Route path="/vests" element={<Vests />} />
                       <Route path="/geometries" element={<Geometries />} />
+                      <Route path="/covers" element={<Covers />} />
                       <Route path="/protocols" element={<Protocols />} />
                       <Route path="/analytics" element={<Analytics />} />
                       <Route path="/comparison" element={<Comparison />} />
