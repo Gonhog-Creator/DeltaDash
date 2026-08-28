@@ -275,8 +275,8 @@ def get_stats(
     current_user: UserModel = Depends(get_current_active_user)
 ):
     """Get statistics for dashboard"""
-    # Count test sessions
-    test_session_count = db.query(TestSessionModel).count()
+    # Count parent test sessions only (child sessions are sub-tests from the same Excel upload)
+    test_session_count = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == None).count()
     
     # Count shot data from Excel uploads
     shot_data_count = db.query(ShotDataModel).count()

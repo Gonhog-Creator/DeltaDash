@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { apiClient, API_BASE_URL } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { GuideSection } from '../components/GuideSection';
 import { normalizeString } from '../utils/string';
 
 export function Dashboard() {
@@ -579,6 +580,8 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      <GuideSection />
 
       {showSyncSuccessModal && syncResults && syncResults.applied_changes && (
         <ConfirmModal
