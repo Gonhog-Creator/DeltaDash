@@ -18,6 +18,7 @@ class TestSessionBase(BaseModel):
     ballistic_limit: Optional[bool] = None
     parent_test_group_id: Optional[UUID] = None
     vest_id: Optional[UUID] = None
+    geometry_id: Optional[UUID] = None
     excel_file_path: Optional[str] = None
     notes: Optional[str] = None
     is_official: Optional[bool] = False
@@ -25,7 +26,7 @@ class TestSessionBase(BaseModel):
 
 
 class TestSessionCreate(TestSessionBase):
-    pass
+    geometry_id: UUID
 
 
 class TestSessionUpdate(BaseModel):
@@ -41,6 +42,7 @@ class TestSessionUpdate(BaseModel):
     ballistic_limit: Optional[bool] = None
     parent_test_group_id: Optional[UUID] = None
     vest_id: Optional[UUID] = None
+    geometry_id: Optional[UUID] = None
     excel_file_path: Optional[str] = None
     notes: Optional[str] = None
     is_official: Optional[bool] = None
@@ -53,6 +55,7 @@ class TestSessionInDB(TestSessionBase):
     updated_at: datetime
     vest_name: Optional[str] = None
     vest_code: Optional[str] = None
+    geometry_name: Optional[str] = None
 
     class Config:
         from_attributes = True

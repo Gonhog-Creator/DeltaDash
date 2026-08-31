@@ -1,9 +1,10 @@
-import { useState, Fragment } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTestSessions, useDeleteTestSession, useUploadExcel, useCreateFromExcel, useUpdateTestSession } from '../hooks/useTestSessions';
 import { useLocations, useCreateLocation, useDeleteLocation, useUpdateLocation } from '../hooks/useLocations';
 import { useProtocols, useCreateProtocol, useDeleteProtocol, useUpdateProtocol } from '../hooks/useProtocols';
 import { useVests } from '../hooks/useVests';
+import { useGeometries } from '../hooks/useGeometries';
 import { useAuth } from '../hooks/useAuth';
 import { TestSession } from '../api/test_session';
 import { apiClient, API_BASE_URL } from '../api/client';
@@ -17,6 +18,7 @@ export function OfficialCertifications() {
   const { data: locations } = useLocations();
   const { data: protocols } = useProtocols();
   const { data: vests } = useVests();
+  const { data: geometries } = useGeometries();
   const { isAdmin, role } = useAuth();
   const createLocationMutation = useCreateLocation();
   const deleteLocationMutation = useDeleteLocation();
@@ -49,6 +51,13 @@ export function OfficialCertifications() {
   const [selectedLocationId, setSelectedLocationId] = useState('');
   const [protocol, setProtocol] = useState('');
   const [selectedVestId, setSelectedVestId] = useState('');
+  const [selectedGeometryId, setSelectedGeometryId] = useState('');
+  const defaultGeometryId = useMemo(() => geometries?.find((g) => g.name === 'F')?.id || '', [geometries]);
+  useEffect(() => {
+    if (defaultGeometryId && !selectedGeometryId) {
+      setSelectedGeometryId(defaultGeometryId);
+    }
+  }, [defaultGeometryId]);
   const [testDate, setTestDate] = useState(new Date().toISOString().split('T')[0]);
   const [certificationNumber, setCertificationNumber] = useState('');
   const [isOfficial, setIsOfficial] = useState(true);
@@ -168,6 +177,10 @@ export function OfficialCertifications() {
       alert('Please select a vest');
       return;
     }
+    if (!selectedGeometryId) {
+      alert('Please select a geometry');
+      return;
+    }
     try {
       await createFromExcelMutation.mutateAsync({
         file: excelFile,
@@ -175,6 +188,7 @@ export function OfficialCertifications() {
         locationId: selectedLocationId || undefined,
         protocol: protocol || undefined,
         vestId: selectedVestId,
+        geometryId: selectedGeometryId,
         testDate: testDate || undefined,
         dateFormat: dateFormat || undefined,
         isOfficial: isOfficial,
@@ -187,6 +201,7 @@ export function OfficialCertifications() {
       setSelectedLocationId('');
       setProtocol('');
       setSelectedVestId('');
+      setSelectedGeometryId(defaultGeometryId);
       setTestDate(new Date().toISOString().split('T')[0]);
       setIsOfficial(true);
       setShowDateFormatModal(false);
@@ -311,6 +326,7 @@ export function OfficialCertifications() {
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-24 truncate">Lab</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Protocol</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vest</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Geometry</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate"></th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cert. #</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Excel</th>
@@ -354,6 +370,9 @@ export function OfficialCertifications() {
                     <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={parent.protocol || ''}>{parent.protocol || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={parent.vest_code || ''}>
                       {parent.vest_code ? (parent.vest_code.length > 15 ? parent.vest_code.substring(0, 15) + '...' : parent.vest_code) : '-'}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={parent.geometry_name || ''}>
+                      {parent.geometry_name ? (parent.geometry_name.length > 15 ? parent.geometry_name.substring(0, 15) + '...' : parent.geometry_name) : '-'}
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate">{hasChildren ? totalShotCount : '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.certification_number || '-'}</td>
@@ -419,6 +438,9 @@ export function OfficialCertifications() {
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={child.vest_code || ''}>
                         {child.vest_code ? (child.vest_code.length > 15 ? child.vest_code.substring(0, 15) + '...' : child.vest_code) : '-'}
                       </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={child.geometry_name || ''}>
+                        {child.geometry_name ? (child.geometry_name.length > 15 ? child.geometry_name.substring(0, 15) + '...' : child.geometry_name) : '-'}
+                      </td>
                       <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={formatConditioning(child.conditioning)}>{formatConditioning(child.conditioning)}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{child.certification_number || '-'}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
@@ -474,7 +496,7 @@ export function OfficialCertifications() {
             })}
             {testSessions?.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={11} className="px-6 py-4 text-center text-sm text-gray-500">
                   No official certifications found. Click "Upload Excel" to create one.
                 </td>
               </tr>
@@ -604,6 +626,22 @@ export function OfficialCertifications() {
                 </select>
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Geometry *</label>
+                <select
+                  value={selectedGeometryId}
+                  onChange={(e) => setSelectedGeometryId(e.target.value)}
+                  required
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                >
+                  <option value="">Select geometry...</option>
+                  {geometries?.sort((a, b) => a.name.localeCompare(b.name)).map((geometry) => (
+                    <option key={geometry.id} value={geometry.id}>
+                      {geometry.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Test Date</label>
                 <input
                   type="date"
@@ -625,6 +663,7 @@ export function OfficialCertifications() {
             setSelectedLocationId('');
             setProtocol('');
             setSelectedVestId('');
+            setSelectedGeometryId(defaultGeometryId);
             setTestDate(new Date().toISOString().split('T')[0]);
             setIsOfficial(true);
           }}
@@ -1003,6 +1042,21 @@ export function OfficialCertifications() {
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
+                <select
+                  value={editTarget.geometry_id || ''}
+                  onChange={(e) => setEditTarget({ ...editTarget, geometry_id: e.target.value || null })}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                >
+                  <option value="">Select geometry (optional)</option>
+                  {geometries?.sort((a, b) => a.name.localeCompare(b.name)).map((geometry) => (
+                    <option key={geometry.id} value={geometry.id}>
+                      {geometry.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               {editTarget.parent_test_group_id && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Conditioning</label>
@@ -1075,6 +1129,7 @@ export function OfficialCertifications() {
                   lab_name: editTarget.lab_name,
                   protocol: editTarget.protocol,
                   vest_id: editTarget.vest_id,
+                  geometry_id: editTarget.geometry_id,
                   conditioning: editTarget.conditioning,
                   ambient_temperature_c: editTarget.ambient_temperature_c,
                   humidity_percent: editTarget.humidity_percent,

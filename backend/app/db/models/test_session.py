@@ -21,6 +21,7 @@ class TestSession(Base):
     ballistic_limit = Column(Boolean, default=False)
     parent_test_group_id = Column(UUID(as_uuid=True), ForeignKey('test_sessions.id'), nullable=True)
     vest_id = Column(UUID(as_uuid=True), ForeignKey('vests.id'), nullable=True)
+    geometry_id = Column(UUID(as_uuid=True), ForeignKey('geometries.id'), nullable=True)
     excel_file_path = Column(String)
     notes = Column(String)
     is_official = Column(Boolean, default=False)

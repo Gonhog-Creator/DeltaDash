@@ -16,6 +16,8 @@ export interface TestSession {
   vest_id: string | null;
   vest_name: string | null;
   vest_code: string | null;
+  geometry_id: string | null;
+  geometry_name: string | null;
   excel_file_path: string | null;
   notes: string | null;
   is_official: boolean;
@@ -23,6 +25,8 @@ export interface TestSession {
   created_at: string;
   updated_at: string;
   shot_count?: number | null;
+  vest?: { id: string; vest_code: string | null; name: string | null } | null;
+  geometry?: { id: string; name: string | null } | null;
 }
 
 export interface TestSessionCreate {
@@ -34,6 +38,7 @@ export interface TestSessionCreate {
   ambient_temperature_c?: number | null;
   humidity_percent?: number | null;
   conditioning?: string | null;
+  geometry_id: string;
   notes?: string | null;
 }
 
@@ -46,7 +51,10 @@ export interface TestSessionUpdate {
   ambient_temperature_c?: number | null;
   humidity_percent?: number | null;
   conditioning?: string | null;
+  vest_id?: string | null;
+  geometry_id?: string | null;
   notes?: string | null;
+  certification_number?: string | null;
 }
 
 export const testSessionsApi = {
@@ -63,7 +71,7 @@ export const testSessionsApi = {
 
   create: (testSession: TestSessionCreate) => apiClient.post<TestSession>('/api/v1/test-sessions', testSession),
 
-  createFromExcel: (file: File, testName: string, locationId?: string, protocol?: string, vestId?: string, testDate?: string, dateFormat?: string, isOfficial?: boolean, certificationNumber?: string) => {
+  createFromExcel: (file: File, testName: string, locationId: string | undefined, protocol: string | undefined, vestId: string, geometryId: string, testDate: string | undefined, dateFormat: string | undefined, isOfficial: boolean | undefined, certificationNumber: string | undefined) => {
     const formData = new FormData();
     formData.append('excel_file', file);
     formData.append('test_name', testName);
@@ -76,6 +84,7 @@ export const testSessionsApi = {
     if (vestId) {
       formData.append('vest_id', vestId);
     }
+    formData.append('geometry_id', geometryId);
     if (testDate) {
       formData.append('test_date', testDate);
     }

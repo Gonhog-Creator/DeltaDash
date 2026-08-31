@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTestSession, useUpdateTestSession, useDeleteTestSession } from '../hooks/useTestSessions';
 import { useShotDataByTestSession, useUpdateShotData } from '../hooks/useShotData';
+import { useGeometries } from '../hooks/useGeometries';
 import { TestSessionUpdate } from '../api/test_session';
 import { ShotDataUpdate } from '../api/shot_data';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -11,6 +12,7 @@ export function TestSessionDetail() {
   const navigate = useNavigate();
   const { data: testSession, isLoading, error } = useTestSession(id || '');
   const { data: shotData } = useShotDataByTestSession(id || '');
+  const { data: geometries } = useGeometries();
   const updateMutation = useUpdateTestSession();
   const deleteMutation = useDeleteTestSession();
   const updateShotMutation = useUpdateShotData();
@@ -89,6 +91,8 @@ export function TestSessionDetail() {
       ambient_temperature_c: testSession.ambient_temperature_c,
       humidity_percent: testSession.humidity_percent,
       conditioning: testSession.conditioning || '',
+      vest_id: testSession.vest_id || undefined,
+      geometry_id: testSession.geometry_id || undefined,
       notes: testSession.notes || '',
     });
     setIsEditing(true);
@@ -196,6 +200,21 @@ export function TestSessionDetail() {
                 </select>
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
+                <select
+                  value={formData.geometry_id || ''}
+                  onChange={(e) => setFormData({ ...formData, geometry_id: e.target.value || undefined })}
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                >
+                  <option value="">Select geometry (optional)</option>
+                  {geometries?.sort((a, b) => a.name.localeCompare(b.name)).map((geometry) => (
+                    <option key={geometry.id} value={geometry.id}>
+                      {geometry.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Ambient Temperature (°C)</label>
                 <input
                   type="number"
@@ -263,6 +282,10 @@ export function TestSessionDetail() {
               <div>
                 <span className="text-sm font-medium text-gray-500">Vest:</span>
                 <span className="ml-2 text-sm text-gray-900">{testSession.vest?.vest_code || testSession.vest?.name || '-'}</span>
+              </div>
+              <div>
+                <span className="text-sm font-medium text-gray-500">Geometry:</span>
+                <span className="ml-2 text-sm text-gray-900">{testSession.geometry?.name || testSession.geometry_name || '-'}</span>
               </div>
               <div>
                 <span className="text-sm font-medium text-gray-500">Characteristic:</span>

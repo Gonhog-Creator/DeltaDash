@@ -199,6 +199,7 @@ def create_sessions_from_excel_data(
     test_date: Optional[str],
     temperature: Optional[float],
     humidity: Optional[float],
+    geometry_id: Optional[str] = None,
     is_full_path: bool = False,
     is_official: Optional[bool] = False,
     certification_number: Optional[str] = None,
@@ -234,7 +235,7 @@ def create_sessions_from_excel_data(
         
         # Multi-sheet file - create separate test sessions for each sheet
         return _create_sessions_from_multi_sheet(
-            db, parsed_data, test_name, location_name, protocol, vest_id, test_date, excel_file_path, is_official, certification_number
+            db, parsed_data, test_name, location_name, protocol, vest_id, test_date, excel_file_path, geometry_id=geometry_id, is_official=is_official, certification_number=certification_number
         )
     else:
         # Single-sheet file - extract size from sheet name
@@ -286,6 +287,7 @@ def create_sessions_from_excel_data(
                 ambient_temperature_c=temperature,
                 humidity_percent=humidity,
                 vest_id=vest_id,
+                geometry_id=geometry_id,
                 excel_file_path=excel_file_path,
                 is_official=is_official,
                 certification_number=certification_number,
@@ -323,6 +325,7 @@ def create_sessions_from_excel_data(
                     ballistic_limit=False,
                     parent_test_group_id=parent_session.id,
                     vest_id=vest_id,
+                    geometry_id=geometry_id,
                     excel_file_path=excel_file_path,
                     is_official=is_official,
                     certification_number=certification_number,
@@ -359,6 +362,7 @@ def create_sessions_from_excel_data(
                 size=conditioning_size.get('size'),
                 ballistic_limit=conditioning_size.get('ballistic_limit', False),
                 vest_id=vest_id,
+                geometry_id=geometry_id,
                 excel_file_path=excel_file_path,
                 is_official=is_official,
                 certification_number=certification_number,
@@ -392,6 +396,7 @@ def _create_sessions_from_multi_sheet(
     vest_id: Optional[str],
     test_date: Optional[str],
     excel_file_path: str,
+    geometry_id: Optional[str] = None,
     is_official: Optional[bool] = False,
     certification_number: Optional[str] = None,
 ) -> List[TestSessionModel]:
@@ -409,6 +414,7 @@ def _create_sessions_from_multi_sheet(
         ambient_temperature_c=temperature,
         humidity_percent=humidity,
         vest_id=vest_id,
+        geometry_id=geometry_id,
         excel_file_path=excel_file_path,
         is_official=is_official,
         certification_number=certification_number,
@@ -481,6 +487,7 @@ def _create_sessions_from_multi_sheet(
                 ballistic_limit=ballistic_limit,
                 parent_test_group_id=parent_session.id,
                 vest_id=vest_id,
+                geometry_id=geometry_id,
                 excel_file_path=excel_file_path,
                 is_official=is_official,
                 certification_number=certification_number,

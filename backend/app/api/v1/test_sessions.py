@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timezone
 
 from app.db.session import get_db
-from app.db.models import TestSession as TestSessionModel, ShotData as ShotDataModel, Shot as ShotModel, Vest as VestModel, AuditLog
+from app.db.models import TestSession as TestSessionModel, ShotData as ShotDataModel, Shot as ShotModel, Vest as VestModel, Geometry as GeometryModel, AuditLog
 from app.api.v1.auth import get_current_active_user, require_write_access, require_admin
 from app.schemas.test_session import TestSessionCreate, TestSessionUpdate, TestSession
 from app.schemas.shot_data import ShotDataCreate
@@ -30,15 +30,19 @@ def list_test_sessions(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
 ):
-    query = db.query(TestSessionModel, VestModel).outerjoin(VestModel, TestSessionModel.vest_id == VestModel.id)
-    
+    query = db.query(TestSessionModel, VestModel, GeometryModel).outerjoin(
+        VestModel, TestSessionModel.vest_id == VestModel.id
+    ).outerjoin(
+        GeometryModel, TestSessionModel.geometry_id == GeometryModel.id
+    )
+
     if is_official is not None:
         query = query.filter(TestSessionModel.is_official == is_official)
     
     test_sessions = query.order_by(TestSessionModel.name).offset(skip).limit(limit).all()
     
     result = []
-    for session, vest in test_sessions:
+    for session, vest, geometry in test_sessions:
         # Count shot data for this test session
         shot_count = db.query(ShotDataModel).filter(ShotDataModel.test_session_id == session.id).count()
         
@@ -58,6 +62,8 @@ def list_test_sessions(
             "vest_id": session.vest_id,
             "vest_name": vest.vest_code if vest else None,
             "vest_code": vest.vest_code if vest else None,
+            "geometry_id": session.geometry_id,
+            "geometry_name": geometry.name if geometry else None,
             "excel_file_path": session.excel_file_path,
             "notes": session.notes,
             "is_official": session.is_official,
@@ -160,6 +166,7 @@ def create_test_session_from_excel(
     location_id: Optional[str] = Form(None),
     protocol: Optional[str] = Form(None),
     vest_id: str = Form(...),
+    geometry_id: str = Form(...),
     test_date: Optional[str] = Form(None),
     date_format: Optional[str] = Form(None),  # 'spanish' or 'english' for ambiguous dates
     is_official: Optional[bool] = Form(False),
@@ -207,6 +214,7 @@ def create_test_session_from_excel(
         location_name=location_name,
         protocol=protocol,
         vest_id=vest_id,
+        geometry_id=geometry_id,
         test_date=test_date,
         temperature=None,  # Service will extract from parsed data
         humidity=None,    # Service will extract from parsed data
@@ -242,6 +250,7 @@ def update_session_vest(
     
     # Return updated session with vest code
     vest = db.query(VestModel).filter(VestModel.id == vest_id).first()
+    geometry = db.query(GeometryModel).filter(GeometryModel.id == session.geometry_id).first() if session.geometry_id else None
     session_dict = {
         "id": session.id,
         "name": session.name,
@@ -258,6 +267,8 @@ def update_session_vest(
         "vest_id": session.vest_id,
         "vest_name": vest.vest_code if vest else None,
         "vest_code": vest.vest_code if vest else None,
+        "geometry_id": session.geometry_id,
+        "geometry_name": geometry.name if geometry else None,
         "excel_file_path": session.excel_file_path,
         "notes": session.notes,
         "is_official": session.is_official,
@@ -315,11 +326,15 @@ def get_test_session(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_active_user)
 ):
-    test_session = db.query(TestSessionModel, VestModel).outerjoin(VestModel, TestSessionModel.vest_id == VestModel.id).filter(TestSessionModel.id == test_session_id).first()
+    test_session = db.query(TestSessionModel, VestModel, GeometryModel).outerjoin(
+        VestModel, TestSessionModel.vest_id == VestModel.id
+    ).outerjoin(
+        GeometryModel, TestSessionModel.geometry_id == GeometryModel.id
+    ).filter(TestSessionModel.id == test_session_id).first()
     if not test_session:
         raise HTTPException(status_code=404, detail="Test session not found")
-    
-    session, vest = test_session
+
+    session, vest, geometry = test_session
     
     session_dict = {
         "id": session.id,
@@ -340,6 +355,11 @@ def get_test_session(
             "vest_code": vest.vest_code if vest else None,
             "name": vest.vest_code if vest else None,
         } if vest else None,
+        "geometry_id": session.geometry_id,
+        "geometry": {
+            "id": geometry.id if geometry else None,
+            "name": geometry.name if geometry else None,
+        } if geometry else None,
         "excel_file_path": session.excel_file_path,
         "notes": session.notes,
         "is_official": session.is_official,
@@ -616,6 +636,7 @@ def bulk_reupload_all_test_sessions(
             location_name=location_name,
             protocol=parent_session.protocol,
             vest_id=parent_session.vest_id,
+            geometry_id=parent_session.geometry_id,
             test_date=parent_session.test_date,
             temperature=None,  # Service will extract from parsed data
             humidity=None,    # Service will extract from parsed data

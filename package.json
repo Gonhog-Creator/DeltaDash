@@ -4,7 +4,7 @@
   "description": "Ballistic Test Analytics & Prediction Platform",
   "scripts": {
     "install": "npm run install:backend && npm run install:frontend",
-    "install:backend": "cd backend && python3 -m pip install -r requirements.txt",
+    "install:backend": "node scripts/install-backend.js",
     "install:frontend": "cd frontend && npm install",
     "dev": "npm run dev:postgres && concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:postgres": "node scripts/ensure-postgres.js",
