@@ -199,7 +199,7 @@ def create_sessions_from_excel_data(
     test_date: Optional[str],
     temperature: Optional[float],
     humidity: Optional[float],
-    geometry_id: Optional[str] = None,
+    geometry_id: Optional[str],
     is_full_path: bool = False,
     is_official: Optional[bool] = False,
     certification_number: Optional[str] = None,

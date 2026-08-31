@@ -116,6 +116,7 @@ def extract_date_from_excel(
 @router.post("/bulk-upload", response_model=List[TestSession], status_code=status.HTTP_201_CREATED)
 def bulk_upload_excel(
     excel_files: List[UploadFile] = File(...),
+    geometry_id: str = Form(...),
     is_official: Optional[bool] = Form(False),
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(require_write_access)
@@ -145,6 +146,7 @@ def bulk_upload_excel(
                 location_name=None,
                 protocol=None,
                 vest_id=None,
+                geometry_id=geometry_id,
                 test_date=None,
                 temperature=None,
                 humidity=None,

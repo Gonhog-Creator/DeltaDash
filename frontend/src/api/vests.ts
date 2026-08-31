@@ -30,7 +30,7 @@ export interface Vest {
   stitch_pattern: string | null;
   weight_g: number | null;
   trauma_homologation: Record<string, unknown> | null;
-  flexibility_rating: number | null;
+  flexibility_rating: boolean;
   is_panel_sewn: boolean | null;
   size_curve: Record<string, Record<string, number>> | null;
   composition: string | null;
@@ -63,7 +63,7 @@ export interface VestCreate {
   stitch_pattern?: string | null;
   weight_g?: number | null;
   trauma_homologation?: Record<string, unknown> | null;
-  flexibility_rating?: number | null;
+  flexibility_rating?: boolean;
   is_panel_sewn?: boolean | null;
   size_curve?: Record<string, Record<string, number>> | null;
   composition?: string | null;
@@ -86,7 +86,7 @@ export interface VestUpdate {
   stitch_pattern?: string | null;
   weight_g?: number | null;
   trauma_homologation?: Record<string, unknown> | null;
-  flexibility_rating?: number | null;
+  flexibility_rating?: boolean;
   is_panel_sewn?: boolean | null;
   size_curve?: Record<string, Record<string, number>> | null;
   composition?: string | null;
@@ -109,7 +109,7 @@ export interface VestListItem {
   stitch_pattern: string | null;
   weight_g: number | null;
   trauma_homologation: Record<string, unknown> | null;
-  flexibility_rating: number | null;
+  flexibility_rating: boolean;
   is_panel_sewn: boolean | null;
   size_curve: Record<string, Record<string, number>> | null;
   created_by_username: string | null;

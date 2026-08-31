@@ -24,7 +24,7 @@ class Vest(Base):
     # Pliego técnico matching fields
     weight_g = Column(Numeric(10, 2), nullable=True)
     trauma_homologation = Column(JSON, nullable=True)  # { "level": "RB3", "backface_mm": 25.0, "ammunition": ".44 MAG", "certified": true }
-    flexibility_rating = Column(Numeric(5, 2), nullable=True)  # numeric flexibility rating, e.g., 0.0-10.0
+    flexibility_rating = Column(Boolean, default=False, nullable=False)
     is_panel_sewn = Column(Boolean, nullable=True)
     size_curve = Column(JSON, nullable=True)  # { "S": {"chest_mm": 960, "waist_mm": 860, "length_mm": 480}, ... }
 

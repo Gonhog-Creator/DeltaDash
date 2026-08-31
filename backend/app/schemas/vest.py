@@ -45,7 +45,7 @@ class VestBase(BaseModel):
     stitch_pattern: Optional[str] = None
     weight_g: Optional[Decimal] = Field(None, ge=0)
     trauma_homologation: Optional[Dict] = None
-    flexibility_rating: Optional[float] = Field(None, ge=0, le=100)
+    flexibility_rating: Optional[bool] = False
     is_panel_sewn: Optional[bool] = None
     size_curve: Optional[Dict] = None
     composition: Optional[str] = None
@@ -70,7 +70,7 @@ class VestUpdate(BaseModel):
     stitch_pattern: Optional[str] = None
     weight_g: Optional[Decimal] = Field(None, ge=0)
     trauma_homologation: Optional[Dict] = None
-    flexibility_rating: Optional[float] = Field(None, ge=0, le=100)
+    flexibility_rating: Optional[bool] = None
     is_panel_sewn: Optional[bool] = None
     size_curve: Optional[Dict] = None
     composition: Optional[str] = None
@@ -106,7 +106,7 @@ class VestListItem(BaseModel):
     stitch_pattern: Optional[str] = None
     weight_g: Optional[Decimal] = None
     trauma_homologation: Optional[Dict] = None
-    flexibility_rating: Optional[float] = Field(None, ge=0, le=100)
+    flexibility_rating: bool = False
     is_panel_sewn: Optional[bool] = None
     size_curve: Optional[Dict] = None
     created_by_username: Optional[str] = None

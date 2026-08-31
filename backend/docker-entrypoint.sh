@@ -60,4 +60,4 @@ alembic upgrade head || echo "Migration upgrade had issues, but continuing..."
 
 # Start the application
 echo "Starting application..."
-exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --forwarded-allow-ips='*' --max-requests 500 --max-requests-jitter 50
+exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --forwarded-allow-ips='*'

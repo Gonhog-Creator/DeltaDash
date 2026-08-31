@@ -110,7 +110,7 @@ export function Vests() {
     sizes: {},
     construction_notes: '',
     weight_g: null,
-    flexibility_rating: null,
+    flexibility_rating: false,
     is_panel_sewn: false,
     is_catalog_model: false,
     notes: '',
@@ -169,7 +169,7 @@ export function Vests() {
         sizes: {},
         construction_notes: '',
         weight_g: null,
-        flexibility_rating: null,
+        flexibility_rating: false,
         is_panel_sewn: false,
     is_catalog_model: false,
         notes: '',
@@ -223,7 +223,7 @@ export function Vests() {
         sizes: {},
         construction_notes: '',
         weight_g: null,
-        flexibility_rating: null,
+        flexibility_rating: false,
         is_panel_sewn: false,
     is_catalog_model: false,
         notes: '',
@@ -277,7 +277,7 @@ export function Vests() {
       sizes: fullVest.sizes || {},
       construction_notes: fullVest.construction_notes || '',
       weight_g: fullVest.weight_g ?? null,
-      flexibility_rating: fullVest.flexibility_rating ?? null,
+      flexibility_rating: fullVest.flexibility_rating ?? false,
       is_panel_sewn: fullVest.is_panel_sewn ?? (fullVest.stitch_pattern === 'stitched'),
       is_catalog_model: fullVest.is_catalog_model ?? false,
       notes: fullVest.notes || '',
@@ -307,7 +307,7 @@ export function Vests() {
       sizes: {},
       construction_notes: '',
       weight_g: null,
-      flexibility_rating: null,
+      flexibility_rating: false,
       is_panel_sewn: false,
     is_catalog_model: false,
       notes: '',
@@ -533,16 +533,18 @@ export function Vests() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Flexibility Rating</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  max={100}
-                  value={formData.flexibility_rating ?? ''}
-                  onChange={(e) => setFormData({ ...formData, flexibility_rating: e.target.value ? parseFloat(e.target.value) : null })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                />
+                <label className="block text-sm font-medium text-gray-700">Flexibility</label>
+                <div className="flex items-center gap-4 mt-1">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={formData.flexibility_rating || false}
+                      onChange={(e) => setFormData({ ...formData, flexibility_rating: e.target.checked })}
+                      className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                    />
+                    <span className="text-sm text-gray-700">Yes</span>
+                  </label>
+                </div>
               </div>
               {formData.vest_type?.toLowerCase() === 'soft' && (
                 <>
@@ -807,7 +809,7 @@ export function Vests() {
                   <td className="px-3 py-1.5 text-sm text-gray-500 max-w-[200px] truncate" title={vest.composition || ''}>{vest.composition || '-'}</td>
                   <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{thicknessDisplay}</td>
                   <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{vest.weight_g ? `${Number(vest.weight_g).toFixed(0)} g` : '-'}</td>
-                  <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{vest.flexibility_rating ?? '-'}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{vest.flexibility_rating ? 'Yes' : 'No'}</td>
                   <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{shouldShowStitched ? (isStitched ? 'Yes' : 'No') : '-'}</td>
                   <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">
                     {isLinked ? (
@@ -973,7 +975,7 @@ export function Vests() {
                 </div>
                 <div>
                   <span className="text-gray-500">Flexibility:</span>
-                  <span className="ml-2 font-medium">{selectedVest.flexibility_rating ?? '-'}</span>
+                  <span className="ml-2 font-medium">{selectedVest.flexibility_rating ? 'Yes' : 'No'}</span>
                 </div>
                 <div>
                   <span className="text-gray-500">Protection Class:</span>
