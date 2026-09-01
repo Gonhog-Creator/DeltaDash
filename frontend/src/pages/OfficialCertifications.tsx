@@ -1146,7 +1146,8 @@ export function OfficialCertifications() {
                   humidity_percent: editTarget.humidity_percent,
                   notes: editTarget.notes,
                   certification_number: editTarget.certification_number,
-                }
+                },
+                cascade: !editTarget.parent_test_group_id,
               });
               setEditTarget(null);
             } catch (err) {

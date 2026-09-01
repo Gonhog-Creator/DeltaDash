@@ -388,17 +388,21 @@ def update_test_session(
     for field, value in update_data.items():
         setattr(test_session, field, value)
     
-    # Cascade protocol update to children if requested
-    if cascade and 'protocol' in update_data:
+    # Cascade updates to children if requested
+    cascade_fields = {'protocol', 'geometry_id', 'vest_id'}
+    should_cascade = cascade and any(f in update_data for f in cascade_fields)
+    if should_cascade:
         children = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == test_session_id).all()
         for child in children:
-            child.protocol = update_data['protocol']
+            for field in cascade_fields:
+                if field in update_data:
+                    setattr(child, field, update_data[field])
     
     db.commit()
     
     # Force refresh for parent and all children
     db.refresh(test_session)
-    if cascade and 'protocol' in update_data:
+    if should_cascade:
         children = db.query(TestSessionModel).filter(TestSessionModel.parent_test_group_id == test_session_id).all()
         for child in children:
             db.refresh(child)

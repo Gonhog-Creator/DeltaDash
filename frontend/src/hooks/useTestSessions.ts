@@ -43,8 +43,8 @@ export function useUpdateTestSession() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, testSession }: { id: string; testSession: TestSessionUpdate }) =>
-      testSessionsApi.update(id, testSession),
+    mutationFn: ({ id, testSession, cascade }: { id: string; testSession: TestSessionUpdate; cascade?: boolean }) =>
+      testSessionsApi.update(id, testSession, cascade),
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['testSessions'] });
       queryClient.invalidateQueries({ queryKey: ['testSession', id] });

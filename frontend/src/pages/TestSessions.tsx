@@ -381,7 +381,7 @@ export function TestSessions() {
               return (
                 <Fragment key={parent.id}>
                   <tr
-                    className="hover:bg-gray-50 cursor-pointer"
+                    className={`${isExpanded ? 'bg-indigo-50' : 'hover:bg-gray-50'} cursor-pointer`}
                     onClick={() => hasChildren && toggleGroup(parent.id)}
                   >
                     <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 max-w-xs truncate" title={parent.name}>
@@ -1162,7 +1162,8 @@ export function TestSessions() {
                   humidity_percent: editTarget.humidity_percent,
                   notes: editTarget.notes,
                   certification_number: editTarget.certification_number,
-                }
+                },
+                cascade: !editTarget.parent_test_group_id,
               });
               setEditTarget(null);
             } catch (err) {
