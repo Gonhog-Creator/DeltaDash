@@ -7,6 +7,7 @@ from sqlalchemy import and_, or_
 import pandas as pd
 
 from app.db.models import ShotData, Vest, VestLayer, Material, TestSession, Ammunition, AnchorPoint, AnchorPointLayer
+from app.db.models.geometry import Geometry
 
 
 def extract_ply_orientations(layers: List[Dict[str, Any]]) -> str:
@@ -115,6 +116,12 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
         material_types = set()
         aramid_layers = 0
         
+        # Aggregate per-layer mechanical properties
+        total_tensile_strength = 0.0
+        total_modulus = 0.0
+        weave_types = set()
+        has_coating = False
+        
         if vest:
             vest_layers = db.query(VestLayer).filter(VestLayer.vest_id == vest.id).all()
             for vl in sorted(vest_layers, key=lambda x: x.layer_index or 0):
@@ -133,6 +140,17 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
                     total_thickness += thickness * count
                     total_weight += weight * count
                     
+                    # Aggregate mechanical properties (weighted by layer count)
+                    if material.tensile_strength_mpa:
+                        total_tensile_strength += float(material.tensile_strength_mpa) * count
+                    if material.modulus_gpa:
+                        total_modulus += float(material.modulus_gpa) * count
+                    
+                    if material.weave_type:
+                        weave_types.add(material.weave_type)
+                    if material.coating:
+                        has_coating = True
+                    
                     composition_parts.append(f"{count} {material.name}")
                     
                     if material.material_class:
@@ -145,6 +163,21 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
         
         vest_composition = " + ".join(composition_parts) if composition_parts else ""
         material_type_str = ", ".join(sorted(material_types)) if material_types else None
+        
+        # Get geometry surface area for the tested size
+        panel_surface_area_m2 = None
+        geometry_name = None
+        if test_session and test_session.geometry_id:
+            geometry = db.query(Geometry).filter(Geometry.id == test_session.geometry_id).first()
+            if geometry:
+                geometry_name = geometry.name
+                surface_areas = geometry.surface_areas or {}
+                tested_size = test_session.size or 'M'
+                size_areas = surface_areas.get(tested_size)
+                if size_areas:
+                    front_area = float(size_areas.get('front', 0))
+                    back_area = float(size_areas.get('back', 0))
+                    panel_surface_area_m2 = front_area + back_area
         
         # Get ammunition info
         caliber = shot_data_record.caliber
@@ -181,6 +214,18 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
             'vest_type': vest.vest_type if vest else None,
             'is_female': vest.is_female if vest else False,
             'ply_orientations': extract_ply_orientations(layers),
+            # Vest construction features
+            'flexibility_rating': int(vest.flexibility_rating) if vest and vest.flexibility_rating is not None else 0,
+            'is_panel_sewn': int(vest.is_panel_sewn) if vest and vest.is_panel_sewn is not None else 0,
+            'weight_g': float(vest.weight_g) if vest and vest.weight_g else None,
+            # Geometry features
+            'panel_surface_area_m2': panel_surface_area_m2,
+            'geometry_name': geometry_name,
+            # Material mechanical properties (aggregated across layers)
+            'total_tensile_strength_mpa': total_tensile_strength if total_tensile_strength > 0 else None,
+            'total_modulus_gpa': total_modulus if total_modulus > 0 else None,
+            'primary_weave_type': ', '.join(sorted(weave_types)) if weave_types else None,
+            'has_coating': int(has_coating),
         }
         
         rows.append(row)
@@ -311,6 +356,15 @@ def fetch_anchor_points_as_training_data(db: Session) -> tuple[pd.DataFrame, dic
                 'vest_type': 'soft',  # Default to soft armor for anchor points
                 'is_female': False,  # Anchor points default to male/unisex
                 'ply_orientations': None,  # Anchor points don't have ply orientations
+                'flexibility_rating': 0,
+                'is_panel_sewn': 0,
+                'weight_g': None,
+                'panel_surface_area_m2': None,
+                'geometry_name': None,
+                'total_tensile_strength_mpa': None,
+                'total_modulus_gpa': None,
+                'primary_weave_type': None,
+                'has_coating': 0,
             }
             
             rows.append(row)

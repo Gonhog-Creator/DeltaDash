@@ -334,7 +334,9 @@ def add_engineered_features(
             Keys: 'kinetic_energy', 'composite_thickness', 'layer_density',
                   'caliber_features', 'areal_density', 'vest_composition',
                   'vest_type_interactions', 'is_female_features', 'shot_sequence',
-                  'material_density', 'velocity_interactions'
+                  'material_density', 'velocity_interactions',
+                  'vest_construction', 'geometry_features',
+                  'material_mechanical', 'weave_features'
     """
     # Default: all features enabled
     if feature_toggles is None:
@@ -350,6 +352,10 @@ def add_engineered_features(
             'shot_sequence': True,
             'material_density': True,
             'velocity_interactions': True,
+            'vest_construction': True,
+            'geometry_features': True,
+            'material_mechanical': True,
+            'weave_features': True,
         }
     df = normalize_column_names(df)
     df = df.copy()
@@ -375,6 +381,10 @@ def add_engineered_features(
         "fiber_orientation_deg",
         "caliber_diameter_mm",
         "caliber_length_mm",
+        "panel_surface_area_m2",
+        "weight_g",
+        "total_tensile_strength_mpa",
+        "total_modulus_gpa",
     ]
 
     for col in numeric_candidates:
@@ -481,6 +491,80 @@ def add_engineered_features(
             if angle_col in df.columns:
                 # Normalize angle (90 = perpendicular, lower = oblique)
                 df["velocity_x_obliquity"] = df[velocity_col] * (90 - df[angle_col].fillna(90)).clip(lower=0)
+
+    # Vest construction features (flexibility, stitching, weight)
+    if feature_toggles.get('vest_construction', True):
+        if "flexibility_rating" in df.columns:
+            df["flexibility_rating"] = df["flexibility_rating"].fillna(False).astype(int)
+            # Flexible vests deform more under impact
+            if "kinetic_energy_j" in df.columns:
+                df["kinetic_energy_x_flexible"] = df["kinetic_energy_j"] * df["flexibility_rating"]
+            if "material_thickness_mm" in df.columns:
+                df["thickness_x_flexible"] = df["material_thickness_mm"] * df["flexibility_rating"]
+
+        if "is_panel_sewn" in df.columns:
+            df["is_panel_sewn"] = df["is_panel_sewn"].fillna(False).astype(int)
+            # Stitched panels constrain layer movement
+            if "number_of_layers" in df.columns:
+                df["layers_x_sewn"] = df["number_of_layers"] * df["is_panel_sewn"]
+
+        if "weight_g" in df.columns:
+            # Weight as proxy for total areal density when material data is sparse
+            df["weight_g"] = pd.to_numeric(df["weight_g"], errors="coerce")
+            # Weight per layer (normalized)
+            if "number_of_layers" in df.columns:
+                df["weight_per_layer_g"] = df["weight_g"] / df["number_of_layers"].clip(lower=1)
+            # Kinetic energy per vest weight (energy absorption efficiency)
+            if "kinetic_energy_j" in df.columns:
+                df["energy_per_weight"] = df["kinetic_energy_j"] / df["weight_g"].clip(lower=1)
+
+    # Geometry features (panel surface area affects energy distribution)
+    if feature_toggles.get('geometry_features', True):
+        if "panel_surface_area_m2" in df.columns:
+            df["panel_surface_area_m2"] = pd.to_numeric(df["panel_surface_area_m2"], errors="coerce")
+            # Energy per unit area (impact intensity)
+            if "kinetic_energy_j" in df.columns:
+                df["energy_per_area_j_m2"] = df["kinetic_energy_j"] / df["panel_surface_area_m2"].clip(lower=0.01)
+            # Areal density per area (mass distribution)
+            if "material_weight_g_m2" in df.columns:
+                df["total_mass_g"] = df["material_weight_g_m2"] * df["panel_surface_area_m2"]
+            # Weight vs calculated mass from area (consistency check feature)
+            if "weight_g" in df.columns and "material_weight_g_m2" in df.columns:
+                df["weight_mass_ratio"] = df["weight_g"] / (df["material_weight_g_m2"] * df["panel_surface_area_m2"]).clip(lower=1)
+
+    # Material mechanical properties (tensile strength, modulus)
+    if feature_toggles.get('material_mechanical', True):
+        if "total_tensile_strength_mpa" in df.columns:
+            df["total_tensile_strength_mpa"] = pd.to_numeric(df["total_tensile_strength_mpa"], errors="coerce")
+            # Tensile strength per layer (normalized)
+            if "number_of_layers" in df.columns:
+                df["tensile_per_layer"] = df["total_tensile_strength_mpa"] / df["number_of_layers"].clip(lower=1)
+            # Kinetic energy vs tensile strength (resistance ratio)
+            if "kinetic_energy_j" in df.columns:
+                df["energy_vs_tensile"] = df["kinetic_energy_j"] / df["total_tensile_strength_mpa"].clip(lower=1)
+
+        if "total_modulus_gpa" in df.columns:
+            df["total_modulus_gpa"] = pd.to_numeric(df["total_modulus_gpa"], errors="coerce")
+            # Stiffness per layer
+            if "number_of_layers" in df.columns:
+                df["modulus_per_layer"] = df["total_modulus_gpa"] / df["number_of_layers"].clip(lower=1)
+            # Modulus x thickness (bending resistance)
+            if "material_thickness_mm" in df.columns:
+                df["bending_resistance"] = df["total_modulus_gpa"] * df["material_thickness_mm"]
+
+        if "has_coating" in df.columns:
+            df["has_coating"] = df["has_coating"].fillna(False).astype(int)
+            # Coating x kinetic energy (coated materials absorb differently)
+            if "kinetic_energy_j" in df.columns:
+                df["kinetic_energy_x_coated"] = df["kinetic_energy_j"] * df["has_coating"]
+
+    # Weave type features (categorical encoding of weave pattern)
+    if feature_toggles.get('weave_features', True):
+        if "primary_weave_type" in df.columns:
+            # One-hot encode weave types (low cardinality)
+            weave_dummies = pd.get_dummies(df["primary_weave_type"].fillna("unknown"), prefix="weave")
+            df = pd.concat([df, weave_dummies], axis=1)
+            df = df.drop("primary_weave_type", axis=1)
 
     return df
 
@@ -651,8 +735,12 @@ def fill_missing_features(X: pd.DataFrame) -> pd.DataFrame:
     """
     X = X.copy()
 
-    object_cols = X.select_dtypes(include=["object", "category", "bool"]).columns
-    numeric_cols = X.select_dtypes(exclude=["object", "category", "bool"]).columns
+    bool_cols = X.select_dtypes(include=["bool"]).columns
+    for col in bool_cols:
+        X[col] = X[col].fillna(False).astype(int)
+
+    object_cols = X.select_dtypes(include=["object", "category"]).columns
+    numeric_cols = X.select_dtypes(exclude=["object", "category"]).columns
 
     for col in object_cols:
      X[col] = X[col].fillna("unknown").astype(str)
@@ -743,6 +831,8 @@ def train_from_dataframe(
         "material_type",
         "vest_type",
         "ply_orientations",
+        "geometry_name",
+        "primary_weave_type",
         # Composition string features
         "composition_sequence",
         "composition_first_material",
@@ -1534,6 +1624,8 @@ def prepare_single_input(data: Dict[str, Any], material_properties: Dict[str, Di
         "material_type",
         "vest_type",
         "ply_orientations",
+        "geometry_name",
+        "primary_weave_type",
     }
 
     # Add material class features to categorical
@@ -1826,6 +1918,68 @@ def predict(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float
     }
 
 
+def _get_geometry_surface_area(test_session, geometry_map) -> Optional[float]:
+    """Get panel surface area for the tested size from geometry."""
+    if not test_session or not hasattr(test_session, 'geometry_id') or not test_session.geometry_id:
+        return None
+    geometry = geometry_map.get(test_session.geometry_id)
+    if not geometry:
+        return None
+    surface_areas = geometry.surface_areas or {}
+    tested_size = (test_session.size if hasattr(test_session, 'size') else None) or 'M'
+    size_areas = surface_areas.get(tested_size)
+    if size_areas:
+        front_area = float(size_areas.get('front', 0))
+        back_area = float(size_areas.get('back', 0))
+        return front_area + back_area
+    return None
+
+
+def _get_geometry_name(test_session, geometry_map) -> Optional[str]:
+    """Get geometry name for the test session."""
+    if not test_session or not hasattr(test_session, 'geometry_id') or not test_session.geometry_id:
+        return None
+    geometry = geometry_map.get(test_session.geometry_id)
+    return geometry.name if geometry else None
+
+
+def _aggregate_material_mechanical(vest, vest_layers_by_vest, materials) -> Dict:
+    """Aggregate material mechanical properties across vest layers."""
+    result = {
+        'total_tensile_strength_mpa': None,
+        'total_modulus_gpa': None,
+        'primary_weave_type': None,
+        'has_coating': 0,
+    }
+    if not vest or not hasattr(vest, 'id'):
+        return result
+    layers = vest_layers_by_vest.get(vest.id, [])
+    total_tensile = 0.0
+    total_modulus = 0.0
+    weave_types = set()
+    has_coating = False
+    for vl in sorted(layers, key=lambda x: x.layer_index or 0):
+        material = materials.get(vl.material_id)
+        if material:
+            count = vl.layer_count or 1
+            if material.tensile_strength_mpa:
+                total_tensile += float(material.tensile_strength_mpa) * count
+            if material.modulus_gpa:
+                total_modulus += float(material.modulus_gpa) * count
+            if material.weave_type:
+                weave_types.add(material.weave_type)
+            if material.coating:
+                has_coating = True
+    if total_tensile > 0:
+        result['total_tensile_strength_mpa'] = total_tensile
+    if total_modulus > 0:
+        result['total_modulus_gpa'] = total_modulus
+    if weave_types:
+        result['primary_weave_type'] = ', '.join(sorted(weave_types))
+    result['has_coating'] = int(has_coating)
+    return result
+
+
 def evaluate_model_on_test_sessions(
     db_session,
     version: Optional[str] = None,
@@ -1843,6 +1997,7 @@ def evaluate_model_on_test_sessions(
         Dictionary with vest-level averages and point-level data for graphing
     """
     from app.db.models import ShotData, TestSession, Vest, Protocol, Ammunition
+    from app.db.models.geometry import Geometry
     from app.services.ml.data_fetcher import fetch_material_properties
     
     # Load the specified version if provided
@@ -1942,6 +2097,10 @@ def evaluate_model_on_test_sessions(
     calibers = list(set(shot_data.caliber for shot_data, _, _ in results if shot_data.caliber))
     ammunition_map = {a.caliber: a for a in db_session.query(Ammunition).filter(Ammunition.caliber.in_(calibers)).all()} if calibers else {}
 
+    # Batch fetch geometries for surface area lookup
+    geometry_ids = [ts.geometry_id for _, ts, _ in results if ts and hasattr(ts, 'geometry_id') and ts.geometry_id]
+    geometry_map = {g.id: g for g in db_session.query(Geometry).filter(Geometry.id.in_(geometry_ids)).all()} if geometry_ids else {}
+
     # Group vest layers by vest_id
     vest_layers_by_vest = {}
     for vl in vest_layers:
@@ -1992,8 +2151,17 @@ def evaluate_model_on_test_sessions(
             "caliber_diameter_mm": float(ammunition.caliber_diameter_mm) if ammunition and ammunition.caliber_diameter_mm else None,
             "caliber_length_mm": float(ammunition.caliber_length_mm) if ammunition and ammunition.caliber_length_mm else None,
             "vest_type": vest.vest_type if vest else None,
-            "is_female": vest.is_female if vest and hasattr(vest, 'is_female') else False,
+            "is_female": int(vest.is_female) if vest and hasattr(vest, 'is_female') and vest.is_female is not None else 0,
             "ply_orientations": None,
+            # Vest construction features
+            "flexibility_rating": int(vest.flexibility_rating) if vest and hasattr(vest, 'flexibility_rating') and vest.flexibility_rating is not None else 0,
+            "is_panel_sewn": int(vest.is_panel_sewn) if vest and hasattr(vest, 'is_panel_sewn') and vest.is_panel_sewn is not None else 0,
+            "weight_g": float(vest.weight_g) if vest and hasattr(vest, 'weight_g') and vest.weight_g else None,
+            # Geometry features
+            "panel_surface_area_m2": _get_geometry_surface_area(test_session, geometry_map),
+            "geometry_name": _get_geometry_name(test_session, geometry_map),
+            # Material mechanical properties (aggregated)
+            **_aggregate_material_mechanical(vest, vest_layers_by_vest, materials),
         })
 
         vest_identifier = vest.vest_code if vest else f"Unknown-{shot_data_rec.test_session_id}"
@@ -2015,6 +2183,7 @@ def evaluate_model_on_test_sessions(
     categorical_feature_names = {
         "vest_composition", "ammunition_used", "threat_level", "condition",
         "panel_side", "weave_type", "material_type", "vest_type", "ply_orientations",
+        "geometry_name", "primary_weave_type",
     }
     for mat_name in material_properties:
         prefix = mat_name.lower().replace(" ", "_").replace("-", "_")

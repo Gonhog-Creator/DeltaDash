@@ -49,6 +49,7 @@ function App() {
                       <Route path="/official-certifications" element={<OfficialCertifications />} />
                       <Route path="/test-sessions/:id" element={<TestSessionDetail />} />
                       <Route path="/vests" element={<Vests />} />
+                      <Route path="/vests/:vestId" element={<Vests />} />
                       <Route path="/geometries" element={<Geometries />} />
                       <Route path="/covers" element={<Covers />} />
                       <Route path="/protocols" element={<Protocols />} />

@@ -93,6 +93,11 @@ export function ModelTraining() {
     areal_density: false,
     vest_composition: false,
     material_density: false,
+    // New feature groups - disabled by default for ablation testing
+    vest_construction: false,
+    geometry_features: false,
+    material_mechanical: false,
+    weave_features: false,
   });
 
   // Custom Vest Prediction State
@@ -112,6 +117,8 @@ export function ModelTraining() {
   const [featureAnalysisLoading, setFeatureAnalysisLoading] = useState(false);
   const [featureAnalysisResults, setFeatureAnalysisResults] = useState<any>(null);
   const [showFeatureAnalysisResults, setShowFeatureAnalysisResults] = useState(false);
+  const [showFeatureAnalysisModal, setShowFeatureAnalysisModal] = useState(false);
+  const [featureAnalysisProgress, setFeatureAnalysisProgress] = useState<any>(null);
 
   // Hyperparameter Optimization state
   const [optimizationLoading, setOptimizationLoading] = useState(false);
@@ -185,19 +192,46 @@ export function ModelTraining() {
 
   const handleAnalyzeFeatures = async () => {
     setFeatureAnalysisLoading(true);
+    setShowFeatureAnalysisModal(true);
+    setFeatureAnalysisProgress(null);
     setError(null);
     try {
       const requestBody = {
         use_log_transform: useLogTransform,
         hyperparameters: hyperparameters,
       };
+
+      // Start polling for status
+      const interval = setInterval(async () => {
+        try {
+          const status = await apiClient.get<any>('/api/v1/ballistic/feature-analysis-status');
+          setFeatureAnalysisProgress(status);
+          if (!status.running) {
+            clearInterval(interval);
+          }
+        } catch (err) {
+          console.error('Failed to fetch feature analysis status:', err);
+        }
+      }, 1000);
+
       const result = await apiClient.post<any>('/api/v1/ballistic/analyze-features', requestBody);
       setFeatureAnalysisResults(result);
       setShowFeatureAnalysisResults(true);
+
+      clearInterval(interval);
     } catch (err: any) {
       setError(err.detail || 'Feature analysis failed');
     } finally {
       setFeatureAnalysisLoading(false);
+      setShowFeatureAnalysisModal(false);
+    }
+  };
+
+  const handleStopFeatureAnalysis = async () => {
+    try {
+      await apiClient.post<any>('/api/v1/ballistic/stop-feature-analysis');
+    } catch (err) {
+      console.error('Failed to stop feature analysis:', err);
     }
   };
 
@@ -702,6 +736,10 @@ export function ModelTraining() {
                       shot_sequence: { name: 'Shot Sequence Effects', formula: 'is_first_shot, shot/layers' },
                       material_density: { name: 'Material Density', formula: 'areal_density / thickness' },
                       velocity_interactions: { name: 'Velocity Interactions', formula: 'velocity × layers, obliquity' },
+                      vest_construction: { name: 'Vest Construction', formula: 'flexibility, stitched, weight' },
+                      geometry_features: { name: 'Geometry Features', formula: 'surface area, energy/area' },
+                      material_mechanical: { name: 'Material Mechanical', formula: 'tensile, modulus, coating' },
+                      weave_features: { name: 'Weave Features', formula: 'weave type one-hot' },
                     };
                     const info = featureInfo[key] || { name: key, formula: '' };
                     return (
@@ -729,7 +767,7 @@ export function ModelTraining() {
                   disabled={featureAnalysisLoading}
                   className="w-full bg-indigo-600 text-white py-2 px-4 rounded hover:bg-indigo-700 disabled:bg-gray-400"
                 >
-                  {featureAnalysisLoading ? 'Analyzing Features (trains 12 models)...' : 'Run Feature Importance Analysis'}
+                  {featureAnalysisLoading ? 'Analyzing Features (trains 16 models)...' : 'Run Feature Importance Analysis'}
                 </button>
                 <p className="text-xs text-gray-500 mt-1">
                   Trains model with all features, then without each feature group. Higher MAE impact = more important feature.
@@ -796,6 +834,10 @@ export function ModelTraining() {
                     shot_sequence: 'Shot Sequence Effects',
                     material_density: 'Material Density',
                     velocity_interactions: 'Velocity Interactions',
+                    vest_construction: 'Vest Construction',
+                    geometry_features: 'Geometry Features',
+                    material_mechanical: 'Material Mechanical',
+                    weave_features: 'Weave Features',
                   };
                   return (
                     <div key={feature} className="flex items-center justify-between text-sm py-1 border-b border-indigo-100 last:border-0">
@@ -1782,6 +1824,75 @@ export function ModelTraining() {
             setHealthCheckStatus(null);
           }}
         />
+      )}
+
+      {/* Feature Analysis Progress Modal */}
+      {showFeatureAnalysisModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Feature Importance Analysis in Progress</h3>
+            <div>
+              <p className="mb-4 text-sm text-gray-600">
+                {featureAnalysisProgress?.current_step || 'Starting...'}
+              </p>
+
+              {/* Progress bar */}
+              {featureAnalysisProgress && featureAnalysisProgress.total_steps > 0 && (
+                <div className="mb-4">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="font-medium">
+                      Step {featureAnalysisProgress.current_step_num} of {featureAnalysisProgress.total_steps}
+                    </span>
+                    <span className="font-medium">
+                      {Math.round((featureAnalysisProgress.current_step_num / featureAnalysisProgress.total_steps) * 100)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div
+                      className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500"
+                      style={{ width: `${(featureAnalysisProgress.current_step_num / featureAnalysisProgress.total_steps) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Completed steps list */}
+              {featureAnalysisProgress?.completed_steps?.length > 0 && (
+                <div className="mt-4 max-h-64 overflow-y-auto border rounded p-3 bg-gray-50">
+                  <div className="text-xs font-semibold text-gray-500 mb-2">Completed Steps</div>
+                  {featureAnalysisProgress.completed_steps.map((step: any, idx: number) => (
+                    <div key={idx} className="flex items-center justify-between text-sm py-1 border-b border-gray-100 last:border-0">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-green-600">✓</span>
+                        <span>{step.label}</span>
+                      </div>
+                      <div className="flex items-center space-x-3 text-xs text-gray-600">
+                        {step.mae != null && (
+                          <span className="font-mono">MAE: {step.mae?.toFixed(4)}</span>
+                        )}
+                        {step.mae_impact != null && (
+                          <span className={`font-mono font-medium ${step.mae_impact > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {step.mae_impact > 0 ? '+' : ''}{step.mae_impact?.toFixed(4)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                type="button"
+                onClick={handleStopFeatureAnalysis}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-md text-sm text-white"
+              >
+                Stop Analysis
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Optimization Progress Modal */}

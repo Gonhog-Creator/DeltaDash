@@ -28,6 +28,7 @@ export interface Vest {
   sizes: Record<string, number> | null;
   construction_notes: string | null;
   stitch_pattern: string | null;
+  compatible_geometry_ids: string[] | null;
   weight_g: number | null;
   trauma_homologation: Record<string, unknown> | null;
   flexibility_rating: boolean;
@@ -61,6 +62,7 @@ export interface VestCreate {
   sizes?: Record<string, number> | null;
   construction_notes?: string | null;
   stitch_pattern?: string | null;
+  compatible_geometry_ids?: string[] | null;
   weight_g?: number | null;
   trauma_homologation?: Record<string, unknown> | null;
   flexibility_rating?: boolean;
@@ -84,6 +86,7 @@ export interface VestUpdate {
   sizes?: Record<string, number> | null;
   construction_notes?: string | null;
   stitch_pattern?: string | null;
+  compatible_geometry_ids?: string[] | null;
   weight_g?: number | null;
   trauma_homologation?: Record<string, unknown> | null;
   flexibility_rating?: boolean;
@@ -107,6 +110,7 @@ export interface VestListItem {
   sizes: Record<string, number> | null;
   construction_notes: string | null;
   stitch_pattern: string | null;
+  compatible_geometry_ids: string[] | null;
   weight_g: number | null;
   trauma_homologation: Record<string, unknown> | null;
   flexibility_rating: boolean;
@@ -163,5 +167,22 @@ export const vestsApi = {
   recalculateThickness: (force?: boolean) => {
     const query = force ? '?force=true' : '';
     return apiClient.post<{ message: string }>(`/api/v1/vests/recalculate-thickness${query}`);
+  },
+
+  calculateWeight: (id: string, geometryId?: string, size?: string) => {
+    const params = new URLSearchParams();
+    if (geometryId) params.append('geometry_id', geometryId);
+    if (size) params.append('size', size);
+    const query = params.toString();
+    return apiClient.post<{
+      calculated: boolean;
+      weight_g: number | null;
+      geometry_name: string;
+      size: string;
+      panel_area_m2: number;
+      missing_materials: string[];
+      layer_details: Array<Record<string, unknown>>;
+      message: string;
+    }>(`/api/v1/vests/${id}/calculate-weight${query ? `?${query}` : ''}`);
   },
 };

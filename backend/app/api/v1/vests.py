@@ -11,6 +11,7 @@ from app.db.models.vest_model import ModelDocument
 from app.db.models.material import Material
 from app.db.models.test_session import TestSession
 from app.db.models.shot_data import ShotData as ShotDataModel
+from app.db.models.geometry import Geometry
 from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.vest import VestCreate, VestUpdate, Vest, VestListItem, VestLayerCreate, ModelDocumentSchema
 from app.db.models.user import User as UserModel
@@ -91,6 +92,7 @@ def list_vests(
             "sizes": vest.sizes,
             "construction_notes": vest.construction_notes,
             "stitch_pattern": vest.stitch_pattern,
+            "compatible_geometry_ids": vest.compatible_geometry_ids,
             "weight_g": vest.weight_g,
             "trauma_homologation": vest.trauma_homologation,
             "flexibility_rating": vest.flexibility_rating,
@@ -273,6 +275,113 @@ def recalculate_all_thicknesses(
 
     db.commit()
     return {"message": f"Updated thickness for {updated_count} vests"}
+
+
+@router.post("/{vest_id}/calculate-weight")
+def calculate_vest_weight(
+    vest_id: str,
+    geometry_id: str = None,
+    size: str = "M",
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user)
+):
+    """Calculate vest weight from layers × material areal_density × geometry surface area.
+    
+    Defaults to size M. If geometry_id is not provided, uses the first compatible geometry.
+    Returns the calculated weight and details about which materials were missing areal density.
+    """
+    vest = db.query(VestModel).filter(VestModel.id == vest_id).first()
+    if not vest:
+        raise HTTPException(status_code=404, detail="Vest not found")
+
+    vest_layers = db.query(VestLayer).filter(VestLayer.vest_id == vest_id).order_by(VestLayer.layer_index).all()
+    if not vest_layers:
+        raise HTTPException(status_code=400, detail="Vest has no layers configured")
+
+    # Resolve geometry: explicit param > first compatible > error
+    geo = None
+    if geometry_id:
+        geo = db.query(Geometry).filter(Geometry.id == geometry_id).first()
+        if not geo:
+            raise HTTPException(status_code=404, detail="Geometry not found")
+    elif vest.compatible_geometry_ids:
+        geo = db.query(Geometry).filter(Geometry.id == vest.compatible_geometry_ids[0]).first()
+    
+    if not geo:
+        raise HTTPException(status_code=400, detail="No geometry specified and vest has no compatible geometries. Assign a geometry first.")
+
+    surface_areas = geo.surface_areas or {}
+    size_areas = surface_areas.get(size)
+    if not size_areas:
+        available = list(surface_areas.keys())
+        raise HTTPException(status_code=400, detail=f"Size '{size}' not found in geometry '{geo.name}'. Available sizes: {available}")
+
+    front_area = float(size_areas.get("front", 0))
+    back_area = float(size_areas.get("back", 0))
+    total_panel_area = front_area + back_area  # m²
+
+    if total_panel_area <= 0:
+        raise HTTPException(status_code=400, detail=f"Geometry '{geo.name}' size '{size}' has no surface area defined")
+
+    # Calculate weight per layer
+    total_weight_g = 0.0
+    missing_materials = []
+    layer_details = []
+
+    for layer in vest_layers:
+        if not layer.material_id:
+            layer_details.append({"layer_index": layer.layer_index, "material": None, "error": "No material assigned"})
+            continue
+
+        material = db.query(Material).filter(Material.id == layer.material_id).first()
+        if not material:
+            layer_details.append({"layer_index": layer.layer_index, "material": None, "error": "Material not found"})
+            continue
+
+        if not material.areal_density_g_m2:
+            missing_materials.append(material.name)
+            layer_details.append({
+                "layer_index": layer.layer_index,
+                "material": material.name,
+                "error": f"Missing areal_density_g_m2 for material '{material.name}'"
+            })
+            continue
+
+        areal_density = float(material.areal_density_g_m2)
+        layer_count = layer.layer_count or 1
+        layer_weight = areal_density * layer_count * total_panel_area
+        total_weight_g += layer_weight
+        layer_details.append({
+            "layer_index": layer.layer_index,
+            "material": material.name,
+            "areal_density_g_m2": areal_density,
+            "layer_count": layer_count,
+            "area_m2": round(total_panel_area, 6),
+            "weight_g": round(layer_weight, 2)
+        })
+
+    if missing_materials:
+        return {
+            "calculated": False,
+            "weight_g": None,
+            "geometry_name": geo.name,
+            "size": size,
+            "panel_area_m2": round(total_panel_area, 6),
+            "missing_materials": missing_materials,
+            "layer_details": layer_details,
+            "message": f"Cannot calculate weight: materials missing areal_density_g_m2: {', '.join(missing_materials)}"
+        }
+
+    return {
+        "calculated": True,
+        "weight_g": round(total_weight_g, 2),
+        "geometry_name": geo.name,
+        "size": size,
+        "panel_area_m2": round(total_panel_area, 6),
+        "missing_materials": [],
+        "layer_details": layer_details,
+        "message": f"Calculated weight: {round(total_weight_g, 2)} g (geometry: {geo.name}, size: {size})"
+    }
 
 
 @router.get("/{vest_id}/test-sessions")

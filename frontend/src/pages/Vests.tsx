@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useVests, useCreateVest, useUpdateVest, useDeleteVest, useUpdateVestLayers } from '../hooks/useVests';
 import { Vest, VestCreate, VestUpdate, VestLayerCreate, VestTestSessionsResponse } from '../api/vests';
 import { vestsApi } from '../api/vests';
 import { useMaterials } from '../hooks/useMaterials';
 import { Material } from '../api/materials';
+import { useGeometries } from '../hooks/useGeometries';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useAuth } from '../hooks/useAuth';
 import { apiClient } from '../api/client';
@@ -15,8 +17,11 @@ interface ProtocolThreatLevel {
 }
 
 export function Vests() {
+  const { vestId: urlVestId } = useParams();
+  const navigate = useNavigate();
   const { data: vests, isLoading, error, refetch } = useVests();
   const { data: materials, refetch: refetchMaterials } = useMaterials();
+  const { data: geometries } = useGeometries();
   const createMutation = useCreateVest();
   const updateMutation = useUpdateVest();
   const deleteMutation = useDeleteVest();
@@ -54,6 +59,8 @@ export function Vests() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [loadingTestSessions, setLoadingTestSessions] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
+  const [calcWeight, setCalcWeight] = useState<{ size: string; geometryId: string | null }>({ size: 'M', geometryId: null });
+  const [calcWeightResult, setCalcWeightResult] = useState<string | null>(null);
   const [protocolThreatLevels, setProtocolThreatLevels] = useState<ProtocolThreatLevel[]>([]);
   const [vestTestSessionCounts, setVestTestSessionCounts] = useState<Record<string, number>>({});
 
@@ -100,6 +107,17 @@ export function Vests() {
     };
     fetchVestTestSessionCounts();
   }, [vests]);
+
+  // Auto-open vest details when navigated via URL
+  useEffect(() => {
+    if (urlVestId && vests && !showDetailsModal && !showCreateForm && !editingVest) {
+      const vest = vests.find((v) => v.id === urlVestId);
+      if (vest) {
+        handleVestClick(vest);
+      }
+    }
+  }, [urlVestId, vests]);
+
   const [formData, setFormData] = useState<VestCreate>({
     vest_code: '',
     vest_type: '',
@@ -109,6 +127,7 @@ export function Vests() {
     total_thickness_mm: null,
     sizes: {},
     construction_notes: '',
+    compatible_geometry_ids: [],
     weight_g: null,
     flexibility_rating: false,
     is_panel_sewn: false,
@@ -168,6 +187,7 @@ export function Vests() {
         total_thickness_mm: null,
         sizes: {},
         construction_notes: '',
+        compatible_geometry_ids: [],
         weight_g: null,
         flexibility_rating: false,
         is_panel_sewn: false,
@@ -222,6 +242,7 @@ export function Vests() {
         total_thickness_mm: null,
         sizes: {},
         construction_notes: '',
+        compatible_geometry_ids: [],
         weight_g: null,
         flexibility_rating: false,
         is_panel_sewn: false,
@@ -276,6 +297,7 @@ export function Vests() {
       total_thickness_mm: fullVest.total_thickness_mm,
       sizes: fullVest.sizes || {},
       construction_notes: fullVest.construction_notes || '',
+      compatible_geometry_ids: fullVest.compatible_geometry_ids || [],
       weight_g: fullVest.weight_g ?? null,
       flexibility_rating: fullVest.flexibility_rating ?? false,
       is_panel_sewn: fullVest.is_panel_sewn ?? (fullVest.stitch_pattern === 'stitched'),
@@ -306,6 +328,7 @@ export function Vests() {
       total_thickness_mm: null,
       sizes: {},
       construction_notes: '',
+      compatible_geometry_ids: [],
       weight_g: null,
       flexibility_rating: false,
       is_panel_sewn: false,
@@ -412,6 +435,7 @@ export function Vests() {
   };
 
   const handleVestClick = async (vest: Vest) => {
+    navigate(`/vests/${vest.id}`, { replace: true });
     setSelectedVest(vest);
     setShowDetailsModal(true);
     setLoadingTestSessions(true);
@@ -427,6 +451,7 @@ export function Vests() {
   };
 
   const handleCloseDetailsModal = () => {
+    navigate(`/vests`, { replace: true });
     setSelectedVest(null);
     setTestSessions(null);
     setShowDetailsModal(false);
@@ -464,6 +489,7 @@ export function Vests() {
           </h2>
           <form onSubmit={editingVest ? handleUpdate : handleCreate} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Row 1: Vest Name + Vest Type */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">Vest Name *</label>
                 <input
@@ -491,6 +517,8 @@ export function Vests() {
                   <option value="IWC">IWC</option>
                 </select>
               </div>
+
+              {/* Row 2: Threat Level + Total Layers */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">Threat Level *</label>
                 <select
@@ -522,32 +550,155 @@ export function Vests() {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                 />
               </div>
+
+              {/* Row 3: Weight + Auto-Calc (left) | Created By (right, admin only) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">Weight (g)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.weight_g ?? ''}
-                  onChange={(e) => setFormData({ ...formData, weight_g: e.target.value ? parseFloat(e.target.value) : null })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                />
+                <div className="flex items-end gap-2">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.weight_g ?? ''}
+                    onChange={(e) => setFormData({ ...formData, weight_g: e.target.value ? parseFloat(e.target.value) : null })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                  />
+                  <div className="flex flex-col">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Auto-Calc</label>
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={calcWeight.geometryId || ''}
+                        onChange={(e) => setCalcWeight({ ...calcWeight, geometryId: e.target.value || null })}
+                        className="text-xs rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 border p-1"
+                      >
+                        <option value="">Auto</option>
+                        {geometries?.map((geo) => (
+                          <option key={geo.id} value={geo.id}>{geo.name}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={calcWeight.size}
+                        onChange={(e) => setCalcWeight({ ...calcWeight, size: e.target.value })}
+                        className="text-xs rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 border p-1"
+                      >
+                        {['XS', 'S', 'M', 'L', 'XL', 'XXL'].map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCalcWeightResult(null);
+                          const geoId = calcWeight.geometryId || formData.compatible_geometry_ids?.[0];
+                          if (!geoId) {
+                            setCalcWeightResult('No geometry selected. Assign a compatible geometry or pick one above.');
+                            return;
+                          }
+                          const geo = geometries?.find((g) => g.id === geoId);
+                          if (!geo) {
+                            setCalcWeightResult('Geometry not found.');
+                            return;
+                          }
+                          const sizeAreas = geo.surface_areas?.[calcWeight.size];
+                          if (!sizeAreas) {
+                            const available = Object.keys(geo.surface_areas || {});
+                            setCalcWeightResult(`Size '${calcWeight.size}' not in geometry '${geo.name}'. Available: ${available.join(', ')}`);
+                            return;
+                          }
+                          const frontArea = Number(sizeAreas.front || 0);
+                          const backArea = Number(sizeAreas.back || 0);
+                          const totalArea = frontArea + backArea;
+                          if (totalArea <= 0) {
+                            setCalcWeightResult(`Geometry '${geo.name}' size '${calcWeight.size}' has no surface area defined.`);
+                            return;
+                          }
+                          const missing: string[] = [];
+                          let totalWeight = 0;
+                          for (const layer of layers) {
+                            if (!layer.material_id) continue;
+                            const mat = materials?.find((m) => m.id === layer.material_id);
+                            if (!mat) continue;
+                            if (!mat.areal_density_g_m2) {
+                              missing.push(mat.name);
+                              continue;
+                            }
+                            totalWeight += Number(mat.areal_density_g_m2) * (layer.layer_count || 1) * totalArea;
+                          }
+                          if (missing.length > 0) {
+                            setCalcWeightResult(`Cannot calculate: missing areal_density_g_m2 for: ${missing.join(', ')}`);
+                            return;
+                          }
+                          const rounded = Math.round(totalWeight * 100) / 100;
+                          setFormData({ ...formData, weight_g: rounded });
+                          setCalcWeightResult(`Auto-calculated: ${rounded} g (${geo.name}, size ${calcWeight.size})`);
+                        }}
+                        className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 whitespace-nowrap"
+                      >
+                        Calc
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {calcWeightResult && (
+                  <p className={`text-xs mt-1 ${calcWeightResult.startsWith('Auto-calculated') ? 'text-green-700' : 'text-red-600'}`}>
+                    {calcWeightResult}
+                  </p>
+                )}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Flexibility</label>
-                <div className="flex items-center gap-4 mt-1">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={formData.flexibility_rating || false}
-                      onChange={(e) => setFormData({ ...formData, flexibility_rating: e.target.checked })}
-                      className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
-                    />
-                    <span className="text-sm text-gray-700">Yes</span>
-                  </label>
+              {editingVest && role === 'admin' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Created By</label>
+                  <input
+                    type="text"
+                    value={formData.created_by_username || ''}
+                    onChange={(e) => setFormData({ ...formData, created_by_username: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                  />
+                </div>
+              )}
+
+              {/* Compatible Geometries (full width) */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Compatible Geometries</label>
+                <div className="flex flex-wrap gap-2">
+                  {geometries?.map((geo) => (
+                    <label key={geo.id} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={formData.compatible_geometry_ids?.includes(geo.id) || false}
+                        onChange={(e) => {
+                          const current = formData.compatible_geometry_ids || [];
+                          setFormData({
+                            ...formData,
+                            compatible_geometry_ids: e.target.checked
+                              ? [...current, geo.id]
+                              : current.filter((id) => id !== geo.id),
+                          });
+                        }}
+                        className="mr-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                      />
+                      <span className="text-sm text-gray-700">{geo.name}</span>
+                    </label>
+                  ))}
                 </div>
               </div>
+
+              {/* Row 4: Flexibility + Female Vest (soft only) */}
               {formData.vest_type?.toLowerCase() === 'soft' && (
                 <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Flexibility</label>
+                    <div className="flex items-center gap-4 mt-1">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={formData.flexibility_rating || false}
+                          onChange={(e) => setFormData({ ...formData, flexibility_rating: e.target.checked })}
+                          className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                        />
+                        <span className="text-sm text-gray-700">Yes</span>
+                      </label>
+                    </div>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Female Vest</label>
                     <div className="flex items-center gap-4 mt-1">
@@ -562,6 +713,12 @@ export function Vests() {
                       </label>
                     </div>
                   </div>
+                </>
+              )}
+
+              {/* Row 5: Stitched + Catalog Model (soft only for stitched) */}
+              {formData.vest_type?.toLowerCase() === 'soft' && (
+                <>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Stitched</label>
                     <div className="flex items-center gap-4 mt-1">
@@ -572,11 +729,30 @@ export function Vests() {
                           onChange={(e) => setFormData({ ...formData, is_panel_sewn: e.target.checked })}
                           className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
                         />
-                      <span className="text-sm text-gray-700">Stitched</span>
-                    </label>
+                        <span className="text-sm text-gray-700">Stitched</span>
+                      </label>
+                    </div>
                   </div>
-                </div>
-                <div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Catalog Model</label>
+                    <div className="flex items-center gap-4 mt-1">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={formData.is_catalog_model || false}
+                          onChange={(e) => setFormData({ ...formData, is_catalog_model: e.target.checked })}
+                          className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                        />
+                        <span className="text-sm text-gray-700">Official catalog model</span>
+                      </label>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Catalog Model for non-soft vests */}
+              {formData.vest_type?.toLowerCase() !== 'soft' && (
+                <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700">Catalog Model</label>
                   <div className="flex items-center gap-4 mt-1">
                     <label className="flex items-center">
@@ -590,28 +766,8 @@ export function Vests() {
                     </label>
                   </div>
                 </div>
-              </>
-            )}
-            {editingVest && role === 'admin' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Created By</label>
-                  <input
-                    type="text"
-                    value={formData.created_by_username || ''}
-                    onChange={(e) => setFormData({ ...formData, created_by_username: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                  />
-                </div>
               )}
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">Construction Notes</label>
-                <textarea
-                  value={formData.construction_notes || ''}
-                  onChange={(e) => setFormData({ ...formData, construction_notes: e.target.value })}
-                  rows={2}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                />
-              </div>
+
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700">Notes</label>
                 <textarea
@@ -809,7 +965,7 @@ export function Vests() {
                   <td className="px-3 py-1.5 text-sm text-gray-500 max-w-[200px] truncate" title={vest.composition || ''}>{vest.composition || '-'}</td>
                   <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{thicknessDisplay}</td>
                   <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{vest.weight_g ? `${Number(vest.weight_g).toFixed(0)} g` : '-'}</td>
-                  <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{vest.flexibility_rating ? 'Yes' : 'No'}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{shouldShowStitched ? (vest.flexibility_rating ? 'Yes' : 'No') : '-'}</td>
                   <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{shouldShowStitched ? (isStitched ? 'Yes' : 'No') : '-'}</td>
                   <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">
                     {isLinked ? (
@@ -973,10 +1129,22 @@ export function Vests() {
                   <span className="text-gray-500">Weight:</span>
                   <span className="ml-2 font-medium">{selectedVest.weight_g ? `${selectedVest.weight_g} g` : '-'}</span>
                 </div>
+                <div className="md:col-span-3">
+                  <span className="text-gray-500">Compatible Geometries:</span>
+                  <span className="ml-2 font-medium">
+                    {selectedVest.compatible_geometry_ids && selectedVest.compatible_geometry_ids.length > 0
+                      ? selectedVest.compatible_geometry_ids
+                          .map((id) => geometries?.find((g) => g.id === id)?.name || id)
+                          .join(', ')
+                      : '-'}
+                  </span>
+                </div>
+                {selectedVest.vest_type?.toLowerCase() === 'soft' && (
                 <div>
                   <span className="text-gray-500">Flexibility:</span>
                   <span className="ml-2 font-medium">{selectedVest.flexibility_rating ? 'Yes' : 'No'}</span>
                 </div>
+                )}
                 <div>
                   <span className="text-gray-500">Protection Class:</span>
                   <span className="ml-2 font-medium">{selectedVest.protection_class || '-'}</span>

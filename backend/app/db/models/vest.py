@@ -21,6 +21,9 @@ class Vest(Base):
     construction_notes = Column(String)
     stitch_pattern = Column(String)
 
+    # Compatible geometries (multi-select list of geometry IDs)
+    compatible_geometry_ids = Column(JSON, nullable=True)  # ["uuid1", "uuid2", ...]
+
     # Pliego técnico matching fields
     weight_g = Column(Numeric(10, 2), nullable=True)
     trauma_homologation = Column(JSON, nullable=True)  # { "level": "RB3", "backface_mm": 25.0, "ammunition": ".44 MAG", "certified": true }

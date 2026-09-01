@@ -31,6 +31,18 @@ router = APIRouter(prefix="/ballistic", tags=["ballistic"])
 trial_results = []
 stop_optimization_flag = False
 
+# =============================================================================
+# Global feature analysis state
+# =============================================================================
+feature_analysis_state = {
+    "running": False,
+    "stop_requested": False,
+    "current_step": "",
+    "current_step_num": 0,
+    "total_steps": 0,
+    "completed_steps": [],
+}
+
 
 # =============================================================================
 # API schemas
@@ -241,6 +253,19 @@ def health(db: Session = Depends(get_db)):
     )
 
 
+@router.get("/feature-analysis-status")
+def get_feature_analysis_status():
+    """Get current feature analysis progress."""
+    return feature_analysis_state
+
+
+@router.post("/stop-feature-analysis")
+def stop_feature_analysis():
+    """Request to stop the current feature analysis."""
+    feature_analysis_state["stop_requested"] = True
+    return {"status": "stop_requested"}
+
+
 @router.post("/analyze-features")
 def analyze_features(db: Session = Depends(get_db), request: Optional[TrainRequest] = None):
     """
@@ -249,10 +274,21 @@ def analyze_features(db: Session = Depends(get_db), request: Optional[TrainReque
     Returns accuracy impact for each feature group.
     Temporary analysis models are deleted after analysis completes.
     """
+    global feature_analysis_state
     from app.services.ml.ballistic_ml import train_from_database
     import shutil
 
     try:
+        # Reset state
+        feature_analysis_state.update({
+            "running": True,
+            "stop_requested": False,
+            "current_step": "Training baseline model (all features)",
+            "current_step_num": 0,
+            "total_steps": 0,
+            "completed_steps": [],
+        })
+
         # Base hyperparameters
         hyperparameters = request.hyperparameters.dict() if request and request.hyperparameters else None
         use_log_transform = request.use_log_transform if request else True
@@ -270,7 +306,13 @@ def analyze_features(db: Session = Depends(get_db), request: Optional[TrainReque
             'shot_sequence': True,
             'material_density': True,
             'velocity_interactions': True,
+            'vest_construction': True,
+            'geometry_features': True,
+            'material_mechanical': True,
+            'weave_features': True,
         }
+
+        feature_analysis_state["total_steps"] = 1 + len(all_features)  # baseline + ablation
 
         # Track temporary analysis models for cleanup
         analysis_model_versions = []
@@ -298,9 +340,23 @@ def analyze_features(db: Session = Depends(get_db), request: Optional[TrainReque
             'ablation': {},
         }
 
+        feature_analysis_state["completed_steps"].append({
+            "step": "baseline",
+            "label": "Baseline (all features)",
+            "mae": baseline_mae,
+        })
+        feature_analysis_state["current_step_num"] = 1
+
         # Test each feature group individually
         feature_groups = list(all_features.keys())
-        for feature in feature_groups:
+        for idx, feature in enumerate(feature_groups):
+            if feature_analysis_state["stop_requested"]:
+                feature_analysis_state["current_step"] = "Stopped by user"
+                break
+
+            feature_analysis_state["current_step"] = f"Training without '{feature}' ({idx + 1}/{len(feature_groups)})"
+            feature_analysis_state["current_step_num"] = idx + 2
+
             # Create toggles with just this feature disabled
             test_toggles = {**all_features, feature: False}
 
@@ -328,6 +384,13 @@ def analyze_features(db: Session = Depends(get_db), request: Optional[TrainReque
                 'r2_impact': r2_impact,
             }
 
+            feature_analysis_state["completed_steps"].append({
+                "step": feature,
+                "label": f"Without {feature}",
+                "mae": test_mae,
+                "mae_impact": mae_impact,
+            })
+
         # Sort by impact
         sorted_by_impact = sorted(
             results['ablation'].items(),
@@ -347,6 +410,8 @@ def analyze_features(db: Session = Depends(get_db), request: Optional[TrainReque
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        feature_analysis_state["running"] = False
 
 
 @router.get("/optimization-status")
