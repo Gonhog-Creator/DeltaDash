@@ -4,6 +4,7 @@ import { useGeometries, useCreateGeometry, useUpdateGeometry, useDeleteGeometry,
 import { API_BASE_URL } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { exportGeometryPdf } from '../utils/geometryPdfExport';
 
 const SIZE_OPTIONS = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL'];
 const MEASUREMENT_KEYS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'];
@@ -63,6 +64,7 @@ export function GeometryListTab() {
   const [pdfUploading, setPdfUploading] = useState<boolean>(false);
   const [imageUploading, setImageUploading] = useState<boolean>(false);
   const [viewing, setViewing] = useState<Geometry | null>(null);
+  const [pdfExporting, setPdfExporting] = useState<boolean>(false);
 
   useEffect(() => {
     if (!viewing) return;
@@ -238,6 +240,52 @@ export function GeometryListTab() {
     } catch (err) {
       console.error('Failed to download geometry PDF:', err);
       alert('Failed to download PDF. Please try again.');
+    }
+  };
+
+  const handleGeneratePdf = async (geometry: Geometry) => {
+    setPdfExporting(true);
+    try {
+      const sizes = geometry.available_sizes || [];
+      const rows = MEASUREMENT_KEYS.map(key => {
+        const row: string[] = [key];
+        sizes.forEach(size => {
+          const frontVal = geometry.size_measurements?.[size]?.front?.[key];
+          const backVal = geometry.size_measurements?.[size]?.back?.[key];
+          row.push(frontVal != null ? String(frontVal) : '---');
+          row.push(backVal != null ? String(backVal) : '---');
+        });
+        return row;
+      });
+
+      const area: string[] = [];
+      sizes.forEach(size => {
+        area.push(String(geometry.surface_areas?.[size]?.front ?? '---'));
+        area.push(String(geometry.surface_areas?.[size]?.back ?? '---'));
+      });
+
+      const totals = sizes.map(size =>
+        String(geometry.surface_areas?.[size]?.total ?? '---')
+      );
+
+      const compatText = (geometry.compatibility || '').replace(/^Compatible con:\s*/i, '');
+
+      await exportGeometryPdf({
+        title: geometry.name,
+        sheetId: geometry.id.slice(0, 8),
+        compatText,
+        selectedModel: '',
+        imageUrl: imageUrl(geometry.image_url),
+        sizes,
+        rows,
+        area,
+        totals,
+      });
+    } catch (err) {
+      console.error('PDF generation failed:', err);
+      alert('Failed to generate PDF: ' + (err as Error).message);
+    } finally {
+      setPdfExporting(false);
     }
   };
 
@@ -743,6 +791,13 @@ export function GeometryListTab() {
             )}
 
             <div className="flex justify-end space-x-3 mt-4">
+              <button
+                onClick={() => handleGeneratePdf(viewing)}
+                disabled={pdfExporting}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm disabled:opacity-50"
+              >
+                {pdfExporting ? 'Generating...' : 'Generate PDF'}
+              </button>
               {viewing.pdf_document && (
                 <button
                   onClick={() => handlePdfDownload(viewing.id, viewing.pdf_document?.original_name)}

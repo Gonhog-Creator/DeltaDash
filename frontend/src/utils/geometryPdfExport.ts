@@ -69,26 +69,11 @@ function loadImageFromUrl(src: string): Promise<HTMLImageElement> {
       reject(new Error('No image available'));
       return;
     }
-    const token = localStorage.getItem('token');
-    fetch(src, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    })
-      .then(res => {
-        if (!res.ok) throw new Error('Failed to fetch image');
-        return res.blob();
-      })
-      .then(blob => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const image = new Image();
-          image.onload = () => resolve(image);
-          image.onerror = () => reject(new Error('Failed to load image'));
-          image.src = reader.result as string;
-        };
-        reader.onerror = () => reject(new Error('Failed to read image blob'));
-        reader.readAsDataURL(blob);
-      })
-      .catch(() => reject(new Error('Failed to load image')));
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Failed to load image'));
+    image.src = src;
   });
 }
 
@@ -332,7 +317,7 @@ export async function exportGeometryPdf(data: PdfExportData): Promise<void> {
   const url = URL.createObjectURL(pdfBlob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${name}${modelSuffix}_A4.pdf`;
+  a.download = `Geometral_${name}${modelSuffix}_A4.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();
