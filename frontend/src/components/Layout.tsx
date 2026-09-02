@@ -1,6 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { useViewerMode } from '../contexts/ViewerModeContext';
 import { useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
 import { LocationManagementModal } from './LocationManagementModal';
@@ -12,12 +11,9 @@ interface LayoutProps {
 
 export function Layout({ children }: LayoutProps) {
   const { user, logout, isLoggingOut, isAdmin } = useAuth();
-  const { isViewerMode, setViewerMode } = useViewerMode();
   const location = useLocation();
   const [version, setVersion] = useState<string>('1.0.4');
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
-
-  const effectiveIsAdmin = isAdmin && !isViewerMode;
   
   // Location management state
   const { data: locations } = useLocations();
@@ -42,7 +38,7 @@ export function Layout({ children }: LayoutProps) {
     { path: '/analytics', label: 'Analytics' },
     { path: '/comparison', label: 'Comparison' },
     { path: '/predictions', label: 'Predictions' },
-    ...(effectiveIsAdmin ? [{ path: '/protocols', label: 'Protocols', isAdmin: true }, { path: '/model-training', label: 'Model Training', isAdmin: true }] : []),
+    ...(isAdmin ? [{ path: '/protocols', label: 'Protocols', isAdmin: true }, { path: '/model-training', label: 'Model Training', isAdmin: true }] : []),
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -109,7 +105,7 @@ export function Layout({ children }: LayoutProps) {
           {!isSidebarMinimized && (
             <div className="flex items-center">
               <h1 className="text-lg font-bold text-gray-900">DeltaDash</h1>
-              {effectiveIsAdmin && (
+              {isAdmin && (
                 <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded-full">
                   Admin
                 </span>
@@ -193,18 +189,6 @@ export function Layout({ children }: LayoutProps) {
               {user?.role || 'viewer'}
             </span>
           </div>
-          {isAdmin && (
-            <button
-              onClick={() => setViewerMode(!isViewerMode)}
-              className={`mr-4 text-sm px-3 py-1 rounded border ${
-                isViewerMode 
-                  ? 'bg-blue-100 text-blue-800 border-blue-300' 
-                  : 'bg-gray-100 text-gray-600 border-gray-300'
-              }`}
-            >
-              {isViewerMode ? 'Viewer Mode' : 'Admin Mode'}
-            </button>
-          )}
           <button
             onClick={() => logout()}
             disabled={isLoggingOut}

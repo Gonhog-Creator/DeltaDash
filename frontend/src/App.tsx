@@ -18,7 +18,6 @@ import { Comparison } from './pages/Comparison'
 import { FabricEstimation } from './pages/FabricEstimation'
 import { Geometries } from './pages/Geometries'
 import { Covers } from './pages/Covers'
-import { ViewerModeProvider } from './contexts/ViewerModeContext'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,7 +31,6 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ViewerModeProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
@@ -66,7 +64,6 @@ function App() {
             />
           </Routes>
         </BrowserRouter>
-      </ViewerModeProvider>
     </QueryClientProvider>
   )
 }

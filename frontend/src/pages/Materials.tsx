@@ -4,7 +4,6 @@ import { Material, MaterialCreate, MaterialUpdate, MaterialVestUsageResponse } f
 import { ConfirmModal } from '../components/ConfirmModal';
 import { normalizeString } from '../utils/string';
 import { useAuth } from '../hooks/useAuth';
-import { useViewerMode } from '../contexts/ViewerModeContext';
 import { materialsApi } from '../api/materials';
 
 export function Materials() {
@@ -15,7 +14,6 @@ export function Materials() {
   const deleteMutation = useDeleteMaterial();
   const removeFileMutation = useRemoveMaterialFile();
   const { role } = useAuth();
-  const { isViewerMode } = useViewerMode();
   
   const canViewComplete = role === 'admin' || role === 'editor';
 
@@ -976,7 +974,7 @@ export function Materials() {
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ply</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Files</th>
-              {canViewComplete && !isViewerMode && (
+              {canViewComplete && (
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Complete</th>
               )}
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -1024,7 +1022,7 @@ export function Materials() {
                     {!material.mss_file_path && !material.sds_file_path && '-'}
                   </div>
                 </td>
-                {canViewComplete && !isViewerMode && (
+                {canViewComplete && (
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {isMaterialComplete(material) && (
                       <span className="text-green-500 text-lg">✓</span>
@@ -1060,7 +1058,7 @@ export function Materials() {
             ))}
             {materials?.length === 0 && (
               <tr>
-                <td colSpan={canViewComplete && !isViewerMode ? 9 : 8} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={canViewComplete ? 9 : 8} className="px-6 py-4 text-center text-sm text-gray-500">
                   No materials found. Click "Add Material" to create one.
                 </td>
               </tr>
