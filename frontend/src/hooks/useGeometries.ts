@@ -127,6 +127,7 @@ export function useGeometries(params?: { vest_type?: string }) {
   return useQuery({
     queryKey: ['geometries', params],
     queryFn: () => geometriesApi.list(params),
+    refetchOnWindowFocus: false,
   });
 }
 

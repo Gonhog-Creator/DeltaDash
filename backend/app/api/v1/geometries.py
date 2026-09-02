@@ -409,9 +409,8 @@ def delete_geometry_image(
     if file_path and file_path.exists():
         file_path.unlink(missing_ok=True)
 
-    if geometry.image_url and geometry.image_url.startswith(f"/api/v1/geometries/{geometry_id}/image"):
-        geometry.image_url = None
-        db.commit()
-        db.refresh(geometry)
+    geometry.image_url = None
+    db.commit()
+    db.refresh(geometry)
 
     return GeometryResponse.from_orm(geometry)

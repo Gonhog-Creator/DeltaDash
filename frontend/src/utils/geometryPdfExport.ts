@@ -69,7 +69,10 @@ function loadImageFromUrl(src: string): Promise<HTMLImageElement> {
       reject(new Error('No image available'));
       return;
     }
-    fetch(src)
+    const token = localStorage.getItem('token');
+    fetch(src, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    })
       .then(res => {
         if (!res.ok) throw new Error('Failed to fetch image');
         return res.blob();
@@ -177,8 +180,8 @@ export async function exportGeometryPdf(data: PdfExportData): Promise<void> {
   ctx.fillText('COMPATIBILIDAD', M, 171);
   ctx.fillStyle = '#172033';
   ctx.font = '500 18px Arial, sans-serif';
-  const compatLines = wrapCanvasText(ctx, data.compatText, CW - 190);
-  compatLines.slice(0, 2).forEach((line, i) => ctx.fillText(line, M + 190, 171 + i * 24));
+  const compatLines = wrapCanvasText(ctx, data.compatText, CW - 260);
+  compatLines.slice(0, 2).forEach((line, i) => ctx.fillText(line, M + 260, 171 + i * 24));
 
   let imageBottom = 270;
   try {

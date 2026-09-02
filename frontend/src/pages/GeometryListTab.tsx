@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useGeometries, useCreateGeometry, useUpdateGeometry, useDeleteGeometry, Geometry, GeometryCreate, GeometryUpdate, GeometrySizeMeasurements, geometriesApi } from '../hooks/useGeometries';
 import { API_BASE_URL } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
@@ -51,6 +52,7 @@ export function GeometryListTab() {
   const updateMutation = useUpdateGeometry();
   const deleteMutation = useDeleteGeometry();
   const { role } = useAuth();
+  const queryClient = useQueryClient();
 
   const canEdit = role !== 'viewer';
 
@@ -167,6 +169,7 @@ export function GeometryListTab() {
     try {
       const updated = await geometriesApi.uploadPdf(editing.id, file);
       setFormData(prev => ({ ...prev, pdf_document: updated.pdf_document }));
+      queryClient.invalidateQueries({ queryKey: ['geometries'] });
     } catch (err) {
       console.error('Failed to upload geometry PDF:', err);
       alert('Failed to upload geometry PDF. Please try again.');
@@ -181,6 +184,7 @@ export function GeometryListTab() {
     try {
       const updated = await geometriesApi.deletePdf(editing.id);
       setFormData(prev => ({ ...prev, pdf_document: updated.pdf_document }));
+      queryClient.invalidateQueries({ queryKey: ['geometries'] });
     } catch (err) {
       console.error('Failed to delete geometry PDF:', err);
       alert('Failed to delete geometry PDF. Please try again.');
@@ -193,6 +197,7 @@ export function GeometryListTab() {
     try {
       const updated = await geometriesApi.uploadImage(editing.id, file);
       setFormData(prev => ({ ...prev, image_url: updated.image_url }));
+      queryClient.invalidateQueries({ queryKey: ['geometries'] });
     } catch (err) {
       console.error('Failed to upload geometry image:', err);
       alert('Failed to upload geometry image. Please try again.');
@@ -207,9 +212,32 @@ export function GeometryListTab() {
     try {
       const updated = await geometriesApi.deleteImage(editing.id);
       setFormData(prev => ({ ...prev, image_url: updated.image_url }));
+      queryClient.invalidateQueries({ queryKey: ['geometries'] });
     } catch (err) {
       console.error('Failed to delete geometry image:', err);
       alert('Failed to delete geometry image. Please try again.');
+    }
+  };
+
+  const handlePdfDownload = async (geometryId: string, filename?: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(geometriesApi.downloadPdf(geometryId), {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!response.ok) throw new Error('Failed to download PDF');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'geometry.pdf';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download geometry PDF:', err);
+      alert('Failed to download PDF. Please try again.');
     }
   };
 
@@ -308,14 +336,13 @@ export function GeometryListTab() {
                       <span className="text-sm text-gray-700 truncate max-w-xs">
                         {formData.pdf_document.original_name}
                       </span>
-                      <a
-                        href={geometriesApi.downloadPdf(editing.id)}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => handlePdfDownload(editing.id, formData.pdf_document?.original_name)}
                         className="text-indigo-600 hover:text-indigo-900 text-sm"
                       >
                         Download
-                      </a>
+                      </button>
                       {canEdit && (
                         <button
                           type="button"
@@ -717,14 +744,12 @@ export function GeometryListTab() {
 
             <div className="flex justify-end space-x-3 mt-4">
               {viewing.pdf_document && (
-                <a
-                  href={geometriesApi.downloadPdf(viewing.id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  onClick={() => handlePdfDownload(viewing.id, viewing.pdf_document?.original_name)}
                   className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm"
                 >
                   Download PDF
-                </a>
+                </button>
               )}
               {canEdit && (
                 <button

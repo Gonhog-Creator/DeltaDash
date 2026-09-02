@@ -148,7 +148,7 @@ export function GeometryCompatibilityTab() {
     setSelectedModel(model);
     if (model) {
       const matches = modelsMap[model];
-      if (matches && matches.length > 0) {
+      if (matches && matches.length > 0 && !matches.includes(selectedGeometryId)) {
         setSelectedGeometryId(matches[0]);
       }
     }

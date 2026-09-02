@@ -19,7 +19,7 @@ setup_logging()
 
 app = FastAPI(
     title="Ballistic Test Analytics Platform",
-    version="0.1.0",
+    version="1.0.4",
     max_request_size=50 * 1024 * 1024  # 50MB max request size
 )
 

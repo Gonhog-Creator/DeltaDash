@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     DATABASE_URL: str
     REMOTE_DATABASE_URL: str = ""
+    PRODUCTION_BACKEND_URL: str = "https://deltadash-backend-production.up.railway.app"
+    PRODUCTION_API_TOKEN: str = ""
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000,https://deltadash-production.up.railway.app"

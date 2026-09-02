@@ -15,10 +15,12 @@ from app.db.models.anchor_point import AnchorPoint, AnchorPointLayer
 from app.db.models.geometry import Geometry
 from app.db.models.geometry_material_config import GeometryMaterialConfig
 from app.db.models.cover import Cover
+from app.db.models.vest_model import ModelDocument
 from app.api.v1.auth import get_current_active_user, get_current_user
 from app.db.models.user import User
 from app.core.config import settings
 from app.services.seed_geometries import seed_geometries
+from app.services.file_sync import sync_all_files
 import psycopg2
 import os
 import zipfile
@@ -120,6 +122,7 @@ def get_preview_changes(remote_cursor, local_db: Session) -> SyncPreview:
         ("materials", Material, "SELECT * FROM materials"),
         ("vests", Vest, "SELECT * FROM vests"),
         ("vest_layers", VestLayer, "SELECT * FROM vest_layers"),
+        ("model_documents", ModelDocument, "SELECT * FROM model_documents"),
         ("test_sessions", TestSession, "SELECT * FROM test_sessions"),
         ("shot_data", ShotData, "SELECT * FROM shot_data"),
         ("protocols", Protocol, "SELECT * FROM protocols"),
@@ -261,6 +264,7 @@ def get_count_preview(remote_cursor, local_db: Session) -> SyncPreview:
         ("materials", Material, "SELECT COUNT(*) FROM materials"),
         ("vests", Vest, "SELECT COUNT(*) FROM vests"),
         ("vest_layers", VestLayer, "SELECT COUNT(*) FROM vest_layers"),
+        ("model_documents", ModelDocument, "SELECT COUNT(*) FROM model_documents"),
         ("test_sessions", TestSession, "SELECT COUNT(*) FROM test_sessions"),
         ("shot_data", ShotData, "SELECT COUNT(*) FROM shot_data"),
         ("protocols", Protocol, "SELECT COUNT(*) FROM protocols"),
@@ -345,6 +349,7 @@ def sync_database(
             materials_data = []
             vests_data = []
             vest_layers_data = []
+            model_documents_data = []
             test_sessions_data = []
             shot_data = []
             protocols_data = []
@@ -558,6 +563,49 @@ def sync_database(
                 if updated_vest_layers:
                     local_db.bulk_update_mappings(VestLayer, updated_vest_layers)
                     applied_changes["updated"] += len(updated_vest_layers)
+                
+                local_db.commit()
+            
+            # Sync model documents
+            remote_cursor.execute("SELECT * FROM model_documents")
+            columns = [desc[0] for desc in remote_cursor.description]
+            model_documents_data = remote_cursor.fetchall()
+            
+            if not model_documents_data:
+                pass
+            else:
+                sync_all_new = should_sync_all("model_documents", "new")
+                sync_all_updated = should_sync_all("model_documents", "updated")
+                
+                existing_model_documents = {}
+                for item in local_db.query(ModelDocument).all():
+                    existing_model_documents[str(item.id)] = item
+                
+                new_model_documents = []
+                updated_model_documents = []
+                
+                for row in model_documents_data:
+                    doc_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in doc_dict.items() if hasattr(ModelDocument, key)}
+                    if 'id' in valid_columns and isinstance(valid_columns['id'], str):
+                        valid_columns['id'] = uuid.UUID(valid_columns['id'])
+                    if 'vest_id' in valid_columns and isinstance(valid_columns['vest_id'], str):
+                        valid_columns['vest_id'] = uuid.UUID(valid_columns['vest_id'])
+                    existing = existing_model_documents.get(str(valid_columns['id']))
+                    if not existing:
+                        if sync_all_new or should_sync_record("model_documents", str(valid_columns['id']), "new"):
+                            new_model_documents.append(valid_columns)
+                    else:
+                        if sync_all_updated or should_sync_record("model_documents", str(valid_columns['id']), "updated"):
+                            updated_model_documents.append(valid_columns)
+                
+                if new_model_documents:
+                    local_db.bulk_insert_mappings(ModelDocument, new_model_documents)
+                    applied_changes["new"] += len(new_model_documents)
+                
+                if updated_model_documents:
+                    local_db.bulk_update_mappings(ModelDocument, updated_model_documents)
+                    applied_changes["updated"] += len(updated_model_documents)
                 
                 local_db.commit()
             
@@ -1098,6 +1146,7 @@ def sync_database(
                 ("anchor_point_layers", AnchorPointLayer),
                 ("anchor_points", AnchorPoint),
                 ("test_sessions", TestSession),
+                ("model_documents", ModelDocument),
                 ("vest_layers", VestLayer),
                 ("vests", Vest),
                 ("geometry_material_configs", GeometryMaterialConfig),
@@ -1141,6 +1190,8 @@ def sync_database(
                                 remote_cursor.execute("SELECT id FROM anchor_points")
                             elif entity_name == "anchor_point_layers":
                                 remote_cursor.execute("SELECT id FROM anchor_point_layers")
+                            elif entity_name == "model_documents":
+                                remote_cursor.execute("SELECT id FROM model_documents")
                             elif entity_name == "geometries":
                                 remote_cursor.execute("SELECT id FROM geometries")
                             elif entity_name == "geometry_material_configs":
@@ -1177,11 +1228,19 @@ def sync_database(
             
             local_db.commit()
             
+            # Sync files (images, PDFs, documents) from production
+            file_sync_results = {}
+            try:
+                file_sync_results = sync_all_files(remote_cursor)
+            except Exception as e:
+                print(f"[sync] File sync failed (non-fatal): {e}")
+            
             return {"message": "Database sync completed successfully", "synced_records": {
                 "ammunition": len(ammunition_data),
                 "materials": len(materials_data),
                 "vests": len(vests_data),
                 "vest_layers": len(vest_layers_data),
+                "model_documents": len(model_documents_data),
                 "test_sessions": len(test_sessions_data),
                 "shot_data": len(shot_data),
                 "protocols": len(protocols_data),
@@ -1192,7 +1251,7 @@ def sync_database(
                 "geometries": len(geometries_data),
                 "geometry_material_configs": len(geometry_material_configs_data),
                 "covers": len(covers_data)
-            }}
+            }, "file_sync": file_sync_results}
             
         except Exception as e:
             local_db.rollback()
@@ -1257,6 +1316,7 @@ def reset_database(
             ("anchor_point_layers", AnchorPointLayer),
             ("shot_data", ShotData),
             ("vest_layers", VestLayer),
+            ("model_documents", ModelDocument),
             ("test_sessions", TestSession),
             ("anchor_points", AnchorPoint),
             ("vests", Vest),
@@ -1292,6 +1352,7 @@ def reset_database(
             materials_data = []
             vests_data = []
             vest_layers_data = []
+            model_documents_data = []
             test_sessions_data = []
             shot_data = []
             protocols_data = []
@@ -1355,6 +1416,24 @@ def reset_database(
                     valid_columns = {key: value for key, value in vest_layer_dict.items() if hasattr(VestLayer, key)}
                     new_vest_layer = VestLayer(**valid_columns)
                     local_db.add(new_vest_layer)
+                
+                local_db.commit()
+            
+            # Sync model documents
+            if not entities_to_reset or "model_documents" in entities_to_reset:
+                remote_cursor.execute("SELECT * FROM model_documents")
+                columns = [desc[0] for desc in remote_cursor.description]
+                model_documents_data = remote_cursor.fetchall()
+                
+                for row in model_documents_data:
+                    doc_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in doc_dict.items() if hasattr(ModelDocument, key)}
+                    if 'id' in valid_columns and isinstance(valid_columns['id'], str):
+                        valid_columns['id'] = uuid.UUID(valid_columns['id'])
+                    if 'vest_id' in valid_columns and isinstance(valid_columns['vest_id'], str):
+                        valid_columns['vest_id'] = uuid.UUID(valid_columns['vest_id'])
+                    new_doc = ModelDocument(**valid_columns)
+                    local_db.add(new_doc)
                 
                 local_db.commit()
             
@@ -1523,11 +1602,19 @@ def reset_database(
                 
                 local_db.commit()
             
+            # Sync files (images, PDFs, documents) from production
+            file_sync_results = {}
+            try:
+                file_sync_results = sync_all_files(remote_cursor)
+            except Exception as e:
+                print(f"[reset] File sync failed (non-fatal): {e}")
+            
             return {"message": "Database reset completed successfully", "synced_records": {
                 "ammunition": len(ammunition_data),
                 "materials": len(materials_data),
                 "vests": len(vests_data),
                 "vest_layers": len(vest_layers_data),
+                "model_documents": len(model_documents_data),
                 "test_sessions": len(test_sessions_data),
                 "shot_data": len(shot_data),
                 "protocols": len(protocols_data),
@@ -1538,7 +1625,7 @@ def reset_database(
                 "geometries": len(geometries_data),
                 "geometry_material_configs": len(geometry_material_configs_data),
                 "covers": len(covers_data)
-            }}
+            }, "file_sync": file_sync_results}
             
         except Exception as e:
             local_db.rollback()
@@ -2067,7 +2154,7 @@ def get_version(
     """Get the current application version."""
     if settings.VERSION:
         return {"version": settings.VERSION}
-    return {"version": "1.0.0"}
+    return {"version": "1.0.4"}
 
 
 @router.get("/alembic/status")

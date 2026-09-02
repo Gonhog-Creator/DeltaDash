@@ -14,7 +14,7 @@ export function Layout({ children }: LayoutProps) {
   const { user, logout, isLoggingOut, isAdmin } = useAuth();
   const { isViewerMode, setViewerMode } = useViewerMode();
   const location = useLocation();
-  const [version, setVersion] = useState<string>('0.1.0');
+  const [version, setVersion] = useState<string>('1.0.4');
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
 
   const effectiveIsAdmin = isAdmin && !isViewerMode;
