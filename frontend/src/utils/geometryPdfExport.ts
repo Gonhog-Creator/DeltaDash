@@ -69,11 +69,23 @@ function loadImageFromUrl(src: string): Promise<HTMLImageElement> {
       reject(new Error('No image available'));
       return;
     }
-    const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('Failed to load image'));
-    image.src = src;
+    fetch(src)
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch image');
+        return res.blob();
+      })
+      .then(blob => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error('Failed to load image'));
+          image.src = reader.result as string;
+        };
+        reader.onerror = () => reject(new Error('Failed to read image blob'));
+        reader.readAsDataURL(blob);
+      })
+      .catch(() => reject(new Error('Failed to load image')));
   });
 }
 
