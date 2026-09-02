@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
+from fastapi.responses import FileResponse, StreamingResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 from typing import List, Optional
@@ -377,6 +377,7 @@ def upload_geometry_image(
 @router.get("/{geometry_id}/image")
 def download_geometry_image(
     geometry_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Download the uploaded image for a geometry. Publicly accessible so it can be used in <img> tags."""
@@ -388,7 +389,26 @@ def download_geometry_image(
     if not file_path or not file_path.exists():
         raise HTTPException(status_code=404, detail="Image not found for this geometry")
 
-    return FileResponse(file_path)
+    origin = request.headers.get("origin", "*")
+    with open(file_path, "rb") as f:
+        data = f.read()
+    ext = file_path.suffix.lower()
+    media_type = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }.get(ext, "application/octet-stream")
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
 
 
 @router.delete("/{geometry_id}/delete-image", response_model=GeometryResponse)
