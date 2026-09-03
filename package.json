@@ -1,6 +1,6 @@
 {
   "name": "ballistic-analytics-platform",
-  "version": "1.0.0",
+  "version": "1.0.10",
   "description": "Ballistic Test Analytics & Prediction Platform",
   "scripts": {
     "install": "npm run install:backend && npm run install:frontend",

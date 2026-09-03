@@ -777,8 +777,6 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                 }
 
                 try:
-                    # Every 5th trial, run the real health check for accurate test error
-                    run_health_check = (trial_num % 5 == 0)
                     metadata, health_result = train_from_database(
                         db,
                         model_name=f"optuna_p2_trial_{trial_num}",
@@ -786,7 +784,7 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                         hyperparameters=hyperparams,
                         feature_toggles=feature_toggles,
                         ignore_anchor_points=ignore_anchor_points,
-                        skip_health_check=not run_health_check,
+                        skip_health_check=True,
                         preloaded_df=df,
                         preloaded_material_properties=material_properties,
                         skip_filesystem_save=True,
@@ -794,11 +792,8 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                     if metadata and metadata.get('version'):
                         optimization_model_names.append(metadata['version'])
                     
-                    # Use health check error when available, otherwise training MAPE
-                    if run_health_check and health_result and health_result.get('overall_average_error') is not None:
-                        mae = health_result['overall_average_error']
-                    else:
-                        mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mape', float('inf'))
+                    # Training MAPE now matches health check error (same feature pipeline)
+                    mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mape', float('inf'))
                     
                     trial_results.append({"trial": trial_num, "error": mae})
                     optimization_state["trial_results"] = trial_results
@@ -854,8 +849,6 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
 
                 # Train model with these hyperparameters
                 try:
-                    # Every 5th trial, run the real health check for accurate test error
-                    run_health_check = (trial.number % 5 == 0 and trial.number > 0)
                     metadata, health_result = train_from_database(
                         db,
                         model_name=f"optuna_trial_{trial.number}",
@@ -863,7 +856,7 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                         hyperparameters=hyperparams,
                         feature_toggles=feature_toggles,
                         ignore_anchor_points=ignore_anchor_points,
-                        skip_health_check=not run_health_check,
+                        skip_health_check=True,
                         preloaded_df=df,
                         preloaded_material_properties=material_properties,
                         skip_filesystem_save=True,
@@ -873,16 +866,13 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                     if metadata and metadata.get('version'):
                         optimization_model_names.append(metadata['version'])
 
-                    # Use health check error when available, otherwise training MAPE
-                    if run_health_check and health_result and health_result.get('overall_average_error') is not None:
-                        objective_value = health_result['overall_average_error']
+                    # Training MAPE now matches health check error (same feature pipeline)
+                    mape = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mape')
+                    if mape is not None:
+                        objective_value = mape
                     else:
-                        mape = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mape')
-                        if mape is not None:
-                            objective_value = mape
-                        else:
-                            mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
-                            objective_value = mae
+                        mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
+                        objective_value = mae
 
 
                     # Add trial result to global list

@@ -444,11 +444,11 @@ export function ModelTraining() {
     }
   };
 
-  const handleDownloadModel = async () => {
-    if (!editVersion) return;
+  const handleDownloadModel = async (version: string) => {
+    if (!version) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/ballistic/versions/${editVersion}/download`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/ballistic/versions/${version}/download`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -463,7 +463,7 @@ export function ModelTraining() {
       
       // Get filename from Content-Disposition header or use default
       const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = `ballistic_model_${editVersion}.zip`;
+      let filename = `ballistic_model_${version}.zip`;
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename="?(.+?)"?(;|$)/);
         if (filenameMatch) {
@@ -2059,15 +2059,6 @@ export function ModelTraining() {
                 autoFocus
               />
             </div>
-            <div className="mb-4">
-              <button
-                type="button"
-                onClick={handleDownloadModel}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
-              >
-                Download Model
-              </button>
-            </div>
             <div className="flex justify-between space-x-3">
               <button
                 type="button"
@@ -2143,7 +2134,14 @@ export function ModelTraining() {
                 </div>
               )}
             </div>
-            <div className="mt-6 flex justify-end">
+            <div className="mt-6 flex justify-between">
+              <button
+                type="button"
+                onClick={() => handleDownloadModel(healthStatus.version)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
+              >
+                Download Model
+              </button>
               <button
                 type="button"
                 onClick={() => setShowHealthModal(false)}

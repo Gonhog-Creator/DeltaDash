@@ -2152,9 +2152,7 @@ def get_version(
     current_user: User = Depends(get_current_user)
 ):
     """Get the current application version."""
-    if settings.VERSION:
-        return {"version": settings.VERSION}
-    return {"version": "1.0.4"}
+    return {"version": settings.VERSION}
 
 
 @router.get("/alembic/status")

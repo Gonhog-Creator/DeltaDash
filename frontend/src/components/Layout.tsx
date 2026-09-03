@@ -12,7 +12,7 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const { user, logout, isLoggingOut, isAdmin } = useAuth();
   const location = useLocation();
-  const [version, setVersion] = useState<string>('1.0.4');
+  const [version, setVersion] = useState<string>('1.0.10');
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
   
   // Location management state

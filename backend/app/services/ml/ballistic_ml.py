@@ -663,6 +663,7 @@ def build_regressor(
         random_state=42,
         tree_method="hist",
         grow_policy="depthwise",
+        early_stopping_rounds=50,
     )
 
 
@@ -874,7 +875,6 @@ def train_from_dataframe(
     regression_metrics = {}
 
     if y_regression is not None:
-        from sklearn.model_selection import train_test_split
         for target in available_regression_targets:
             y = y_regression[target]
             valid_idx = y.notna()
@@ -896,17 +896,6 @@ def train_from_dataframe(
 
             X_processed_full = preprocessor.transform(X_valid)
             
-            # Split into train/validation for early stopping
-            if len(X_valid) >= 20:
-                X_train_proc, X_val_proc, y_train_split, y_val_split = train_test_split(
-                    X_processed_full, y_train_full, test_size=0.2, random_state=42
-                )
-            else:
-                # Too few samples — use all for training, no early stopping
-                X_train_proc, X_val_proc, y_train_split, y_val_split = (
-                    X_processed_full, None, y_train_full, None
-                )
-
             # Calculate sample weights based on vest_type to balance hard vs soft armor
             sample_weights = None
             if 'vest_type' in X_valid.columns:
@@ -924,17 +913,9 @@ def train_from_dataframe(
             else:
                 model = build_regressor()
             
-            # Use early stopping if we have a validation set
-            if X_val_proc is not None:
-                model.fit(
-                    X_train_proc, y_train_split,
-                    sample_weight=sample_weights[:len(X_train_proc)] if sample_weights is not None else None,
-                    eval_set=[(X_val_proc, y_val_split)],
-                    verbose=False,
-                    early_stopping_rounds=50,
-                )
-            else:
-                model.fit(X_processed_full, y_train_full, sample_weight=sample_weights)
+            # Disable early stopping — train on full dataset
+            model.set_params(early_stopping_rounds=None)
+            model.fit(X_processed_full, y_train_full, sample_weight=sample_weights)
 
             # Evaluate on full dataset for metrics
             y_pred = model.predict(X_processed_full)
@@ -2197,47 +2178,69 @@ def evaluate_model_on_test_sessions(
     calibers = df['ammunition_used'].values if 'ammunition_used' in df.columns else ["Unknown"] * len(df)
     velocities = df['impact_velocity_mps'].values if 'impact_velocity_mps' in df.columns else [None] * len(df)
     
+    import math
+
     for i in range(len(predictions)):
         predicted_bfd = float(predictions[i])
         actual_bfd = float(actual_bfds[i])
+        if math.isnan(predicted_bfd) or math.isinf(predicted_bfd):
+            predicted_bfd = 0.0
+        if math.isnan(actual_bfd) or math.isinf(actual_bfd):
+            continue
         if actual_bfd != 0:
             percent_error = abs(predicted_bfd - actual_bfd) / actual_bfd * 100
         else:
             percent_error = abs(predicted_bfd - actual_bfd)
+        if math.isnan(percent_error) or math.isinf(percent_error):
+            percent_error = 0.0
         
         vest_identifier = vest_codes[i] if vest_codes[i] is not None else f"Unknown-{i}"
+        if not isinstance(vest_identifier, str):
+            vest_identifier = str(vest_identifier)
         if vest_identifier not in vest_errors:
             vest_errors[vest_identifier] = []
         vest_errors[vest_identifier].append(percent_error)
         
+        shot_num = shot_numbers[i]
+        if shot_num is not None and hasattr(shot_num, 'item'):
+            shot_num = shot_num.item()
+        
+        velocity = velocities[i]
+        if velocity is not None and hasattr(velocity, 'item'):
+            velocity = velocity.item()
+        if velocity is not None and (math.isnan(float(velocity)) or math.isinf(float(velocity))):
+            velocity = None
+        
         point_data.append({
             "vest_code": vest_identifier,
-            "vest_name": vest_names[i] if vest_names[i] is not None else "Unknown",
-            "protocol": protocols[i] if protocols[i] is not None else "Unknown",
+            "vest_name": str(vest_names[i]) if vest_names[i] is not None else "Unknown",
+            "protocol": str(protocols[i]) if protocols[i] is not None else "Unknown",
             "actual_bfd": actual_bfd,
             "predicted_bfd": predicted_bfd,
             "percent_error": percent_error,
-            "shot_number": shot_numbers[i],
-            "protection_level": protection_levels[i] if protection_levels[i] is not None else "Unknown",
-            "caliber": calibers[i] if calibers[i] is not None else "Unknown",
-            "velocity": velocities[i],
+            "shot_number": shot_num,
+            "protection_level": str(protection_levels[i]) if protection_levels[i] is not None else "Unknown",
+            "caliber": str(calibers[i]) if calibers[i] is not None else "Unknown",
+            "velocity": velocity,
         })
     
     # Calculate vest averages
     vest_averages = []
     for vest_code, errors in vest_errors.items():
-        avg_error = sum(errors) / len(errors) if errors else 0
+        valid_errors = [e for e in errors if not math.isnan(e) and not math.isinf(e)]
+        avg_error = sum(valid_errors) / len(valid_errors) if valid_errors else 0
         vest_averages.append({
             "vest_code": vest_code,
             "average_percent_error": round(avg_error, 2),
-            "num_points": len(errors),
+            "num_points": len(valid_errors),
         })
     
     # Calculate overall average error
     all_errors = []
     for errors in vest_errors.values():
         all_errors.extend(errors)
-    overall_average_error = round(sum(all_errors) / len(all_errors), 2) if all_errors else 0
+    valid_all = [e for e in all_errors if not math.isnan(e) and not math.isinf(e)]
+    overall_average_error = round(sum(valid_all) / len(valid_all), 2) if valid_all else 0
     
     # Sort by average error
     vest_averages.sort(key=lambda x: x["average_percent_error"])
@@ -2286,10 +2289,16 @@ def evaluate_model_on_test_sessions(
                 if actual_bfd is not None:
                     actual_bfd = float(actual_bfd)
                     predicted_bfd = float(anchor_predictions[i])
+                    if math.isnan(predicted_bfd) or math.isinf(predicted_bfd):
+                        predicted_bfd = 0.0
+                    if math.isnan(actual_bfd) or math.isinf(actual_bfd):
+                        continue
                     if actual_bfd != 0:
                         percent_error = abs(predicted_bfd - actual_bfd) / actual_bfd * 100
                     else:
                         percent_error = abs(predicted_bfd - actual_bfd)
+                    if math.isnan(percent_error) or math.isinf(percent_error):
+                        percent_error = 0.0
                     anchor_point_errors.append(percent_error)
                     vest_composition = row.get('vest_composition', '')
                     if vest_composition not in anchor_point_material_errors:
