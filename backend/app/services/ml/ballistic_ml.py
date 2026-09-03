@@ -667,7 +667,7 @@ def build_regressor(
     )
 
 
-def build_classifier() -> XGBClassifier:
+def build_classifier(scale_pos_weight: float = 1.0) -> XGBClassifier:
     return XGBClassifier(
         n_estimators=400,
         max_depth=3,
@@ -680,6 +680,7 @@ def build_classifier() -> XGBClassifier:
         objective="binary:logistic",
         eval_metric="logloss",
         random_state=42,
+        scale_pos_weight=scale_pos_weight,
     )
 
 
@@ -951,7 +952,11 @@ def train_from_dataframe(
                 continue
 
             X_processed = preprocessor.transform(X_valid)
-            model = build_classifier()
+            # Compute class imbalance ratio for scale_pos_weight
+            n_neg = int((y_valid == 0).sum())
+            n_pos = int((y_valid == 1).sum())
+            spw = n_neg / n_pos if n_pos > 0 else 1.0
+            model = build_classifier(scale_pos_weight=spw)
             model.fit(X_processed, y_valid)
 
             y_pred_proba = model.predict_proba(X_processed)[:, 1]
@@ -1067,10 +1072,50 @@ def train_from_dataframe(
         'protection_level_distribution': protection_level_stats,
         'total_data_points': len(df),
     }
-    
+
+    # Compute training data ranges for key numeric features for extrapolation detection
+    # These are the physically meaningful features where out-of-range values are most concerning
+    extrapolation_key_features = [
+        "number_of_layers",
+        "material_thickness_mm",
+        "material_weight_g_m2",
+        "composition_calculated_thickness_mm",
+        "composition_calculated_areal_density_kg_m2",
+        "composition_weighted_tensile_strength_mpa",
+        "composition_weighted_modulus_gpa",
+        "composition_weighted_elongation_percent",
+        "composition_weighted_force_longitudinal_n_per_cm",
+        "composition_weighted_force_transverse_n_per_cm",
+        "impact_velocity_mps",
+        "kinetic_energy_j",
+        "bullet_mass_g",
+        "caliber_diameter_mm",
+        "tensile_per_layer",
+        "modulus_per_layer",
+        "energy_vs_tensile",
+        "bending_resistance",
+    ]
+    training_ranges = {}
+    for col in extrapolation_key_features:
+        if col in df.columns:
+            try:
+                vals = pd.to_numeric(df[col], errors="coerce").dropna()
+                if len(vals) > 0:
+                    training_ranges[col] = {
+                        "min": float(vals.min()),
+                        "p5": float(vals.quantile(0.05)),
+                        "p95": float(vals.quantile(0.95)),
+                        "max": float(vals.max()),
+                    }
+            except Exception:
+                pass
+
+    from app.core.config import settings
+
     metadata = {
         "trained_at": datetime.utcnow().isoformat(),
         "version": version,
+        "app_version": settings.VERSION,
         "model_name": display_name,
         "feature_columns": feature_columns,
         "numeric_columns": numeric_cols,
@@ -1087,6 +1132,7 @@ def train_from_dataframe(
         "warnings": warnings or [],
         "training_data_count": len(df),
         "data_health": data_health,
+        "training_ranges": training_ranges,
         "anchor_point_count": data_metadata.get("anchor_point_count", 0) if data_metadata else 0,
         "anchor_point_training_rows": data_metadata.get("anchor_point_training_rows", 0) if data_metadata else 0,
     }
@@ -1202,6 +1248,7 @@ def train_from_database(
             model_run.hyperparameters_json = hyperparameters if hyperparameters else None
             model_run.preprocessor_file = preprocessor_bytes
             model_run.model_file = model_files.get("backface_deformation_mm.pkl") if model_files else None
+            model_run.classifier_file = model_files.get("perforated.pkl") if model_files else None
         else:
             # Create new record
             model_run = ModelRun(
@@ -1217,6 +1264,7 @@ def train_from_database(
                 created_at=datetime.now(),
                 preprocessor_file=preprocessor_bytes,
                 model_file=model_files.get("backface_deformation_mm.pkl") if model_files else None,
+                classifier_file=model_files.get("perforated.pkl") if model_files else None,
             )
             db_session.add(model_run)
         
@@ -1321,7 +1369,25 @@ def load_model_version(version: str, db_session=None) -> Dict[str, Any]:
             model_path = os.path.join(MODEL_DIR, "backface_deformation_mm.pkl")
             joblib.dump(model, model_path)
         
+        if model_run.classifier_file:
+            classifier = joblib.load(io.BytesIO(model_run.classifier_file))
+            classifier_path = os.path.join(MODEL_DIR, "perforated.pkl")
+            joblib.dump(classifier, classifier_path)
+        
         # Return metadata from database
+        # Load the full metadata from the version directory if it exists (has feature_columns)
+        # Otherwise, construct from DB fields
+        version_metadata_path = os.path.join(VERSIONS_DIR, version, "metadata.json")
+        if os.path.exists(version_metadata_path):
+            with open(version_metadata_path, "r") as f:
+                full_metadata = json.load(f)
+        else:
+            full_metadata = {}
+        
+        classification_targets = []
+        if model_run.classifier_file:
+            classification_targets = ["perforated"]
+        
         metadata = {
             "version": model_run.version,
             "model_name": model_run.model_name,
@@ -1329,8 +1395,12 @@ def load_model_version(version: str, db_session=None) -> Dict[str, Any]:
             "metrics": model_run.metrics_json,
             "hyperparameters": model_run.hyperparameters_json,
             "regression_targets": ["backface_deformation_mm"],
-            "classification_targets": [],
+            "classification_targets": classification_targets,
             "training_data_count": model_run.training_row_count,
+            "feature_columns": full_metadata.get("feature_columns", []),
+            "numeric_columns": full_metadata.get("numeric_columns", []),
+            "categorical_columns": full_metadata.get("categorical_columns", []),
+            "training_ranges": full_metadata.get("training_ranges", {}),
         }
         
         # Update current metadata
@@ -1703,6 +1773,69 @@ def prepare_single_input(data: Dict[str, Any], material_properties: Dict[str, Di
 
     df = fill_missing_features(df)
     return df
+
+
+def check_extrapolation(df: pd.DataFrame, training_ranges: Dict[str, Dict[str, float]]) -> Dict[str, Any]:
+    """Check if feature values in a prepared DataFrame are outside training data ranges.
+
+    Args:
+        df: Prepared DataFrame with engineered features (single row).
+        training_ranges: Dict mapping feature names to {min, p5, p95, max} from training data.
+
+    Returns:
+        Dict with:
+        - 'is_extrapolated': bool — True if any key feature is outside [min, max]
+        - 'warnings': list of {feature, value, training_min, training_max, severity} dicts
+        - 'out_of_range_features': list of feature names that are outside training range
+    """
+    warnings_list = []
+    out_of_range_features = []
+
+    for feature, ranges in training_ranges.items():
+        if feature not in df.columns:
+            continue
+        try:
+            value = float(pd.to_numeric(df[feature].iloc[0], errors="coerce"))
+        except (ValueError, IndexError, TypeError):
+            continue
+
+        if np.isnan(value):
+            continue
+
+        train_min = ranges.get("min")
+        train_max = ranges.get("max")
+        p5 = ranges.get("p5")
+        p95 = ranges.get("p95")
+
+        if train_min is None or train_max is None:
+            continue
+
+        if value < train_min or value > train_max:
+            out_of_range_features.append(feature)
+            if p5 is not None and p95 is not None:
+                if value < p5 or value > p95:
+                    severity = "high"
+                else:
+                    severity = "moderate"
+            else:
+                severity = "moderate"
+
+            warnings_list.append({
+                "feature": feature,
+                "value": value,
+                "training_min": train_min,
+                "training_max": train_max,
+                "training_p5": p5,
+                "training_p95": p95,
+                "severity": severity,
+                "direction": "below" if value < train_min else "above",
+            })
+
+    return {
+        "is_extrapolated": len(out_of_range_features) > 0,
+        "warnings": warnings_list,
+        "out_of_range_features": out_of_range_features,
+    }
 
 
 def conservative_upper_prediction(

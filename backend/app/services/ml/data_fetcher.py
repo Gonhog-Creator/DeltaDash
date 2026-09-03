@@ -201,11 +201,15 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
         ammunition = all_ammunition.get(caliber)
         
         # Map trauma_qualitative to perforated
-        perforated = 0
+        # Use None (missing) when trauma_qualitative is not recorded, so the
+        # classifier training excludes unknown shots rather than treating them as negatives.
+        perforated = None
         if shot_data_record.trauma_qualitative:
             trauma_lower = shot_data_record.trauma_qualitative.lower()
             if 'punct' in trauma_lower or 'perfor' in trauma_lower or 'penetr' in trauma_lower:
                 perforated = 1
+            elif 'no punct' in trauma_lower or 'no perfor' in trauma_lower or 'no penetr' in trauma_lower or 'sin perfor' in trauma_lower or 'no paso' in trauma_lower:
+                perforated = 0
         
         row = {
             'vest_code': vest.vest_code if vest else None,

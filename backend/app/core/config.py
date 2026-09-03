@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000,https://deltadash-production.up.railway.app"
-    VERSION: str = "1.0.10"
+    VERSION: str = "1.1.0"
     
     # Storage configuration
     USE_RAILWAY_STORAGE: bool = False  # Set to True to use Railway storage

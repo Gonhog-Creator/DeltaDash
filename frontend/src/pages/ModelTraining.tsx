@@ -4,6 +4,7 @@ import { apiClient } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AnchorPointsTab } from '../components/AnchorPointsTab';
+import { TestPlannerTab } from '../components/TestPlannerTab';
 import Plot from 'react-plotly.js';
 
 const API_BASE_URL = import.meta.env.DEV
@@ -41,7 +42,7 @@ export function ModelTraining() {
   // Model Health state - initialize from URL query param
   const searchParams = new URLSearchParams(location.search);
   const tabParam = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState<'training' | 'health' | 'anchor'>(tabParam === 'health' ? 'health' : tabParam === 'anchor' ? 'anchor' : 'training');
+  const [activeTab, setActiveTab] = useState<'training' | 'health' | 'anchor' | 'planner'>(tabParam === 'health' ? 'health' : tabParam === 'anchor' ? 'anchor' : tabParam === 'planner' ? 'planner' : 'training');
   const [selectedModelVersion, setSelectedModelVersion] = useState<string>('');
   const [selectedProtocol, setSelectedProtocol] = useState<string>('all');
   const [selectedVests, setSelectedVests] = useState<string[]>([]);
@@ -542,6 +543,8 @@ export function ModelTraining() {
       params.set('tab', 'health');
     } else if (activeTab === 'anchor') {
       params.set('tab', 'anchor');
+    } else if (activeTab === 'planner') {
+      params.set('tab', 'planner');
     } else {
       params.delete('tab');
     }
@@ -1799,12 +1802,22 @@ export function ModelTraining() {
             >
               Anchor Points
             </button>
+            <button
+              onClick={() => setActiveTab('planner')}
+              className={`${
+                activeTab === 'planner'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              Test Planner
+            </button>
           </nav>
         </div>
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'training' ? renderTrainingTab() : activeTab === 'health' ? renderHealthTab(showAnchorPointDetails, setShowAnchorPointDetails) : <AnchorPointsTab onError={setError} />}
+      {activeTab === 'training' ? renderTrainingTab() : activeTab === 'health' ? renderHealthTab(showAnchorPointDetails, setShowAnchorPointDetails) : activeTab === 'planner' ? <TestPlannerTab selectedModelVersion={selectedModelVersion} modelVersions={modelVersions} onError={setError} /> : <AnchorPointsTab onError={setError} />}
 
       {/* Success Modal */}
       {showSuccessModal && (
@@ -2107,6 +2120,7 @@ export function ModelTraining() {
               <div><strong>Model Name:</strong> {healthStatus.model_name || 'N/A'}</div>
               <div><strong>Status:</strong> {healthStatus.status}</div>
               <div><strong>Version:</strong> {healthStatus.version || 'N/A'}</div>
+              <div><strong>App Version:</strong> {healthStatus.app_version || 'N/A'}</div>
               <div><strong>Trained At:</strong> {healthStatus.trained_at ? new Date(healthStatus.trained_at).toLocaleString() : 'N/A'}</div>
               <div><strong>Feature Count:</strong> {healthStatus.feature_count}</div>
               <div><strong>Training Data Count:</strong> {healthStatus.shot_count}</div>

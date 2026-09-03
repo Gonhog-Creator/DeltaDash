@@ -22,6 +22,7 @@ class ModelRun(Base):
     artifact_path = Column(String)
     model_file = Column(LargeBinary, nullable=True)
     preprocessor_file = Column(LargeBinary, nullable=True)
+    classifier_file = Column(LargeBinary, nullable=True)
     notes = Column(String)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

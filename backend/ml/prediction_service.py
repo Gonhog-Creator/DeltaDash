@@ -138,6 +138,7 @@ class PredictionService:
             'feature_columns': metadata.get('feature_columns', []),
             'version': metadata.get('version', 'unknown'),
             'use_log_transform': use_log_transform,
+            'training_ranges': metadata.get('training_ranges', {}),
         }
     
     def predict_bfd_for_protocol(self, 
@@ -180,6 +181,7 @@ class PredictionService:
         scaler = model_data['scaler']
         feature_columns = model_data['feature_columns']
         use_log_transform = model_data.get('use_log_transform', False)
+        training_ranges = model_data.get('training_ranges', {})
 
         # Determine which levels to process
         if level_index is not None:
@@ -283,18 +285,8 @@ class PredictionService:
                             }
                         
                             # Convert to DataFrame and apply engineering features
-                            df = pd.DataFrame([features])
-                            df = add_engineered_features(df, material_properties, validate=False)
-
-                            # Encode categorical features (simple label encoding)
-                            categorical_cols = df.select_dtypes(include=['object']).columns
-                            for col in categorical_cols:
-                                df[col] = pd.factorize(df[col].astype(str))[0]
-
-                            # Ensure all required features are present
-                            for col in feature_columns:
-                                if col not in df.columns:
-                                    df[col] = 0
+                            from app.services.ml.ballistic_ml import prepare_single_input
+                            df = prepare_single_input(features, material_properties, validate=False)
 
                             # Reorder columns to match training data
                             df = df[feature_columns]
@@ -328,6 +320,10 @@ class PredictionService:
                             comparable_shot_count = self._count_comparable_shots(features)
                             extrapolation_warning = comparable_shot_count < 10
 
+                            # Check feature-level extrapolation against training ranges
+                            from app.services.ml.ballistic_ml import check_extrapolation
+                            extrap_result = check_extrapolation(df, training_ranges)
+
                             prediction_result = {
                                 'shot_number': shot_num + 1,
                                 'level_name': level_name,
@@ -344,7 +340,9 @@ class PredictionService:
                                 'confidence_interval_low_mm': confidence_interval_low_mm,
                                 'confidence_interval_high_mm': confidence_interval_high_mm,
                                 'comparable_shot_count': comparable_shot_count,
-                                'extrapolation_warning': extrapolation_warning,
+                                'extrapolation_warning': extrapolation_warning or extrap_result['is_extrapolated'],
+                                'extrapolation_details': extrap_result['warnings'],
+                                'out_of_range_features': extrap_result['out_of_range_features'],
                             }
 
                             all_predictions.append(prediction_result)
@@ -435,13 +433,8 @@ class PredictionService:
                     df = pd.DataFrame([features])
                     df = add_engineered_features(df, material_properties, validate=False)
                     
-                    categorical_cols = df.select_dtypes(include=['object']).columns
-                    for col in categorical_cols:
-                        df[col] = pd.factorize(df[col].astype(str))[0]
-                    
-                    for col in feature_columns:
-                        if col not in df.columns:
-                            df[col] = 0
+                    from app.services.ml.ballistic_ml import prepare_single_input
+                    df = prepare_single_input(features, material_properties, validate=False)
                     
                     df = df[feature_columns]
                     features_scaled = scaler.transform(df)
@@ -516,6 +509,7 @@ class PredictionService:
         scaler = model_data['scaler']
         feature_columns = model_data['feature_columns']
         use_log_transform = model_data.get('use_log_transform', False)
+        training_ranges = model_data.get('training_ranges', {})
 
         # Determine which levels to process
         if level_index is not None:
@@ -613,18 +607,8 @@ class PredictionService:
                             }
 
                             # Convert to DataFrame and apply engineering features
-                            df = pd.DataFrame([features])
-                            df = add_engineered_features(df, material_properties, validate=False)
-
-                            # Encode categorical features (simple label encoding)
-                            categorical_cols = df.select_dtypes(include=['object']).columns
-                            for col in categorical_cols:
-                                df[col] = pd.factorize(df[col].astype(str))[0]
-
-                            # Ensure all required features are present
-                            for col in feature_columns:
-                                if col not in df.columns:
-                                    df[col] = 0
+                            from app.services.ml.ballistic_ml import prepare_single_input
+                            df = prepare_single_input(features, material_properties, validate=False)
 
                             # Reorder columns to match training data
                             df = df[feature_columns]
@@ -658,6 +642,10 @@ class PredictionService:
                             comparable_shot_count = self._count_comparable_shots(features)
                             extrapolation_warning = comparable_shot_count < 10
 
+                            # Check feature-level extrapolation against training ranges
+                            from app.services.ml.ballistic_ml import check_extrapolation
+                            extrap_result = check_extrapolation(df, training_ranges)
+
                             prediction_result = {
                                 'shot_number': shot_num + 1,
                                 'level_name': level_name,
@@ -674,7 +662,9 @@ class PredictionService:
                                 'confidence_interval_low_mm': confidence_interval_low_mm,
                                 'confidence_interval_high_mm': confidence_interval_high_mm,
                                 'comparable_shot_count': comparable_shot_count,
-                                'extrapolation_warning': extrapolation_warning,
+                                'extrapolation_warning': extrapolation_warning or extrap_result['is_extrapolated'],
+                                'extrapolation_details': extrap_result['warnings'],
+                                'out_of_range_features': extrap_result['out_of_range_features'],
                             }
 
                             all_predictions.append(prediction_result)
@@ -765,13 +755,8 @@ class PredictionService:
                     df = pd.DataFrame([features])
                     df = add_engineered_features(df, material_properties, validate=False)
 
-                    categorical_cols = df.select_dtypes(include=['object']).columns
-                    for col in categorical_cols:
-                        df[col] = pd.factorize(df[col].astype(str))[0]
-
-                    for col in feature_columns:
-                        if col not in df.columns:
-                            df[col] = 0
+                    from app.services.ml.ballistic_ml import prepare_single_input
+                    df = prepare_single_input(features, material_properties, validate=False)
 
                     df = df[feature_columns]
                     features_scaled = scaler.transform(df)
@@ -836,6 +821,7 @@ class PredictionService:
         model = model_data['model']
         scaler = model_data['scaler']
         feature_columns = model_data['feature_columns']
+        training_ranges = model_data.get('training_ranges', {})
         
         # Get vest and ammunition
         vest = self.db.query(Vest).filter(Vest.vest_code == vest_id).first()
@@ -858,20 +844,10 @@ class PredictionService:
         # Extract features
         features = self.feature_engineer.extract_features_for_shot(mock_shot)
         
-        # Convert to DataFrame
-        import pandas as pd
-        df = pd.DataFrame([features])
-        
-        # Encode categorical features (simplified - use same encoding as training)
-        categorical_cols = df.select_dtypes(include=['object']).columns
-        for col in categorical_cols:
-            # For now, use simple label encoding
-            df[col] = pd.factorize(df[col].astype(str))[0]
-        
-        # Ensure all required features are present
-        for col in feature_columns:
-            if col not in df.columns:
-                df[col] = 0
+        # Convert to DataFrame and prepare using same pipeline as training
+        from app.services.ml.ballistic_ml import prepare_single_input, fetch_material_properties
+        material_properties = fetch_material_properties(self.db)
+        df = prepare_single_input(features, material_properties, validate=False)
         
         # Reorder columns to match training data
         df = df[feature_columns]
@@ -890,13 +866,18 @@ class PredictionService:
         # Compare input features to training data distribution
         comparable_shot_count = self._count_comparable_shots(features)
         extrapolation_warning = comparable_shot_count < 10
-        
+
+        from app.services.ml.ballistic_ml import check_extrapolation
+        extrap_result = check_extrapolation(df, training_ranges)
+
         result = {
             'predicted_bfd_mm': float(prediction),
             'confidence_interval_low_mm': float(prediction - confidence_interval),
             'confidence_interval_high_mm': float(prediction + confidence_interval),
             'comparable_shot_count': comparable_shot_count,
-            'extrapolation_warning': extrapolation_warning,
+            'extrapolation_warning': extrapolation_warning or extrap_result['is_extrapolated'],
+            'extrapolation_details': extrap_result['warnings'],
+            'out_of_range_features': extrap_result['out_of_range_features'],
             'feature_importance': model_data.get('feature_importance', {}),
             'model_version': model_data.get('version', 'unknown')
         }

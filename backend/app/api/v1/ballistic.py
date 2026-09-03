@@ -167,6 +167,20 @@ class ProtocolPredictionInput(BaseModel):
     level_index: Optional[int] = Field(None, examples=[0, 1, 2])
 
 
+class RecommendTestsRequest(BaseModel):
+    """Request body for test recommendation."""
+    protocol_id: str = Field(..., examples=["uuid-of-protocol"])
+    version: Optional[str] = None
+    selected_material_ids: Optional[list[str]] = None
+    vest_type: Optional[str] = Field("soft", examples=["soft", "hard"])
+    threat_level: Optional[str] = None
+    max_layers: int = Field(60, ge=5, le=200)
+    max_candidates: int = Field(20, ge=1, le=100)
+    include_swap_variants: bool = True
+    include_layer_variants: bool = True
+    include_user_constrained: bool = True
+
+
 class PredictionResponse(BaseModel):
     predicted_backface_deformation_mm: Optional[float]
     estimated_backface_absolute_error_mm: Optional[float]
@@ -189,6 +203,7 @@ class HealthResponse(BaseModel):
     model_name: Optional[str] = None
     trained_at: Optional[str]
     version: Optional[str]
+    app_version: Optional[str] = None
     regression_targets: list
     classification_targets: list
     feature_count: int
@@ -1183,6 +1198,7 @@ def health_version(version: str, db: Session = Depends(get_db)):
         model_name=metadata.get("model_name"),
         trained_at=metadata.get("trained_at"),
         version=metadata.get("version"),
+        app_version=metadata.get("app_version"),
         regression_targets=metadata.get("regression_targets", []),
         classification_targets=metadata.get("classification_targets", []),
         feature_count=len(metadata.get("feature_columns", [])),
@@ -1696,3 +1712,38 @@ def download_model(version: str, background_tasks: BackgroundTasks):
         # Clean up on error
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Failed to create zip file: {str(e)}")
+
+
+@router.post("/recommend-tests")
+def recommend_tests_endpoint(request: RecommendTestsRequest, db: Session = Depends(get_db)):
+    """
+    Recommend which vest configurations to physically test next.
+
+    Generates candidate configurations using material swaps, layer count
+    variations, and user-constrained generation, then scores them by
+    prediction uncertainty, feature-space distance, data sparsity, and
+    practical relevance to produce a ranked list of recommended tests.
+    """
+    from app.services.ml.test_planner import recommend_tests
+
+    try:
+        result = recommend_tests(
+            db=db,
+            protocol_id=request.protocol_id,
+            version=request.version,
+            selected_material_ids=request.selected_material_ids,
+            vest_type=request.vest_type,
+            threat_level=request.threat_level,
+            max_layers=request.max_layers,
+            max_candidates=request.max_candidates,
+            include_swap_variants=request.include_swap_variants,
+            include_layer_variants=request.include_layer_variants,
+            include_user_constrained=request.include_user_constrained,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Test recommendation failed: {str(e)}")
