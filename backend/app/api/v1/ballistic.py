@@ -30,6 +30,15 @@ router = APIRouter(prefix="/ballistic", tags=["ballistic"])
 # =============================================================================
 trial_results = []
 stop_optimization_flag = False
+optimization_state = {
+    "running": False,
+    "stop_requested": False,
+    "trial_results": [],
+    "starting_model": None,  # {"name": ..., "avg_error": ...} or None for from-scratch
+    "current_trial": 0,
+    "total_trials": 0,
+    "phase": None,  # Current phase description for UI feedback
+}
 
 # =============================================================================
 # Global feature analysis state
@@ -86,17 +95,21 @@ class Hyperparameters(BaseModel):
 
 class FeatureToggles(BaseModel):
     """Toggle switches for feature engineering groups."""
-    kinetic_energy: bool = True
-    composite_thickness: bool = True
-    layer_density: bool = True
-    caliber_features: bool = True
-    areal_density: bool = True
-    vest_composition: bool = True
+    kinetic_energy: bool = False
+    composite_thickness: bool = False
+    layer_density: bool = False
+    caliber_features: bool = False
+    areal_density: bool = False
+    vest_composition: bool = False
     vest_type_interactions: bool = True
     is_female_features: bool = True
     shot_sequence: bool = True
     material_density: bool = True
     velocity_interactions: bool = True
+    vest_construction: bool = True
+    geometry_features: bool = True
+    material_mechanical: bool = False
+    weave_features: bool = False
 
 
 class TrainRequest(BaseModel):
@@ -417,11 +430,7 @@ def analyze_features(db: Session = Depends(get_db), request: Optional[TrainReque
 @router.get("/optimization-status")
 def get_optimization_status():
     """Get current optimization status and trial results."""
-    return {
-        "running": True,
-        "stop_requested": stop_optimization_flag,
-        "trial_results": trial_results
-    }
+    return optimization_state
 
 
 @router.post("/stop-optimization")
@@ -429,6 +438,7 @@ def stop_optimization():
     """Request to stop the current optimization."""
     global stop_optimization_flag
     stop_optimization_flag = True
+    optimization_state["stop_requested"] = True
     return {"status": "stop_requested"}
 
 
@@ -439,26 +449,31 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
     Runs multiple trials to find the best hyperparameters for the model.
     Returns the best parameters found and their performance.
     """
-    try:
-        import optuna
-        from sklearn.model_selection import cross_val_score
-        from app.services.ml.ballistic_ml import train_from_database, fetch_training_data, fetch_material_properties
+    # Track temporary optimization models for cleanup
+    optimization_model_names = []
+    best_trial_metadata = None  # Store metadata from best trial
 
+    global stop_optimization_flag, trial_results
+    stop_optimization_flag = False
+    trial_results = []
+    optimization_state.update({
+        "running": True,
+        "stop_requested": False,
+        "trial_results": [],
+        "starting_model": None,
+        "current_trial": 0,
+        "total_trials": 50,
+        "phase": "Initializing...",
+    })
+
+    try:
+        from app.services.ml.ballistic_ml import train_from_database, fetch_training_data, fetch_material_properties
 
         # Get base parameters from request
         use_log_transform = request.use_log_transform if request else True
         feature_toggles = request.feature_toggles.dict() if request and request.feature_toggles else None
         ignore_anchor_points = request.ignore_anchor_points if request else False
         n_trials = 50  # Number of optimization trials
-
-        # Track temporary optimization models for cleanup
-        optimization_model_names = []
-        best_trial_metadata = None  # Store metadata from best trial
-
-        # Reset stop flag and trial results
-        global stop_optimization_flag, trial_results
-        stop_optimization_flag = False
-        trial_results = []
 
         # Find model with lowest avg error from model library as starting point
         # Prefer models with hyperparameters when there's a tie
@@ -486,12 +501,17 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                         fs_metadata = load_metadata()
                         if fs_metadata and fs_metadata.get('hyperparameters'):
                             starting_hyperparams = fs_metadata['hyperparameters']
-                        else:
-                            pass
             except Exception as e:
-                pass
+                import traceback
+                traceback.print_exc()
+
+            # Record starting model info for the frontend
+            optimization_state["starting_model"] = {
+                "name": best_existing_model.model_name or best_existing_model.version,
+                "avg_error": best_existing_model.training_avg_error,
+            }
         else:
-            pass
+            optimization_state["starting_model"] = None
 
         # Fetch training data once
         material_properties = fetch_material_properties(db)
@@ -508,98 +528,306 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
             current_best_hyperparams = starting_hyperparams.copy()
             current_best_value = float('inf')
             best_trial_metadata = None
-            
-            # First, evaluate the starting point
-            try:
-                metadata, health_result = train_from_database(
-                    db,
-                    model_name=f"optuna_trial_0",
-                    use_log_transform=use_log_transform,
-                    hyperparameters=current_best_hyperparams,
-                    feature_toggles=feature_toggles,
-                    ignore_anchor_points=ignore_anchor_points,
-                )
-                # Track version for cleanup
-                if metadata and metadata.get('version'):
-                    optimization_model_names.append(metadata['version'])
-                
-                # Get training_avg_error from database for consistency
-                if metadata and metadata.get('version'):
-                    model_run = db.query(ModelRun).filter(ModelRun.version == metadata['version']).first()
-                    if model_run and model_run.training_avg_error is not None:
-                        mae = model_run.training_avg_error
-                    else:
-                        mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
-                else:
-                    mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
-                
-                current_best_value = mae
-                trial_results.append({"trial": 0, "error": mae})
-                best_trial_metadata = metadata
-                best_trial_metadata['health_check_error'] = mae
-            except Exception as e:
-                current_best_value = float('inf')
-            
-            # Hill-climbing loop
-            for trial_num in range(1, n_trials + 1):
-                if stop_optimization_flag:
-                    break
-                
-                
-                # Generate very small random variations around current best
-                import random
-                h = current_best_hyperparams
-                hyperparams = {
-                    'n_estimators': max(10, int(h['n_estimators'] * random.uniform(0.98, 1.02))),
-                    'max_depth': max(1, h['max_depth'] + random.choice([-1, 0, 1]) if random.random() < 0.3 else h['max_depth']),
-                    'learning_rate': h['learning_rate'] * random.uniform(0.95, 1.05),
-                    'subsample': max(0.1, min(1.0, h['subsample'] + random.uniform(-0.01, 0.01))),
-                    'colsample_bytree': max(0.1, min(1.0, h['colsample_bytree'] + random.uniform(-0.01, 0.01))),
-                    'min_child_weight': max(0, h['min_child_weight'] + random.choice([-1, 0, 1]) if random.random() < 0.3 else h['min_child_weight']),
-                    'reg_lambda': max(0.0, h['reg_lambda'] + random.uniform(-0.1, 0.1)),
-                    'reg_alpha': max(0.0, h['reg_alpha'] + random.uniform(-0.1, 0.1)),
-                    'gamma': max(0.0, h['gamma'] + random.uniform(-0.1, 0.1)),
-                }
-                
+            trials_since_improvement = 0
+
+            # --- Phase 1: Fast rough exploration on representative vest ---
+            # Pick the vest that is most representative of the full dataset
+            phase1_df = df
+            representative_vest = None
+            if 'vest_composition' in df.columns and len(df) > 100:
+                try:
+                    # Score each vest by how close its features are to the dataset median/mode
+                    vest_groups = df.groupby('vest_composition')
+                    vest_scores = {}
+                    # Dataset-level reference values
+                    dataset_vest_type_mode = df['vest_type'].mode().iloc[0] if 'vest_type' in df.columns else None
+                    dataset_threat_mode = df['threat_level'].mode().iloc[0] if 'threat_level' in df.columns else None
+                    dataset_velocity_median = df['impact_velocity_mps'].median() if 'impact_velocity_mps' in df.columns else None
+                    dataset_layers_median = df['number_of_layers'].median() if 'number_of_layers' in df.columns else None
+                    dataset_material_mode = df['material_type'].mode().iloc[0] if 'material_type' in df.columns else None
+
+                    for vest_comp, group in vest_groups:
+                        if len(group) < 5:
+                            continue
+                        score = 0
+                        # Vest type match
+                        if dataset_vest_type_mode and 'vest_type' in group.columns:
+                            vt = group['vest_type'].mode().iloc[0] if not group['vest_type'].isna().all() else None
+                            if vt == dataset_vest_type_mode:
+                                score += 3
+                        # Threat level match
+                        if dataset_threat_mode and 'threat_level' in group.columns:
+                            tl = group['threat_level'].mode().iloc[0] if not group['threat_level'].isna().all() else None
+                            if tl == dataset_threat_mode:
+                                score += 2
+                        # Velocity closeness
+                        if dataset_velocity_median and 'impact_velocity_mps' in group.columns:
+                            v = group['impact_velocity_mps'].median()
+                            if v and abs(v - dataset_velocity_median) < 50:
+                                score += 2
+                        # Layer count closeness
+                        if dataset_layers_median and 'number_of_layers' in group.columns:
+                            layers = group['number_of_layers'].median()
+                            if layers and abs(layers - dataset_layers_median) <= 5:
+                                score += 2
+                        # Material type match
+                        if dataset_material_mode and 'material_type' in group.columns:
+                            mt = group['material_type'].mode().iloc[0] if not group['material_type'].isna().all() else None
+                            if mt == dataset_material_mode:
+                                score += 2
+                        # Prefer vests with more shots (more training data)
+                        score += min(len(group) / 10, 3)
+                        vest_scores[vest_comp] = score
+
+                    if vest_scores:
+                        representative_vest = max(vest_scores, key=vest_scores.get)
+                        phase1_df = df[df['vest_composition'] == representative_vest].copy()
+                        optimization_state["phase"] = f"Phase 1: Fast exploration on representative vest ({len(phase1_df)} samples)"
+                        optimization_state["total_trials"] = n_trials
+                except Exception:
+                    phase1_df = df  # Fallback to full dataset
+
+            phase1_trials = min(30, n_trials // 2) if representative_vest else 0
+            phase2_trials = n_trials - phase1_trials
+
+            # Phase 1: Evaluate starting point on representative vest
+            if phase1_trials > 0:
                 try:
                     metadata, health_result = train_from_database(
                         db,
-                        model_name=f"optuna_trial_{trial_num}",
+                        model_name=f"optuna_trial_0",
+                        use_log_transform=use_log_transform,
+                        hyperparameters=current_best_hyperparams,
+                        feature_toggles=feature_toggles,
+                        ignore_anchor_points=ignore_anchor_points,
+                        skip_health_check=True,
+                        preloaded_df=phase1_df,
+                        preloaded_material_properties=material_properties,
+                        skip_filesystem_save=True,
+                    )
+                    if metadata and metadata.get('version'):
+                        optimization_model_names.append(metadata['version'])
+                    mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mape', float('inf'))
+                    current_best_value = mae
+                    trial_results.append({"trial": 0, "error": mae})
+                    optimization_state["trial_results"] = trial_results
+                    optimization_state["current_trial"] = 0
+                    best_trial_metadata = metadata
+                    best_trial_metadata['health_check_error'] = mae
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    current_best_value = float('inf')
+
+                # Phase 1 hill-climbing loop
+                for trial_num in range(1, phase1_trials + 1):
+                    if stop_optimization_flag:
+                        optimization_state["stop_requested"] = True
+                        break
+                    optimization_state["current_trial"] = trial_num
+
+                    import random
+                    h = current_best_hyperparams
+                    # Phase 1 always uses aggressive scale
+                    scale = 3.0
+                    if trials_since_improvement >= 5:
+                        scale *= 2.0
+                    if trials_since_improvement >= 10:
+                        scale *= 2.0
+
+                    hyperparams = {
+                        'n_estimators': max(10, int(h['n_estimators'] * random.uniform(1 - 0.02 * scale, 1 + 0.02 * scale))),
+                        'max_depth': max(1, h['max_depth'] + random.choice([-1, 0, 1]) if random.random() < 0.3 * scale else h['max_depth']),
+                        'learning_rate': h['learning_rate'] * random.uniform(1 - 0.05 * scale, 1 + 0.05 * scale),
+                        'subsample': max(0.1, min(1.0, h['subsample'] + random.uniform(-0.01 * scale, 0.01 * scale))),
+                        'colsample_bytree': max(0.1, min(1.0, h['colsample_bytree'] + random.uniform(-0.01 * scale, 0.01 * scale))),
+                        'min_child_weight': max(0, h['min_child_weight'] + random.choice([-1, 0, 1]) if random.random() < 0.3 * scale else h['min_child_weight']),
+                        'reg_lambda': max(0.0, h['reg_lambda'] + random.uniform(-0.1 * scale, 0.1 * scale)),
+                        'reg_alpha': max(0.0, h['reg_alpha'] + random.uniform(-0.1 * scale, 0.1 * scale)),
+                        'gamma': max(0.0, h['gamma'] + random.uniform(-0.1 * scale, 0.1 * scale)),
+                    }
+
+                    try:
+                        metadata, health_result = train_from_database(
+                            db,
+                            model_name=f"optuna_p1_trial_{trial_num}",
+                            use_log_transform=use_log_transform,
+                            hyperparameters=hyperparams,
+                            feature_toggles=feature_toggles,
+                            ignore_anchor_points=ignore_anchor_points,
+                            skip_health_check=True,
+                            preloaded_df=phase1_df,
+                            preloaded_material_properties=material_properties,
+                            skip_filesystem_save=True,
+                        )
+                        if metadata and metadata.get('version'):
+                            optimization_model_names.append(metadata['version'])
+                        mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mape', float('inf'))
+                        trial_results.append({"trial": trial_num, "error": mae})
+                        optimization_state["trial_results"] = trial_results
+
+                        if mae < current_best_value:
+                            improvement_threshold = current_best_value * 0.01
+                            is_meaningful = mae < current_best_value - improvement_threshold
+                            current_best_value = mae
+                            current_best_hyperparams = hyperparams.copy()
+                            best_trial_metadata = metadata
+                            best_trial_metadata['health_check_error'] = mae
+                            if is_meaningful:
+                                trials_since_improvement = 0
+                            else:
+                                trials_since_improvement += 1
+                        else:
+                            trials_since_improvement += 1
+                    except Exception as e:
+                        import traceback
+                        traceback.print_exc()
+                        trial_results.append({"trial": trial_num, "error": float('inf')})
+                        optimization_state["trial_results"] = trial_results
+
+                # --- Transition: re-evaluate best params on full dataset ---
+                if not stop_optimization_flag and best_trial_metadata:
+                    optimization_state["phase"] = "Phase 2: Fine-tuning on full dataset"
+                    try:
+                        metadata, health_result = train_from_database(
+                            db,
+                            model_name=f"optuna_p2_baseline",
+                            use_log_transform=use_log_transform,
+                            hyperparameters=current_best_hyperparams,
+                            feature_toggles=feature_toggles,
+                            ignore_anchor_points=ignore_anchor_points,
+                            skip_health_check=True,
+                            preloaded_df=df,
+                            preloaded_material_properties=material_properties,
+                            skip_filesystem_save=True,
+                        )
+                        if metadata and metadata.get('version'):
+                            optimization_model_names.append(metadata['version'])
+                        mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mape', float('inf'))
+                        current_best_value = mae
+                        best_trial_metadata = metadata
+                        best_trial_metadata['health_check_error'] = mae
+                        trials_since_improvement = 0
+                    except Exception as e:
+                        import traceback
+                        traceback.print_exc()
+            else:
+                # No phase 1 (not enough data) — evaluate starting point on full dataset
+                try:
+                    metadata, health_result = train_from_database(
+                        db,
+                        model_name=f"optuna_trial_0",
+                        use_log_transform=use_log_transform,
+                        hyperparameters=current_best_hyperparams,
+                        feature_toggles=feature_toggles,
+                        ignore_anchor_points=ignore_anchor_points,
+                        skip_health_check=True,
+                        preloaded_df=df,
+                        preloaded_material_properties=material_properties,
+                        skip_filesystem_save=True,
+                    )
+                    if metadata and metadata.get('version'):
+                        optimization_model_names.append(metadata['version'])
+                    mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mape', float('inf'))
+                    current_best_value = mae
+                    trial_results.append({"trial": 0, "error": mae})
+                    optimization_state["trial_results"] = trial_results
+                    optimization_state["current_trial"] = 0
+                    best_trial_metadata = metadata
+                    best_trial_metadata['health_check_error'] = mae
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    current_best_value = float('inf')
+
+            # --- Phase 2: Fine-tuning on full dataset ---
+            phase2_start = phase1_trials + 1 if phase1_trials > 0 else 1
+            for trial_num in range(phase2_start, phase2_start + phase2_trials):
+                if stop_optimization_flag:
+                    optimization_state["stop_requested"] = True
+                    break
+                optimization_state["current_trial"] = trial_num
+
+                import random
+                h = current_best_hyperparams
+
+                # Adaptive scale based on current error
+                if current_best_value > 20:
+                    scale = 3.0
+                elif current_best_value > 10:
+                    scale = 1.5
+                else:
+                    scale = 1.0
+
+                if trials_since_improvement >= 5:
+                    scale *= 2.0
+                if trials_since_improvement >= 10:
+                    scale *= 2.0
+
+                hyperparams = {
+                    'n_estimators': max(10, int(h['n_estimators'] * random.uniform(1 - 0.02 * scale, 1 + 0.02 * scale))),
+                    'max_depth': max(1, h['max_depth'] + random.choice([-1, 0, 1]) if random.random() < 0.3 * scale else h['max_depth']),
+                    'learning_rate': h['learning_rate'] * random.uniform(1 - 0.05 * scale, 1 + 0.05 * scale),
+                    'subsample': max(0.1, min(1.0, h['subsample'] + random.uniform(-0.01 * scale, 0.01 * scale))),
+                    'colsample_bytree': max(0.1, min(1.0, h['colsample_bytree'] + random.uniform(-0.01 * scale, 0.01 * scale))),
+                    'min_child_weight': max(0, h['min_child_weight'] + random.choice([-1, 0, 1]) if random.random() < 0.3 * scale else h['min_child_weight']),
+                    'reg_lambda': max(0.0, h['reg_lambda'] + random.uniform(-0.1 * scale, 0.1 * scale)),
+                    'reg_alpha': max(0.0, h['reg_alpha'] + random.uniform(-0.1 * scale, 0.1 * scale)),
+                    'gamma': max(0.0, h['gamma'] + random.uniform(-0.1 * scale, 0.1 * scale)),
+                }
+
+                try:
+                    # Every 5th trial, run the real health check for accurate test error
+                    run_health_check = (trial_num % 5 == 0)
+                    metadata, health_result = train_from_database(
+                        db,
+                        model_name=f"optuna_p2_trial_{trial_num}",
                         use_log_transform=use_log_transform,
                         hyperparameters=hyperparams,
                         feature_toggles=feature_toggles,
                         ignore_anchor_points=ignore_anchor_points,
+                        skip_health_check=not run_health_check,
+                        preloaded_df=df,
+                        preloaded_material_properties=material_properties,
+                        skip_filesystem_save=True,
                     )
-                    # Track version for cleanup
                     if metadata and metadata.get('version'):
                         optimization_model_names.append(metadata['version'])
                     
-                    # Get training_avg_error from database for consistency
-                    if metadata and metadata.get('version'):
-                        model_run = db.query(ModelRun).filter(ModelRun.version == metadata['version']).first()
-                        if model_run and model_run.training_avg_error is not None:
-                            mae = model_run.training_avg_error
-                        else:
-                            mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
+                    # Use health check error when available, otherwise training MAPE
+                    if run_health_check and health_result and health_result.get('overall_average_error') is not None:
+                        mae = health_result['overall_average_error']
                     else:
-                        mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
+                        mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mape', float('inf'))
                     
                     trial_results.append({"trial": trial_num, "error": mae})
-                    
-                    # If better, update best and continue from there
+                    optimization_state["trial_results"] = trial_results
+
                     if mae < current_best_value:
+                        improvement_threshold = current_best_value * 0.01
+                        is_meaningful = mae < current_best_value - improvement_threshold
                         current_best_value = mae
                         current_best_hyperparams = hyperparams.copy()
                         best_trial_metadata = metadata
                         best_trial_metadata['health_check_error'] = mae
+                        if is_meaningful:
+                            trials_since_improvement = 0
+                        else:
+                            trials_since_improvement += 1
+                    else:
+                        trials_since_improvement += 1
                 except Exception as e:
+                    import traceback
+                    traceback.print_exc()
                     trial_results.append({"trial": trial_num, "error": float('inf')})
+                    optimization_state["trial_results"] = trial_results
             
             best_params = current_best_hyperparams
             best_value = current_best_value
             best_hyperparameters = best_params
         else:
             # Use Optuna when no starting point
+            import optuna
             sampler = optuna.samplers.TPESampler(multivariate=True, n_startup_trials=10)
             study = optuna.create_study(direction='minimize', sampler=sampler)
 
@@ -626,6 +854,8 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
 
                 # Train model with these hyperparameters
                 try:
+                    # Every 5th trial, run the real health check for accurate test error
+                    run_health_check = (trial.number % 5 == 0 and trial.number > 0)
                     metadata, health_result = train_from_database(
                         db,
                         model_name=f"optuna_trial_{trial.number}",
@@ -633,25 +863,26 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                         hyperparameters=hyperparams,
                         feature_toggles=feature_toggles,
                         ignore_anchor_points=ignore_anchor_points,
+                        skip_health_check=not run_health_check,
+                        preloaded_df=df,
+                        preloaded_material_properties=material_properties,
+                        skip_filesystem_save=True,
                     )
 
                     # Track version for cleanup
                     if metadata and metadata.get('version'):
                         optimization_model_names.append(metadata['version'])
 
-                    # Get health check % avg error from ModelRun
-                    health_check_error = None
-                    if metadata and metadata.get('version'):
-                        model_run = db.query(ModelRun).filter(ModelRun.version == metadata['version']).first()
-                        if model_run and model_run.training_avg_error is not None:
-                            health_check_error = model_run.training_avg_error
-
-                    # Use health check error as objective, fall back to MAE if not available
-                    if health_check_error is not None:
-                        objective_value = health_check_error
+                    # Use health check error when available, otherwise training MAPE
+                    if run_health_check and health_result and health_result.get('overall_average_error') is not None:
+                        objective_value = health_result['overall_average_error']
                     else:
-                        mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
-                        objective_value = mae
+                        mape = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mape')
+                        if mape is not None:
+                            objective_value = mape
+                        else:
+                            mae = metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))
+                            objective_value = mae
 
 
                     # Add trial result to global list
@@ -660,12 +891,14 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                         "trial": trial.number,
                         "error": objective_value
                     })
+                    optimization_state["trial_results"] = trial_results
+                    optimization_state["current_trial"] = trial.number
 
                     # Store metadata if this is the best trial so far
                     nonlocal best_trial_metadata
                     if best_trial_metadata is None or objective_value < (best_trial_metadata.get('health_check_error', float('inf')) if best_trial_metadata.get('health_check_error') else best_trial_metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}).get('mae', float('inf'))):
                         best_trial_metadata = metadata
-                        best_trial_metadata['health_check_error'] = health_check_error
+                        best_trial_metadata['health_check_error'] = objective_value
 
                     return objective_value
                 except Exception as e:
@@ -694,6 +927,31 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
                 'reg_alpha': best_params['reg_alpha'],
                 'gamma': best_params['gamma'],
             }
+
+        # Retrain the best model with full health check for accurate metrics
+        # Skip if stopped — just use the best trial's training MAPE
+        if best_trial_metadata and best_hyperparameters and not stop_optimization_flag:
+            optimization_state["phase"] = "Running final health check on best model..."
+            try:
+                final_metadata, final_health_result = train_from_database(
+                    db,
+                    model_name=f"optuna_best_final",
+                    use_log_transform=use_log_transform,
+                    hyperparameters=best_hyperparameters,
+                    feature_toggles=feature_toggles,
+                    ignore_anchor_points=ignore_anchor_points,
+                    preloaded_df=df,
+                    preloaded_material_properties=material_properties,
+                )
+                if final_metadata and final_metadata.get('version'):
+                    optimization_model_names.append(final_metadata['version'])
+                # Use the final model's health check result
+                if final_health_result and final_health_result.get('overall_average_error') is not None:
+                    best_trial_metadata = final_metadata
+                    best_trial_metadata['health_check_error'] = final_health_result['overall_average_error']
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
 
         # Extract additional metrics from best trial
         best_metrics = best_trial_metadata.get('metrics', {}).get('backface_deformation_mm_regression', {}) if best_trial_metadata else {}
@@ -728,12 +986,27 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Optimization failed: {error_msg}")
     finally:
-        # Delete optimization trial models from the library
-        for version in optimization_model_names:
+        optimization_state["phase"] = "Cleaning up trial models..."
+        optimization_state["running"] = False
+        # Batch delete optimization trial models from the database
+        if optimization_model_names:
             try:
-                delete_model_version(version, db)
-            except Exception as cleanup_error:
-                pass
+                db.query(ModelRun).filter(
+                    ModelRun.version.in_(optimization_model_names)
+                ).delete(synchronize_session=False)
+                db.commit()
+            except Exception:
+                db.rollback()
+            # Clean up filesystem dirs (batch, best-effort)
+            import shutil
+            for version in optimization_model_names:
+                version_dir = os.path.join(VERSIONS_DIR, version)
+                if os.path.exists(version_dir):
+                    try:
+                        shutil.rmtree(version_dir)
+                    except Exception:
+                        pass
+        optimization_state["phase"] = None
 
 
 @router.post("/train")

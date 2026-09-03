@@ -101,6 +101,23 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
     if not query:
         return pd.DataFrame(), warnings_list
     
+    # Batch fetch all related data to avoid N+1 queries
+    vest_ids = [vest.id for _, _, vest in query if vest]
+    all_vest_layers = db.query(VestLayer).filter(VestLayer.vest_id.in_(vest_ids)).all() if vest_ids else []
+    material_ids = list(set(vl.material_id for vl in all_vest_layers))
+    all_materials = {m.id: m for m in db.query(Material).filter(Material.id.in_(material_ids)).all()} if material_ids else {}
+    vest_layers_by_vest = {}
+    for vl in all_vest_layers:
+        if vl.vest_id not in vest_layers_by_vest:
+            vest_layers_by_vest[vl.vest_id] = []
+        vest_layers_by_vest[vl.vest_id].append(vl)
+
+    geometry_ids = [ts.geometry_id for _, ts, _ in query if ts and ts.geometry_id]
+    all_geometries = {g.id: g for g in db.query(Geometry).filter(Geometry.id.in_(geometry_ids)).all()} if geometry_ids else {}
+
+    calibers = list(set(sd.caliber for sd, _, _ in query if sd.caliber))
+    all_ammunition = {a.caliber: a for a in db.query(Ammunition).filter(Ammunition.caliber.in_(calibers)).all()} if calibers else {}
+
     # Build DataFrame
     rows = []
     layer_counts = []
@@ -123,9 +140,9 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
         has_coating = False
         
         if vest:
-            vest_layers = db.query(VestLayer).filter(VestLayer.vest_id == vest.id).all()
+            vest_layers = vest_layers_by_vest.get(vest.id, [])
             for vl in sorted(vest_layers, key=lambda x: x.layer_index or 0):
-                material = db.query(Material).filter(Material.id == vl.material_id).first()
+                material = all_materials.get(vl.material_id)
                 if material:
                     count = vl.layer_count or 1
                     total_layers += count
@@ -168,7 +185,7 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
         panel_surface_area_m2 = None
         geometry_name = None
         if test_session and test_session.geometry_id:
-            geometry = db.query(Geometry).filter(Geometry.id == test_session.geometry_id).first()
+            geometry = all_geometries.get(test_session.geometry_id)
             if geometry:
                 geometry_name = geometry.name
                 surface_areas = geometry.surface_areas or {}
@@ -181,7 +198,7 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
         
         # Get ammunition info
         caliber = shot_data_record.caliber
-        ammunition = db.query(Ammunition).filter(Ammunition.caliber == caliber).first()
+        ammunition = all_ammunition.get(caliber)
         
         # Map trauma_qualitative to perforated
         perforated = 0
@@ -191,6 +208,8 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
                 perforated = 1
         
         row = {
+            'vest_code': vest.vest_code if vest else None,
+            'protocol': test_session.protocol if test_session else None,
             'vest_composition': vest_composition if vest_composition else None,
             'material_thickness_mm': total_thickness if total_thickness > 0 else None,
             'material_weight_g_m2': total_weight if total_weight > 0 else None,

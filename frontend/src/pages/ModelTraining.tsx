@@ -80,22 +80,21 @@ export function ModelTraining() {
     gamma: 0.0,
   });
   const [featureToggles, setFeatureToggles] = useState({
-    // High impact - keep enabled
+    // Positive impact - enabled by default
     shot_sequence: true,
     velocity_interactions: true,
     vest_type_interactions: true,
+    geometry_features: true,
+    material_density: true,
     is_female_features: true,
-    // Low/negative impact - disable by default (can re-enable manually)
+    vest_construction: true,
+    // Zero/negative impact - disabled by default (can re-enable manually)
     kinetic_energy: false,
     composite_thickness: false,
     layer_density: false,
     caliber_features: false,
     areal_density: false,
     vest_composition: false,
-    material_density: false,
-    // New feature groups - disabled by default for ablation testing
-    vest_construction: false,
-    geometry_features: false,
     material_mechanical: false,
     weave_features: false,
   });
@@ -126,6 +125,8 @@ export function ModelTraining() {
   const [showOptimizationResults, setShowOptimizationResults] = useState(false);
   const [showOptimizationModal, setShowOptimizationModal] = useState(false);
   const [trialResults, setTrialResults] = useState<Array<{trial: number, error: number}>>([]);
+  const [optimizationStartingModel, setOptimizationStartingModel] = useState<any>(undefined);
+  const [optimizationPhase, setOptimizationPhase] = useState<string>('');
 
   // Fetch protocol threat levels on mount
   useEffect(() => {
@@ -239,6 +240,8 @@ export function ModelTraining() {
     setOptimizationLoading(true);
     setShowOptimizationModal(true);
     setTrialResults([]);
+    setOptimizationStartingModel(undefined);
+    setOptimizationPhase('');
     setError(null);
     try {
       const requestBody = {
@@ -254,9 +257,16 @@ export function ModelTraining() {
           if (status.trial_results) {
             setTrialResults(status.trial_results);
           }
+          if (status.starting_model !== undefined) {
+            setOptimizationStartingModel(status.starting_model);
+          }
+          if (status.phase) {
+            setOptimizationPhase(status.phase);
+          }
           // Stop polling if optimization is no longer running
           if (!status.running) {
             clearInterval(interval);
+            setOptimizationPhase('');
           }
         } catch (err) {
           console.error('Failed to fetch optimization status:', err);
@@ -284,7 +294,8 @@ export function ModelTraining() {
   const handleStopOptimization = async () => {
     try {
       await apiClient.post<any>('/api/v1/ballistic/stop-optimization');
-      setShowOptimizationModal(false);
+      // Don't close modal — keep it open to show cleanup status
+      // The polling will detect running=false and the POST will return with results
     } catch (err) {
       console.error('Failed to stop optimization:', err);
     }
@@ -1902,7 +1913,24 @@ export function ModelTraining() {
           <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Hyperparameter Optimization in Progress</h3>
             <div>
-              <p className="mb-4 text-sm text-gray-600">Running Bayesian optimization to find the best hyperparameters...</p>
+              {optimizationStartingModel === null ? (
+                <p className="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
+                  No existing models found in the database. Starting optimization from scratch with wide parameter search (Optuna). This may take longer.
+                </p>
+              ) : optimizationStartingModel ? (
+                <p className="mb-4 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded p-3">
+                  Starting from best existing model: <strong>{optimizationStartingModel.name}</strong>
+                  {optimizationStartingModel.avg_error != null && (
+                    <> (avg error: {optimizationStartingModel.avg_error.toFixed(2)}%)</>
+                  )}
+                  . Using hill-climbing optimization around its hyperparameters.
+                </p>
+              ) : (
+                <p className="mb-4 text-sm text-gray-600">Loading optimization status...</p>
+              )}
+              {optimizationPhase && (
+                <p className="mb-3 text-sm text-gray-500 italic">{optimizationPhase}</p>
+              )}
               {trialResults.length > 0 && (
                 <div className="mt-4">
                   <div className="flex justify-between text-sm mb-2">

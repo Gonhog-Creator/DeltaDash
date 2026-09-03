@@ -341,12 +341,12 @@ def add_engineered_features(
     # Default: all features enabled
     if feature_toggles is None:
         feature_toggles = {
-            'kinetic_energy': True,
-            'composite_thickness': True,
-            'layer_density': True,
-            'caliber_features': True,
-            'areal_density': True,
-            'vest_composition': True,
+            'kinetic_energy': False,
+            'composite_thickness': False,
+            'layer_density': False,
+            'caliber_features': False,
+            'areal_density': False,
+            'vest_composition': False,
             'vest_type_interactions': True,
             'is_female_features': True,
             'shot_sequence': True,
@@ -354,8 +354,8 @@ def add_engineered_features(
             'velocity_interactions': True,
             'vest_construction': True,
             'geometry_features': True,
-            'material_mechanical': True,
-            'weave_features': True,
+            'material_mechanical': False,
+            'weave_features': False,
         }
     df = normalize_column_names(df)
     df = df.copy()
@@ -683,7 +683,8 @@ def build_classifier() -> XGBClassifier:
 
 
 def regression_error_summary(y_true, y_pred) -> Dict[str, Optional[float]]:
-    residuals = np.asarray(y_pred, dtype=float) - np.asarray(y_true, dtype=float)
+    y_true_arr = np.asarray(y_true, dtype=float)
+    residuals = np.asarray(y_pred, dtype=float) - y_true_arr
     absolute_errors = np.abs(residuals)
 
     if len(absolute_errors) == 0:
@@ -695,7 +696,15 @@ def regression_error_summary(y_true, y_pred) -> Dict[str, Optional[float]]:
             "absolute_error_p90": None,
             "absolute_error_p95": None,
             "mean_residual": None,
+            "mape": None,
         }
+
+    # Mean absolute percentage error (skip zero values to avoid div-by-zero)
+    nonzero_mask = y_true_arr != 0
+    if np.any(nonzero_mask):
+        mape = float(np.mean(np.abs(residuals[nonzero_mask] / y_true_arr[nonzero_mask]) * 100))
+    else:
+        mape = None
 
     return {
         "mae": float(np.mean(absolute_errors)),
@@ -705,6 +714,7 @@ def regression_error_summary(y_true, y_pred) -> Dict[str, Optional[float]]:
         "absolute_error_p90": float(np.quantile(absolute_errors, 0.90)),
         "absolute_error_p95": float(np.quantile(absolute_errors, 0.95)),
         "mean_residual": float(np.mean(residuals)),
+        "mape": mape,
     }
 
 
@@ -766,6 +776,7 @@ def train_from_dataframe(
     use_log_transform: bool = True,
     hyperparameters: Optional[Dict[str, Any]] = None,
     feature_toggles: Optional[Dict[str, bool]] = None,
+    skip_filesystem_save: bool = False,
 ) -> Dict[str, Any]:
     # Capture default hyperparameters if none provided
     if hyperparameters is None:
@@ -812,6 +823,8 @@ def train_from_dataframe(
         "vest_id",
         "shot_id",
         "test_session_id",
+        "vest_code",
+        "protocol",
     ])
 
     feature_columns = [c for c in df.columns if c not in columns_to_exclude_from_features]
@@ -861,6 +874,7 @@ def train_from_dataframe(
     regression_metrics = {}
 
     if y_regression is not None:
+        from sklearn.model_selection import train_test_split
         for target in available_regression_targets:
             y = y_regression[target]
             valid_idx = y.notna()
@@ -873,15 +887,26 @@ def train_from_dataframe(
 
             # Apply log transform to BFD target to handle skewed distribution
             use_log_transform_bfd = use_log_transform and target == "backface_deformation_mm"
-            y_train = y_valid.copy()
+            y_train_full = y_valid.copy()
             if use_log_transform_bfd:
                 # Ensure y_train is numpy array of floats, handle edge cases
-                y_train = np.asarray(y_train, dtype=np.float64)
+                y_train_full = np.asarray(y_train_full, dtype=np.float64)
                 # Clip negative values and apply log1p
-                y_train = np.log1p(np.clip(y_train, 0, None))
+                y_train_full = np.log1p(np.clip(y_train_full, 0, None))
 
-            X_processed = preprocessor.transform(X_valid)
+            X_processed_full = preprocessor.transform(X_valid)
             
+            # Split into train/validation for early stopping
+            if len(X_valid) >= 20:
+                X_train_proc, X_val_proc, y_train_split, y_val_split = train_test_split(
+                    X_processed_full, y_train_full, test_size=0.2, random_state=42
+                )
+            else:
+                # Too few samples — use all for training, no early stopping
+                X_train_proc, X_val_proc, y_train_split, y_val_split = (
+                    X_processed_full, None, y_train_full, None
+                )
+
             # Calculate sample weights based on vest_type to balance hard vs soft armor
             sample_weights = None
             if 'vest_type' in X_valid.columns:
@@ -898,10 +923,21 @@ def train_from_dataframe(
                 model = build_regressor(**hyperparameters)
             else:
                 model = build_regressor()
-            model.fit(X_processed, y_train, sample_weight=sample_weights)
+            
+            # Use early stopping if we have a validation set
+            if X_val_proc is not None:
+                model.fit(
+                    X_train_proc, y_train_split,
+                    sample_weight=sample_weights[:len(X_train_proc)] if sample_weights is not None else None,
+                    eval_set=[(X_val_proc, y_val_split)],
+                    verbose=False,
+                    early_stopping_rounds=50,
+                )
+            else:
+                model.fit(X_processed_full, y_train_full, sample_weight=sample_weights)
 
-            # Inverse transform predictions for metrics
-            y_pred = model.predict(X_processed)
+            # Evaluate on full dataset for metrics
+            y_pred = model.predict(X_processed_full)
             if use_log_transform_bfd:
                 y_pred = np.expm1(y_pred)
 
@@ -948,7 +984,8 @@ def train_from_dataframe(
     import io
     version = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     version_dir = os.path.join(VERSIONS_DIR, version)
-    os.makedirs(version_dir, exist_ok=True)
+    if not skip_filesystem_save:
+        os.makedirs(version_dir, exist_ok=True)
 
     # Save preprocessor to database (as binary data)
     preprocessor_buffer = io.BytesIO()
@@ -968,16 +1005,17 @@ def train_from_dataframe(
         model_files[f"{target}.pkl"] = model_buffer.getvalue()
 
     # Also save to filesystem for backward compatibility (optional, can be removed later)
-    preprocessor_path = os.path.join(version_dir, "preprocessor.pkl")
-    joblib.dump(preprocessor, preprocessor_path)
+    if not skip_filesystem_save:
+        preprocessor_path = os.path.join(version_dir, "preprocessor.pkl")
+        joblib.dump(preprocessor, preprocessor_path)
 
-    for target, model in regression_models.items():
-        model_path = os.path.join(version_dir, f"{target}.pkl")
-        joblib.dump(model, model_path)
+        for target, model in regression_models.items():
+            model_path = os.path.join(version_dir, f"{target}.pkl")
+            joblib.dump(model, model_path)
 
-    for target, model in classification_models.items():
-        model_path = os.path.join(version_dir, f"{target}.pkl")
-        joblib.dump(model, model_path)
+        for target, model in classification_models.items():
+            model_path = os.path.join(version_dir, f"{target}.pkl")
+            joblib.dump(model, model_path)
 
     # Use provided model name or default to version
     display_name = model_name if model_name else version
@@ -1063,6 +1101,7 @@ def train_from_dataframe(
             **{f"{k}_classification": v for k, v in classification_metrics.items()},
         },
         "hyperparameters": hyperparameters,
+        "feature_toggles": feature_toggles,
         "material_properties": material_properties,
         "warnings": warnings or [],
         "training_data_count": len(df),
@@ -1072,9 +1111,10 @@ def train_from_dataframe(
     }
 
     # Save version metadata to filesystem for local development (in addition to database)
-    metadata_path = os.path.join(version_dir, "metadata.json")
-    with open(metadata_path, "w") as f:
-        json.dump(metadata, f, indent=2)
+    if not skip_filesystem_save:
+        metadata_path = os.path.join(version_dir, "metadata.json")
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f, indent=2)
 
     return metadata, preprocessor_bytes, model_files
 
@@ -1086,6 +1126,10 @@ def train_from_database(
     hyperparameters: Optional[Dict[str, Any]] = None,
     feature_toggles: Optional[Dict[str, bool]] = None,
     ignore_anchor_points: bool = False,
+    skip_health_check: bool = False,
+    preloaded_df: Optional[pd.DataFrame] = None,
+    preloaded_material_properties: Optional[Dict[str, Dict[str, float]]] = None,
+    skip_filesystem_save: bool = False,
 ) -> Dict[str, Any]:
     """Train model using data from database."""
     from app.db.models import ShotData, Vest, Material, VestLayer, ModelRun
@@ -1115,8 +1159,13 @@ def train_from_database(
             "\n\nPlease add the missing data to the database before training."
         )
     
-    # Fetch training data
-    df, warnings, data_metadata = fetch_training_data(db_session, ignore_anchor_points=ignore_anchor_points)
+    # Fetch training data (use preloaded if available)
+    if preloaded_df is not None:
+        df = preloaded_df
+        warnings = []
+        data_metadata = {}
+    else:
+        df, warnings, data_metadata = fetch_training_data(db_session, ignore_anchor_points=ignore_anchor_points)
 
     if df.empty:
         raise ValueError(
@@ -1125,8 +1174,11 @@ def train_from_database(
             "Check that test sessions are properly linked to vests and vests have layers with materials."
         )
     
-    # Fetch material properties
-    material_properties = fetch_material_properties(db_session)
+    # Fetch material properties (use preloaded if available)
+    if preloaded_material_properties is not None:
+        material_properties = preloaded_material_properties
+    else:
+        material_properties = fetch_material_properties(db_session)
     
     if not material_properties:
         raise ValueError(
@@ -1144,6 +1196,7 @@ def train_from_database(
         use_log_transform=use_log_transform,
         hyperparameters=hyperparameters,
         feature_toggles=feature_toggles,
+        skip_filesystem_save=skip_filesystem_save,
     )
     
     # Save ModelRun record to database FIRST (before health evaluation)
@@ -1193,23 +1246,43 @@ def train_from_database(
     
     # Run model health evaluation automatically after training (now that model is in database)
     health_result = None
-    try:
-        health_result = evaluate_model_on_test_sessions(db_session, version=metadata["version"])
-        overall_avg_error = health_result.get("overall_average_error")
-    except Exception as e:
-        overall_avg_error = None
-    
-    # Update ModelRun with health evaluation results
-    if health_result and overall_avg_error is not None:
+    if skip_health_check:
+        # Use training MAPE as a proxy for optimization trials
+        bfd_metrics = metadata.get("metrics", {}).get("backface_deformation_mm_regression", {})
+        training_mape = bfd_metrics.get("mape")
+        if training_mape is not None:
+            health_result = {"overall_average_error": training_mape}
+            overall_avg_error = training_mape
+            # Update ModelRun with training MAPE as avg_error
+            try:
+                model_run = db_session.query(ModelRun).filter(
+                    ModelRun.version == metadata["version"]
+                ).first()
+                if model_run:
+                    model_run.training_avg_error = overall_avg_error
+                    db_session.commit()
+            except Exception:
+                db_session.rollback()
+        else:
+            overall_avg_error = None
+    else:
         try:
-            model_run = db_session.query(ModelRun).filter(
-                ModelRun.version == metadata["version"]
-            ).first()
-            if model_run:
-                model_run.training_avg_error = overall_avg_error
-                db_session.commit()
+            health_result = evaluate_model_on_test_sessions(db_session, version=metadata["version"])
+            overall_avg_error = health_result.get("overall_average_error")
         except Exception as e:
-            db_session.rollback()
+            overall_avg_error = None
+        
+        # Update ModelRun with health evaluation results
+        if health_result and overall_avg_error is not None:
+            try:
+                model_run = db_session.query(ModelRun).filter(
+                    ModelRun.version == metadata["version"]
+                ).first()
+                if model_run:
+                    model_run.training_avg_error = overall_avg_error
+                    db_session.commit()
+            except Exception as e:
+                db_session.rollback()
     
     return metadata, health_result
 
@@ -1988,6 +2061,9 @@ def evaluate_model_on_test_sessions(
     """
     Evaluate model performance on test session data.
     
+    Uses fetch_training_data to build features identically to training,
+    ensuring the health check error matches training metrics.
+    
     Args:
         db_session: Database session
         version: Model version to use (uses current if None)
@@ -1996,9 +2072,7 @@ def evaluate_model_on_test_sessions(
     Returns:
         Dictionary with vest-level averages and point-level data for graphing
     """
-    from app.db.models import ShotData, TestSession, Vest, Protocol, Ammunition
-    from app.db.models.geometry import Geometry
-    from app.services.ml.data_fetcher import fetch_material_properties
+    from app.services.ml.data_fetcher import fetch_training_data, fetch_material_properties
     
     # Load the specified version if provided
     if version:
@@ -2021,61 +2095,11 @@ def evaluate_model_on_test_sessions(
     # Fetch material properties
     material_properties = fetch_material_properties(db_session)
     
-    # Build query for shot data - try both test session and vest_number approaches
-    # First try with test sessions (structured data)
-    query_with_session = (
-        db_session.query(ShotData, TestSession, Vest)
-        .join(TestSession, ShotData.test_session_id == TestSession.id)
-        .outerjoin(Vest, TestSession.vest_id == Vest.id)
-    )
+    # Use fetch_training_data to build features identically to training
+    # ignore_anchor_points=True because health check should only evaluate real test data
+    df, _, _ = fetch_training_data(db_session, ignore_anchor_points=True)
     
-    # Filter by protocol if specified
-    if protocol_filter and protocol_filter != "all":
-        query_with_session = query_with_session.filter(TestSession.protocol == protocol_filter)
-    
-    # Only include shots with trauma data
-    query_with_session = query_with_session.filter(ShotData.trauma_mm.isnot(None))
-    
-    results = query_with_session.all()
-    
-    # If no results with test sessions, fall back to vest_number approach (like training)
-    if not results:
-        # Query shots with vest_number (matches training data structure)
-        query_with_vest = (
-            db_session.query(ShotData)
-            .filter(ShotData.trauma_mm.isnot(None))
-            .filter(ShotData.vest_number.isnot(None))
-        )
-        
-        shots_only = query_with_vest.all()
-        
-        if not shots_only:
-            return {
-                "vest_averages": [],
-                "point_data": [],
-                "total_points": 0,
-                "message": "No test data found matching criteria"
-            }
-        
-        # Convert to format expected by rest of function
-        results = []
-        for shot in shots_only:
-            # Create dummy test session and vest objects for compatibility
-            class DummyTestSession:
-                def __init__(self):
-                    self.id = None
-                    self.protocol = None
-                    self.conditioning = "dry"
-                    self.vest_id = None
-                    
-            class DummyVest:
-                def __init__(self):
-                    self.id = None
-                    self.vest_code = shot.vest_number
-                    
-            results.append((shot, DummyTestSession(), DummyVest()))
-    
-    if not results:
+    if df.empty:
         return {
             "vest_averages": [],
             "point_data": [],
@@ -2083,164 +2107,121 @@ def evaluate_model_on_test_sessions(
             "message": "No test data found matching criteria"
         }
     
-    # Process each shot
-    vest_errors = {}  # vest_code -> list of percentage errors
-    point_data = []  # list of individual point data for graphing
-
-    # Batch fetch all vest layers and materials to avoid N+1 queries
-    vest_ids = [vest.id for _, _, vest in results if vest]
-    vest_layers = db_session.query(VestLayer).filter(VestLayer.vest_id.in_(vest_ids)).all() if vest_ids else []
-    material_ids = list(set(vl.material_id for vl in vest_layers))
-    materials = {m.id: m for m in db_session.query(Material).filter(Material.id.in_(material_ids)).all()} if material_ids else {}
-
-    # Batch fetch all ammunition to avoid N+1 queries
-    calibers = list(set(shot_data.caliber for shot_data, _, _ in results if shot_data.caliber))
-    ammunition_map = {a.caliber: a for a in db_session.query(Ammunition).filter(Ammunition.caliber.in_(calibers)).all()} if calibers else {}
-
-    # Batch fetch geometries for surface area lookup
-    geometry_ids = [ts.geometry_id for _, ts, _ in results if ts and hasattr(ts, 'geometry_id') and ts.geometry_id]
-    geometry_map = {g.id: g for g in db_session.query(Geometry).filter(Geometry.id.in_(geometry_ids)).all()} if geometry_ids else {}
-
-    # Group vest layers by vest_id
-    vest_layers_by_vest = {}
-    for vl in vest_layers:
-        if vl.vest_id not in vest_layers_by_vest:
-            vest_layers_by_vest[vl.vest_id] = []
-        vest_layers_by_vest[vl.vest_id].append(vl)
-
-    # Handle model dict structure once
+    # Filter to rows with actual BFD values (the target we're evaluating)
+    df = df[df['backface_deformation_mm'].notna()].copy()
+    
+    if df.empty:
+        return {
+            "vest_averages": [],
+            "point_data": [],
+            "total_points": 0,
+            "message": "No test data with BFD values found"
+        }
+    
+    # Apply protocol filter if specified
+    if protocol_filter and protocol_filter != "all" and 'protocol' in df.columns:
+        df = df[df['protocol'] == protocol_filter].copy()
+    
+    if df.empty:
+        return {
+            "vest_averages": [],
+            "point_data": [],
+            "total_points": 0,
+            "message": "No test data found matching protocol filter"
+        }
+    
+    # Get feature_toggles from metadata (saved during training)
+    feature_toggles = metadata.get("feature_toggles", None)
+    
+    # Apply the same feature engineering as training
+    df_features = add_engineered_features(df, material_properties, validate=False, feature_toggles=feature_toggles)
+    
+    # Get feature columns from metadata
+    feature_columns = metadata.get("feature_columns", [])
+    
+    # Categorical feature names (same set as training)
+    categorical_feature_names = {
+        "vest_composition", "ammunition_used", "threat_level", "condition",
+        "panel_side", "weave_type", "material_type", "vest_type", "ply_orientations",
+        "geometry_name", "primary_weave_type",
+        "composition_sequence", "composition_first_material",
+        "composition_second_material", "composition_penultimate_material",
+        "composition_last_material",
+    }
+    for mat_name in material_properties:
+        prefix = mat_name.lower().replace(" ", "_").replace("-", "_")
+        categorical_feature_names.add(f"composition_material_class_{prefix}")
+    
+    # Select only the feature columns used during training
+    if feature_columns:
+        for col in feature_columns:
+            if col not in df_features.columns:
+                if col in categorical_feature_names:
+                    df_features[col] = "unknown"
+                else:
+                    df_features[col] = np.nan
+        df_features = df_features[feature_columns]
+    
+    # Fill categorical columns
+    for col in df_features.columns:
+        if col in categorical_feature_names:
+            df_features[col] = df_features[col].fillna("unknown").astype(str)
+    
+    # Fill missing values
+    df_features = fill_missing_features(df_features)
+    
+    # Handle model dict structure
     if isinstance(bfd_model, dict):
         actual_model = bfd_model["model"]
         use_log_transform = bfd_model.get("use_log_transform", False)
     else:
         actual_model = bfd_model
         use_log_transform = False
-
-    # Build all prediction inputs as a batch for speed
-    batch_rows = []
-    row_metadata = []  # parallel list of (vest_identifier, vest_name, protocol, actual_bfd, shot_number, protection_level, caliber)
-    for shot_data_rec, test_session, vest in results:
-        composition_parts = []
-        total_layers = 0
-        if vest:
-            layers = vest_layers_by_vest.get(vest.id, [])
-            for vl in sorted(layers, key=lambda x: x.layer_index or 0):
-                material = materials.get(vl.material_id)
-                if material:
-                    count = vl.layer_count or 1
-                    total_layers += count
-                    composition_parts.append(f"{count} {material.name}")
-
-        vest_composition = " + ".join(composition_parts) if composition_parts else ""
-        caliber = shot_data_rec.caliber
-        ammunition = ammunition_map.get(caliber)
-
-        batch_rows.append({
-            "vest_composition": vest_composition,
-            "number_of_layers": total_layers,
-            "ammunition_used": ammunition.name if ammunition else caliber,
-            "threat_level": shot_data_rec.protection_level,
-            "shot_number": int(float(shot_data_rec.shot_number)) if shot_data_rec.shot_number else 1,
-            "impact_velocity_mps": float(shot_data_rec.velocity_m_s) if shot_data_rec.velocity_m_s else None,
-            "impact_angle_deg": float(shot_data_rec.angle_degrees) if shot_data_rec.angle_degrees else 0.0,
-            "bullet_mass_g": float(ammunition.projectile_mass_grams) if ammunition and ammunition.projectile_mass_grams else None,
-            "temperature_c": float(shot_data_rec.temperature_c) if shot_data_rec.temperature_c else 20.0,
-            "humidity_pct": float(shot_data_rec.humidity_percent) if shot_data_rec.humidity_percent else 50.0,
-            "condition": test_session.conditioning if test_session else "dry",
-            "panel_side": shot_data_rec.side,
-            "caliber_diameter_mm": float(ammunition.caliber_diameter_mm) if ammunition and ammunition.caliber_diameter_mm else None,
-            "caliber_length_mm": float(ammunition.caliber_length_mm) if ammunition and ammunition.caliber_length_mm else None,
-            "vest_type": vest.vest_type if vest else None,
-            "is_female": int(vest.is_female) if vest and hasattr(vest, 'is_female') and vest.is_female is not None else 0,
-            "ply_orientations": None,
-            # Vest construction features
-            "flexibility_rating": int(vest.flexibility_rating) if vest and hasattr(vest, 'flexibility_rating') and vest.flexibility_rating is not None else 0,
-            "is_panel_sewn": int(vest.is_panel_sewn) if vest and hasattr(vest, 'is_panel_sewn') and vest.is_panel_sewn is not None else 0,
-            "weight_g": float(vest.weight_g) if vest and hasattr(vest, 'weight_g') and vest.weight_g else None,
-            # Geometry features
-            "panel_surface_area_m2": _get_geometry_surface_area(test_session, geometry_map),
-            "geometry_name": _get_geometry_name(test_session, geometry_map),
-            # Material mechanical properties (aggregated)
-            **_aggregate_material_mechanical(vest, vest_layers_by_vest, materials),
+    
+    # Batch predict
+    X_processed = preprocessor.transform(df_features)
+    predictions = actual_model.predict(X_processed)
+    if use_log_transform:
+        predictions = np.expm1(predictions)
+    
+    # Calculate errors per shot
+    vest_errors = {}
+    point_data = []
+    
+    actual_bfds = df['backface_deformation_mm'].values
+    vest_codes = df['vest_code'].values if 'vest_code' in df.columns else [f"Unknown-{i}" for i in range(len(df))]
+    vest_names = vest_codes
+    protocols = df['protocol'].values if 'protocol' in df.columns else ["Unknown"] * len(df)
+    shot_numbers = df['shot_number'].values if 'shot_number' in df.columns else [None] * len(df)
+    protection_levels = df['threat_level'].values if 'threat_level' in df.columns else ["Unknown"] * len(df)
+    calibers = df['ammunition_used'].values if 'ammunition_used' in df.columns else ["Unknown"] * len(df)
+    velocities = df['impact_velocity_mps'].values if 'impact_velocity_mps' in df.columns else [None] * len(df)
+    
+    for i in range(len(predictions)):
+        predicted_bfd = float(predictions[i])
+        actual_bfd = float(actual_bfds[i])
+        if actual_bfd != 0:
+            percent_error = abs(predicted_bfd - actual_bfd) / actual_bfd * 100
+        else:
+            percent_error = abs(predicted_bfd - actual_bfd)
+        
+        vest_identifier = vest_codes[i] if vest_codes[i] is not None else f"Unknown-{i}"
+        if vest_identifier not in vest_errors:
+            vest_errors[vest_identifier] = []
+        vest_errors[vest_identifier].append(percent_error)
+        
+        point_data.append({
+            "vest_code": vest_identifier,
+            "vest_name": vest_names[i] if vest_names[i] is not None else "Unknown",
+            "protocol": protocols[i] if protocols[i] is not None else "Unknown",
+            "actual_bfd": actual_bfd,
+            "predicted_bfd": predicted_bfd,
+            "percent_error": percent_error,
+            "shot_number": shot_numbers[i],
+            "protection_level": protection_levels[i] if protection_levels[i] is not None else "Unknown",
+            "caliber": calibers[i] if calibers[i] is not None else "Unknown",
+            "velocity": velocities[i],
         })
-
-        vest_identifier = vest.vest_code if vest else f"Unknown-{shot_data_rec.test_session_id}"
-        row_metadata.append({
-            "vest_identifier": vest_identifier,
-            "vest_name": vest.vest_code if vest else "Unknown",
-            "protocol": test_session.protocol if test_session else "Unknown",
-            "actual_bfd": float(shot_data_rec.trauma_mm),
-            "shot_number": shot_data_rec.shot_number,
-            "protection_level": (getattr(shot_data_rec, 'protection_level', None) or
-                               (test_session.threat_level if test_session else None) or
-                               (vest.threat_level if vest else None) or
-                               "Unknown"),
-            "caliber": getattr(shot_data_rec, 'caliber', 'Unknown') if getattr(shot_data_rec, 'caliber', None) else "Unknown",
-        })
-
-    # Shared categorical feature names for batch processing
-    feature_columns = metadata.get("feature_columns", [])
-    categorical_feature_names = {
-        "vest_composition", "ammunition_used", "threat_level", "condition",
-        "panel_side", "weave_type", "material_type", "vest_type", "ply_orientations",
-        "geometry_name", "primary_weave_type",
-    }
-    for mat_name in material_properties:
-        prefix = mat_name.lower().replace(" ", "_").replace("-", "_")
-        categorical_feature_names.add(f"composition_material_class_{prefix}")
-
-    # Batch feature engineering + prediction
-    try:
-        batch_df = pd.DataFrame(batch_rows)
-        batch_df = add_engineered_features(batch_df, material_properties, validate=False)
-
-        if feature_columns:
-            for col in feature_columns:
-                if col not in batch_df.columns:
-                    if col in categorical_feature_names:
-                        batch_df[col] = "unknown"
-                    else:
-                        batch_df[col] = np.nan
-            batch_df = batch_df[feature_columns]
-
-        for col in batch_df.columns:
-            if col in categorical_feature_names:
-                batch_df[col] = batch_df[col].fillna("unknown").astype(str)
-
-        batch_df = fill_missing_features(batch_df)
-        X_processed = preprocessor.transform(batch_df)
-        predictions = actual_model.predict(X_processed)
-        if use_log_transform:
-            predictions = np.expm1(predictions)
-
-        for i, meta in enumerate(row_metadata):
-            predicted_bfd = float(predictions[i])
-            actual_bfd = meta["actual_bfd"]
-            if actual_bfd != 0:
-                percent_error = abs(predicted_bfd - actual_bfd) / actual_bfd * 100
-            else:
-                percent_error = abs(predicted_bfd - actual_bfd)
-
-            vest_identifier = meta["vest_identifier"]
-            if vest_identifier not in vest_errors:
-                vest_errors[vest_identifier] = []
-            vest_errors[vest_identifier].append(percent_error)
-
-            point_data.append({
-                "vest_code": vest_identifier,
-                "vest_name": meta["vest_name"],
-                "protocol": meta["protocol"],
-                "actual_bfd": actual_bfd,
-                "predicted_bfd": predicted_bfd,
-                "percent_error": percent_error,
-                "shot_number": meta["shot_number"],
-                "protection_level": meta["protection_level"],
-                "caliber": meta["caliber"],
-                "velocity": batch_rows[i]["impact_velocity_mps"],
-            })
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
     
     # Calculate vest averages
     vest_averages = []
@@ -2272,7 +2253,7 @@ def evaluate_model_on_test_sessions(
         if not anchor_df.empty:
             # Batch predict all anchor points at once
             anchor_input_df = anchor_df.copy()
-            anchor_input_df = add_engineered_features(anchor_input_df, material_properties, validate=False)
+            anchor_input_df = add_engineered_features(anchor_input_df, material_properties, validate=False, feature_toggles=feature_toggles)
 
             if feature_columns:
                 # Add missing columns with defaults
