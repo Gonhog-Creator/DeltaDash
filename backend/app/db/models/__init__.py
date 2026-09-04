@@ -21,6 +21,7 @@ from app.db.models.geometry import Geometry
 from app.db.models.geometry_material_config import GeometryMaterialConfig
 from app.db.models.cover import Cover
 from app.db.models.vest_model import ModelDocument
+from app.db.models.pliego_document import PliegoDocument
 
 __all__ = [
     "User",
@@ -47,4 +48,5 @@ __all__ = [
     "GeometryMaterialConfig",
     "Cover",
     "ModelDocument",
+    "PliegoDocument",
 ]

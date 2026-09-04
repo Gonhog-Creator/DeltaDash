@@ -30,6 +30,7 @@ from app.db.models import (  # noqa: F401, F403
     Geometry,
     GeometryMaterialConfig,
     Cover,
+    PliegoDocument,
 )
 
 # this is the Alembic Config object, which provides

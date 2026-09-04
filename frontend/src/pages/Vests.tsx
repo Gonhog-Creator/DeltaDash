@@ -63,6 +63,8 @@ export function Vests() {
   const [calcWeightResult, setCalcWeightResult] = useState<string | null>(null);
   const [protocolThreatLevels, setProtocolThreatLevels] = useState<ProtocolThreatLevel[]>([]);
   const [vestTestSessionCounts, setVestTestSessionCounts] = useState<Record<string, number>>({});
+  const [vestOfficialMap, setVestOfficialMap] = useState<Record<string, boolean>>({});
+  const [showOfficialOnly, setShowOfficialOnly] = useState(false);
 
   // Refetch materials when form opens to get latest ply_count values
   useEffect(() => {
@@ -90,17 +92,21 @@ export function Vests() {
       if (!vests) return;
       try {
         const counts: Record<string, number> = {};
+        const officialMap: Record<string, boolean> = {};
         await Promise.all(
           vests.map(async (vest) => {
             try {
               const sessions = await vestsApi.getTestSessions(vest.id);
               counts[vest.id] = sessions.test_sessions.length;
+              officialMap[vest.id] = sessions.test_sessions.some(s => s.is_official);
             } catch (err) {
               counts[vest.id] = 0;
+              officialMap[vest.id] = false;
             }
           })
         );
         setVestTestSessionCounts(counts);
+        setVestOfficialMap(officialMap);
       } catch (err) {
         console.error('Failed to fetch vest test session counts:', err);
       }
@@ -370,14 +376,19 @@ export function Vests() {
     }
   };
 
-  const getFilteredAndSortedVests = (vests: Vest[] | undefined) => {
+  const getFilteredAndSortedVests = (vests: any[] | undefined) => {
     if (!vests) return vests;
     
     let filtered = vests;
     
+    // Apply official-only filter
+    if (showOfficialOnly) {
+      filtered = filtered.filter(vest => vestOfficialMap[vest.id] === true);
+    }
+    
     // Apply filter
     if (activeFilterField && activeFilters.length > 0) {
-      filtered = vests.filter(vest => {
+      filtered = filtered.filter(vest => {
         const value = vest[activeFilterField];
         if (!value) return false;
         // Case-insensitive comparison
@@ -428,10 +439,15 @@ export function Vests() {
 
   const getUniqueValues = (field: 'vest_type' | 'threat_level') => {
     if (!vests) return [];
-    const values = vests
-      .map(v => v[field])
-      .filter((v): v is string => v !== null && v !== undefined);
-    return Array.from(new Set(values)).sort();
+    const seen = new Map<string, string>();
+    for (const v of vests) {
+      const val = v[field];
+      if (val !== null && val !== undefined) {
+        const key = val.toLowerCase();
+        if (!seen.has(key)) seen.set(key, val);
+      }
+    }
+    return Array.from(seen.values()).sort();
   };
 
   const handleVestClick = async (vest: Vest) => {
@@ -481,6 +497,26 @@ export function Vests() {
           )}
         </div>
       </div>
+
+      {!(showCreateForm || editingVest) && (role === 'admin' || role === 'editor') && (
+        <div className="mb-4 flex items-center gap-3">
+          <button
+            onClick={() => setShowOfficialOnly(!showOfficialOnly)}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md border transition-colors ${
+              showOfficialOnly
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            {showOfficialOnly ? '✓ Showing Official Only' : 'Show Official Vests Only'}
+          </button>
+          {showOfficialOnly && (
+            <span className="text-xs text-gray-500">
+              {getFilteredAndSortedVests(vests)?.length || 0} vest(s) with official certifications
+            </span>
+          )}
+        </div>
+      )}
 
       {(showCreateForm || editingVest) && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">

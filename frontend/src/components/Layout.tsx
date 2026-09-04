@@ -33,6 +33,7 @@ export function Layout({ children }: LayoutProps) {
     { path: '/vests', label: 'Vests' },
     { path: '/geometries', label: 'Geometries' },
     { path: '/covers', label: 'Covers' },
+    { path: '/pliego-matcher', label: 'RFP Analysis' },
     { path: '/ammunition', label: 'Ammunition' },
     { path: '/fabric-estimation', label: 'Fabric Estimation' },
     { path: '/analytics', label: 'Analytics' },

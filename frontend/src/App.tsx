@@ -18,6 +18,7 @@ import { Comparison } from './pages/Comparison'
 import { FabricEstimation } from './pages/FabricEstimation'
 import { Geometries } from './pages/Geometries'
 import { Covers } from './pages/Covers'
+import { PliegoMatcher } from './pages/PliegoMatcher'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,6 +51,7 @@ function App() {
                       <Route path="/vests/:vestId" element={<Vests />} />
                       <Route path="/geometries" element={<Geometries />} />
                       <Route path="/covers" element={<Covers />} />
+                      <Route path="/pliego-matcher" element={<PliegoMatcher />} />
                       <Route path="/protocols" element={<Protocols />} />
                       <Route path="/analytics" element={<Analytics />} />
                       <Route path="/comparison" element={<Comparison />} />

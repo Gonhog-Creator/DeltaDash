@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     LOCAL_REPORTS_DIR: str = "storage/reports"
     LOCAL_MODEL_ARTIFACTS_DIR: str = "storage/model_artifacts"
     LOCAL_MODEL_DOCS_DIR: str = "storage/model_docs"
+    LOCAL_PLIEGO_DOCS_DIR: str = "storage/pliego_docs"
     
     # Production storage paths (Railway)
     UPLOAD_DIR: str = "/app/storage/uploads"
@@ -34,6 +35,7 @@ class Settings(BaseSettings):
     REPORTS_DIR: str = "/app/storage/reports"
     MODEL_ARTIFACTS_DIR: str = "/app/storage/model_artifacts"
     MODEL_DOCS_DIR: str = "/app/storage/model_docs"
+    PLIEGO_DOCS_DIR: str = "/app/storage/pliego_docs"
     
     @property
     def cors_origins_list(self) -> list[str]:
@@ -100,6 +102,16 @@ class Settings(BaseSettings):
             return self.MODEL_DOCS_DIR
         os.makedirs(self.LOCAL_MODEL_DOCS_DIR, exist_ok=True)
         return self.LOCAL_MODEL_DOCS_DIR
+
+    @property
+    def pliego_docs_dir(self) -> str:
+        """Get the appropriate pliego docs directory based on environment"""
+        if self.USE_RAILWAY_STORAGE and os.path.exists(self.PLIEGO_DOCS_DIR):
+            return self.PLIEGO_DOCS_DIR
+        os.makedirs(self.LOCAL_PLIEGO_DOCS_DIR, exist_ok=True)
+        return self.LOCAL_PLIEGO_DOCS_DIR
+
+    GEMINI_API_KEY: str = ""
 
     class Config:
         env_file = ".env"
