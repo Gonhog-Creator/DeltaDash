@@ -95,11 +95,12 @@ Analyze the following document text and extract all ballistic vest requirements 
 Return ONLY a JSON object with these fields (omit fields that are not mentioned in the document):
 
 {
-  "threat_level": "NIJ IIIA" | "NIJ III" | "NIJ II" | "Level IIA" | "RB1" | "RB2" | "RB3" | "RA1" | "RA2" | "RA3" | null,
+  "threat_levels": ["RB2", "RB3"] | "RB2" | null,
   "protection_class": string | null,
   "vest_type": "soft" | "hard" | "tactical" | null,
   "required_sizes": ["S", "M", "L", "XL", "XXL"] | [],
   "max_weight_g": number | null,
+  "max_weight_by_level": {"RB2": 2500, "RB3": 2950} | null,
   "trauma_homologation": {
     "backface_max_mm": number | null,
     "ammunition": string | null
@@ -118,10 +119,13 @@ Return ONLY a JSON object with these fields (omit fields that are not mentioned 
 
 Rules:
 - If a value is not explicitly stated, omit the field or set it to null.
-- Normalize threat levels to standard notation (NIJ IIIA, NIJ III, etc.).
+- Normalize threat levels to standard notation (NIJ IIIA, NIJ III, RB1, RB2, RB3, RA1, RA2, RA3, etc.).
+- If the document specifies multiple threat levels (e.g., requires both RB2 and RB3), list them all in "threat_levels" as an array.
+- If the document specifies different max weights per threat level, use "max_weight_by_level" with each level as a key.
 - Extract all mentioned ammunition calibers.
 - For weight, convert to grams if another unit is used.
 - For backface deformation, convert to millimeters.
+- "is_female_required" should be true only if the document explicitly requests female vests. If not mentioned, set to false.
 - Be conservative: only extract what is clearly stated in the document.
 - ALWAYS output all text fields in English, regardless of the source document language.
 - Translate any non-English terms (e.g., Spanish "nivel de amenaza" → "threat level") to English.
@@ -238,10 +242,19 @@ def match_vests(requirements: Dict[str, Any], db: Session) -> Dict[str, Any]:
     # Fetch those vests, optionally filtering by catalog models
     query = db.query(Vest).filter(Vest.id.in_(list(official_vest_id_set)))
 
-    # Apply filters from requirements
-    req_threat = requirements.get("threat_level")
-    if req_threat:
-        query = query.filter(Vest.threat_level.ilike(f"%{req_threat}%"))
+    # Normalize threat levels: support both "threat_levels" (array) and legacy "threat_level" (string)
+    req_threats = requirements.get("threat_levels")
+    if not req_threats:
+        legacy = requirements.get("threat_level")
+        if legacy:
+            req_threats = [legacy] if isinstance(legacy, str) else list(legacy)
+    if req_threats:
+        # Filter vests matching ANY of the required threat levels
+        from sqlalchemy import or_
+        threat_filters = []
+        for t in req_threats:
+            threat_filters.append(Vest.threat_level.ilike(f"%{t}%"))
+        query = query.filter(or_(*threat_filters))
 
     req_vest_type = requirements.get("vest_type")
     if req_vest_type:
@@ -322,38 +335,61 @@ def _score_vest(
     gaps = []
 
     # 1. Threat level match (30 points)
-    req_threat = requirements.get("threat_level")
-    if req_threat:
+    # Support both "threat_levels" (array) and legacy "threat_level" (string)
+    req_threats = requirements.get("threat_levels")
+    if not req_threats:
+        legacy = requirements.get("threat_level")
+        if legacy:
+            req_threats = [legacy] if isinstance(legacy, str) else list(legacy)
+    if req_threats:
         vest_threat = (vest.threat_level or "").upper()
-        req_threat_upper = req_threat.upper()
-        # Normalize for comparison
-        if req_threat_upper in vest_threat or vest_threat in req_threat_upper:
+        matched_threat = None
+        for t in req_threats:
+            t_upper = t.upper()
+            if t_upper in vest_threat or vest_threat in t_upper:
+                matched_threat = t
+                break
+        if matched_threat:
             score += 30
-            details["threat_level"] = "match"
+            details["threat_level"] = f"match ({matched_threat})"
         else:
-            gaps.append(f"Threat level: requires {req_threat}, vest has {vest.threat_level}")
+            gaps.append(f"Threat level: requires {'/'.join(req_threats)}, vest has {vest.threat_level}")
             details["threat_level"] = "mismatch"
     else:
         score += 15  # Partial credit if no requirement specified
         details["threat_level"] = "not_specified"
 
     # 2. Weight compliance (20 points)
+    # Try per-level weight first, fall back to global max_weight_g
+    max_weight_by_level = requirements.get("max_weight_by_level")
     max_weight = requirements.get("max_weight_g")
-    if max_weight and vest.weight_g:
+    vest_threat_upper = (vest.threat_level or "").upper()
+
+    # Determine applicable weight limit for this vest's threat level
+    applicable_weight = None
+    if max_weight_by_level and isinstance(max_weight_by_level, dict):
+        for level, w in max_weight_by_level.items():
+            if level.upper() in vest_threat_upper:
+                applicable_weight = w
+                break
+    if applicable_weight is None:
+        applicable_weight = max_weight
+
+    if applicable_weight and vest.weight_g:
         vest_weight = float(vest.weight_g)
-        if vest_weight <= max_weight:
+        if vest_weight <= applicable_weight:
             score += 20
             details["weight"] = "compliant"
         else:
-            excess = ((vest_weight - max_weight) / max_weight) * 100
+            excess = ((vest_weight - applicable_weight) / applicable_weight) * 100
             if excess < 10:
                 score += 10
                 details["weight"] = "marginal"
             else:
                 score += 0
                 details["weight"] = "exceeds"
-            gaps.append(f"Weight: {vest_weight}g exceeds max {max_weight}g by {excess:.1f}%")
-    elif max_weight and not vest.weight_g:
+            gaps.append(f"Weight: {vest_weight}g exceeds max {applicable_weight}g by {excess:.1f}%")
+    elif applicable_weight and not vest.weight_g:
         score += 10  # Unknown weight, partial credit
         details["weight"] = "unknown"
     else:
@@ -435,6 +471,29 @@ def _score_vest(
     else:
         details["catalog_model"] = False
 
+    # 8. Female vest requirement (10 points)
+    req_female = requirements.get("is_female_required")
+    if req_female is not None:
+        if req_female and not vest.is_female:
+            # Female required but vest is not female - hard exclusion
+            score = 0
+            details["is_female"] = "mismatch_excluded"
+            gaps.append("Female vest required, this vest is not female")
+        elif not req_female and vest.is_female:
+            # Female not required but vest is female - penalize
+            score += 0
+            details["is_female"] = "penalized"
+            gaps.append("Female vest not required, this is a female vest")
+        elif req_female and vest.is_female:
+            score += 10
+            details["is_female"] = "match"
+        else:
+            score += 10
+            details["is_female"] = "match"
+    else:
+        score += 5
+        details["is_female"] = "not_specified"
+
     # Clamp score
     score = min(score, max_score)
 
@@ -448,21 +507,32 @@ def _compute_global_gaps(requirements: Dict[str, Any], scored: List[Dict]) -> Li
     if not scored:
         return ["No vests matched the extracted requirements."]
 
-    # Check if any vest has a perfect threat level match
-    req_threat = requirements.get("threat_level")
-    if req_threat:
-        any_match = any(d["match_details"].get("threat_level") == "match" for d in scored)
+    # Check if any vest has a threat level match
+    req_threats = requirements.get("threat_levels")
+    if not req_threats:
+        legacy = requirements.get("threat_level")
+        if legacy:
+            req_threats = [legacy] if isinstance(legacy, str) else list(legacy)
+    if req_threats:
+        any_match = any(
+            d["match_details"].get("threat_level", "").startswith("match")
+            for d in scored
+        )
         if not any_match:
-            gaps.append(f"No certified vest matches threat level '{req_threat}'.")
+            gaps.append(f"No certified vest matches threat level(s) {'/'.join(req_threats)}.")
 
     # Check weight
     max_weight = requirements.get("max_weight_g")
-    if max_weight:
+    max_weight_by_level = requirements.get("max_weight_by_level")
+    if max_weight or max_weight_by_level:
         any_compliant = any(
             d["match_details"].get("weight") == "compliant" for d in scored
         )
         if not any_compliant:
-            gaps.append(f"No vest meets the maximum weight requirement of {max_weight}g.")
+            if max_weight_by_level:
+                gaps.append(f"No vest meets the per-level weight requirements: {max_weight_by_level}.")
+            else:
+                gaps.append(f"No vest meets the maximum weight requirement of {max_weight}g.")
 
     # Check sizes
     req_sizes = requirements.get("required_sizes", [])
@@ -485,6 +555,18 @@ def _compute_global_gaps(requirements: Dict[str, Any], scored: List[Dict]) -> Li
             gaps.append(
                 f"No vest meets the backface deformation limit of {req_trauma['backface_max_mm']}mm."
             )
+
+    # Check female requirement
+    req_female = requirements.get("is_female_required")
+    if req_female is not None:
+        any_match = any(
+            d["match_details"].get("is_female") == "match" for d in scored
+        )
+        if not any_match:
+            if req_female:
+                gaps.append("No female vest found among certified vests.")
+            else:
+                gaps.append("All matching vests are female vests, but female was not requested.")
 
     return gaps
 

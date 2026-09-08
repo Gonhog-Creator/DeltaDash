@@ -2,10 +2,12 @@ import { apiClient, API_BASE_URL } from './client';
 
 export interface PliegoRequirements {
   threat_level?: string | null;
+  threat_levels?: string[] | string | null;
   protection_class?: string | null;
   vest_type?: string | null;
   required_sizes?: string[] | null;
   max_weight_g?: number | null;
+  max_weight_by_level?: Record<string, number> | null;
   trauma_homologation?: {
     backface_max_mm?: number | null;
     ammunition?: string | null;

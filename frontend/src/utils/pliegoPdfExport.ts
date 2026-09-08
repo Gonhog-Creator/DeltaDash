@@ -308,10 +308,21 @@ export async function exportPliegoReportPdf(doc: PliegoDocument, lang: 'en' | 'e
   const reqEntries: Array<{ label: string; value: string }> = [];
   if (reqs) {
     if (reqs.raw_summary) reqEntries.push({ label: L.rawSummaryLabel, value: reqs.raw_summary });
-    if (reqs.threat_level) reqEntries.push({ label: L.threatLevelLabel, value: reqs.threat_level });
+    // Handle both threat_levels (array or string) and legacy threat_level
+    if (reqs.threat_levels) {
+      const val = Array.isArray(reqs.threat_levels) ? reqs.threat_levels.join(', ') : reqs.threat_levels;
+      reqEntries.push({ label: L.threatLevelLabel, value: val });
+    } else if (reqs.threat_level) {
+      reqEntries.push({ label: L.threatLevelLabel, value: reqs.threat_level });
+    }
     if (reqs.vest_type) reqEntries.push({ label: L.vestTypeLabel, value: reqs.vest_type });
     if (reqs.protection_class) reqEntries.push({ label: L.protectionClassLabel, value: reqs.protection_class });
-    if (reqs.max_weight_g) reqEntries.push({ label: L.maxWeightLabel, value: `${reqs.max_weight_g}g` });
+    if (reqs.max_weight_by_level && Object.keys(reqs.max_weight_by_level).length > 0) {
+      const weightStr = Object.entries(reqs.max_weight_by_level).map(([k, v]) => `${k}: ${v}g`).join(', ');
+      reqEntries.push({ label: L.maxWeightLabel, value: weightStr });
+    } else if (reqs.max_weight_g) {
+      reqEntries.push({ label: L.maxWeightLabel, value: `${reqs.max_weight_g}g` });
+    }
     if (reqs.required_sizes?.length) reqEntries.push({ label: L.requiredSizesLabel, value: reqs.required_sizes.join(', ') });
     if (reqs.ammunition_calibers?.length) reqEntries.push({ label: L.ammunitionLabel, value: reqs.ammunition_calibers.join(', ') });
     if (reqs.trauma_homologation?.backface_max_mm) reqEntries.push({ label: L.maxBackfaceLabel, value: `${reqs.trauma_homologation.backface_max_mm}mm` });

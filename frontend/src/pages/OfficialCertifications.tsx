@@ -338,7 +338,7 @@ export function OfficialCertifications() {
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Protocol</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vest</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Geometry</th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate"></th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">N° of shots</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cert. #</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Excel</th>
                 <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -452,7 +452,7 @@ export function OfficialCertifications() {
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={child.geometry_name || ''}>
                         {child.geometry_name ? (child.geometry_name.length > 15 ? child.geometry_name.substring(0, 15) + '...' : child.geometry_name) : '-'}
                       </td>
-                      <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={formatConditioning(child.conditioning)}>{formatConditioning(child.conditioning)}</td>
+                      <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate">{child.shot_count ?? '-'}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{child.certification_number || '-'}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
                         {role !== 'viewer' && (

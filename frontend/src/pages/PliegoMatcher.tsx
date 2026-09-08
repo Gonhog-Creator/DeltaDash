@@ -367,10 +367,21 @@ function RequirementsCard({ reqs }: { reqs: PliegoRequirements }) {
   const entries: Array<{ label: string; value: string }> = [];
 
   if (reqs.raw_summary) entries.push({ label: 'Summary', value: reqs.raw_summary });
-  if (reqs.threat_level) entries.push({ label: 'Threat Level', value: reqs.threat_level });
+  // Handle both threat_levels (array or string) and legacy threat_level
+  if (reqs.threat_levels) {
+    const val = Array.isArray(reqs.threat_levels) ? reqs.threat_levels.join(', ') : reqs.threat_levels;
+    entries.push({ label: 'Threat Level(s)', value: val });
+  } else if (reqs.threat_level) {
+    entries.push({ label: 'Threat Level', value: reqs.threat_level });
+  }
   if (reqs.vest_type) entries.push({ label: 'Vest Type', value: reqs.vest_type });
   if (reqs.protection_class) entries.push({ label: 'Protection Class', value: reqs.protection_class });
-  if (reqs.max_weight_g) entries.push({ label: 'Max Weight', value: `${reqs.max_weight_g}g` });
+  if (reqs.max_weight_by_level && Object.keys(reqs.max_weight_by_level).length > 0) {
+    const weightStr = Object.entries(reqs.max_weight_by_level).map(([k, v]) => `${k}: ${v}g`).join(', ');
+    entries.push({ label: 'Max Weight (per level)', value: weightStr });
+  } else if (reqs.max_weight_g) {
+    entries.push({ label: 'Max Weight', value: `${reqs.max_weight_g}g` });
+  }
   if (reqs.required_sizes?.length) entries.push({ label: 'Required Sizes', value: reqs.required_sizes.join(', ') });
   if (reqs.ammunition_calibers?.length) entries.push({ label: 'Ammunition', value: reqs.ammunition_calibers.join(', ') });
   if (reqs.trauma_homologation?.backface_max_mm) entries.push({ label: 'Max Backface', value: `${reqs.trauma_homologation.backface_max_mm}mm` });
@@ -540,9 +551,10 @@ function MatchIndicator({ value }: { value: string | boolean }) {
   }
   const str = String(value);
   if (str === 'match' || str === 'compliant') return <span className="text-green-600 font-medium">✓ {str}</span>;
-  if (str === 'mismatch' || str === 'exceeds' || str === 'no match') return <span className="text-red-600 font-medium">✕ {str}</span>;
-  if (str === 'marginal') return <span className="text-yellow-600 font-medium">⚠ {str}</span>;
+  if (str === 'mismatch' || str === 'exceeds' || str === 'no match' || str === 'mismatch_excluded') return <span className="text-red-600 font-medium">✕ {str}</span>;
+  if (str === 'marginal' || str === 'penalized') return <span className="text-yellow-600 font-medium">⚠ {str}</span>;
   if (str === 'unknown' || str === 'not_specified') return <span className="text-gray-400">{str}</span>;
+  if (str.startsWith('match (')) return <span className="text-green-600 font-medium">✓ {str}</span>;
   return <span className="text-gray-700">{str}</span>;
 }
 

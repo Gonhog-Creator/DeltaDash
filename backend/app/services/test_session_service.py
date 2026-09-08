@@ -6,124 +6,144 @@ from app.services.excel_parser import ExcelParser, ExcelParseError
 
 
 def normalize_caliber(caliber: str) -> str:
-    """Normalize caliber string for intelligent matching."""
+    """Normalize caliber string for intelligent matching.
+
+    Returns a normalized string that preserves critical designators (M855, M193, SS109, AP)
+    so that same-caliber variants can be distinguished.
+    """
     if not caliber:
         return ''
-    
+
     normalized = str(caliber).strip().lower()
-    
-    # Check for M855/M193 designators in 5.56x45 ammunition before removing suffixes
-    # Preserve these specific designators as they distinguish ammunition types
-    has_m855 = 'm855' in normalized or '855' in normalized
-    has_m193 = 'm193' in normalized or '193' in normalized
-    is_556 = '5.56' in normalized or '556' in normalized
-    
-    # Remove common suffixes from ammunition names, but preserve M855/M193 for 5.56x45
-    suffixes_to_remove = ['fmj standard', 'standard', 'fmj', 'winchester', 'remington', 'magnum', 'mag']
+
+    # Detect designators BEFORE any stripping
+    has_m855 = 'm855' in normalized or 'ss109' in normalized
+    has_m193 = 'm193' in normalized
+    has_ap = ' ap' in normalized or normalized.endswith('ap') or 'penetrating' in normalized
+    is_556 = '5.56' in normalized or '556' in normalized or '223' in normalized or '.223' in normalized
+
+    # Remove common suffixes from ammunition names
+    suffixes_to_remove = ['fmj standard', 'standard', 'fmj', 'winchester', 'remington', 'magnum', 'mag',
+                          'nato', '(green tip)', 'green tip']
     for suffix in suffixes_to_remove:
         if normalized.endswith(suffix):
             normalized = normalized[:-len(suffix)].strip()
-    
-    # Remove spaces around numbers
+
+    # Remove spaces, normalize commas to dots
     normalized = normalized.replace(' ', '')
-    
-    # Normalize decimal points
     normalized = normalized.replace(',', '.')
-    
+
     # Remove leading/trailing dots
     normalized = normalized.strip('.')
-    
-    # Remove leading zeros from numbers (e.g., "0.357" -> ".357", "0.44" -> ".44")
-    # But preserve the decimal point
+
+    # Remove leading zeros (e.g., "0.357" -> ".357")
     if normalized and normalized[0] == '0' and len(normalized) > 1 and normalized[1] == '.':
-        normalized = normalized[1:]  # Remove leading zero, keep the dot
-    
-    # Common caliber aliases for matching
+        normalized = normalized[1:]
+
+    # Normalize "x45mm" and "x45" to "x45" to avoid triple-m problem
+    normalized = normalized.replace('x45mm', 'x45')
+
+    # Common caliber aliases
     caliber_aliases = {
-        '9mm': '9x19mm',
-        '9x19': '9x19mm',
-        '357': '357mag',
-        '44': '44mag',
-        '308': '308win',
-        '308win': '308winchester',
-        '223': '223rem',
-        '762x51mm': '7.62x51mm',
+        '9mm': '9x19',
+        '9x19': '9x19',
+        '357': '357',
+        '44': '44',
+        '308': '308',
+        '223': '223',
+        '762x51': '7.62x51',
+        '762x39': '7.62x39',
     }
-    
-    # For 5.56x45, preserve M855/M193 designators
+
+    # For 5.56x45, append designator so variants are distinguishable
     if is_556:
+        # Normalize all 5.56/.223 variants to "5.56x45" base
+        base = '5.56x45'
+        if '223' in normalized and '5.56' not in normalized and '556' not in normalized:
+            base = '223'
         if has_m855:
-            caliber_aliases['556x45mm'] = '5.56x45mm m855'
-            caliber_aliases['556x45'] = '5.56x45mm m855'
-            caliber_aliases['5.56x45mm'] = '5.56x45mm m855'
-            caliber_aliases['556nato'] = '5.56x45mm m855'
+            result = f'{base}m855'
         elif has_m193:
-            caliber_aliases['556x45mm'] = '5.56x45mm m193'
-            caliber_aliases['556x45'] = '5.56x45mm m193'
-            caliber_aliases['5.56x45mm'] = '5.56x45mm m193'
-            caliber_aliases['556nato'] = '5.56x45mm m193'
+            result = f'{base}m193'
+        elif has_ap:
+            result = f'{base}ap'
         else:
-            # Generic 5.56x45 without specific designator
-            caliber_aliases['556x45mm'] = '5.56x45mm'
-            caliber_aliases['556x45'] = '5.56x45mm'
-            caliber_aliases['556nato'] = '5.56x45mm'
-    
-    # For decimal-only calibers (like .357, .44), also try without the dot (357, 44)
-    # This handles cases where database has "357" but Excel has ".357" or "0.357"
+            result = base
+        return result
+
+    # For decimal-only calibers (like .357, .44), also try without the dot
     if normalized and normalized[0] == '.' and normalized.replace('.', '').isdigit():
-        # It's a decimal number like .357 - add version without dot to aliases
-        caliber_aliases[normalized] = normalized[1:]  # ".357" -> "357"
-    
+        caliber_aliases[normalized] = normalized[1:]
+
     return caliber_aliases.get(normalized, normalized)
+
+
+def _match_caliber(normalized_input: str, existing_calibers_normalized: dict) -> Optional[str]:
+    """Try to match a normalized caliber against existing calibers.
+
+    Matching priority:
+    1. Exact normalized match
+    2. Stripped match (remove dots, spaces, 'mag') - but only if no designator ambiguity
+    3. Substring match - longest existing match wins (most specific)
+    """
+    # 1. Exact match
+    if normalized_input in existing_calibers_normalized:
+        return existing_calibers_normalized[normalized_input]
+
+    # 2. Stripped match (dots/spaces/mag removed)
+    input_stripped = normalized_input.replace('.', '').replace(' ', '').replace('mag', '')
+    for existing_norm, original in existing_calibers_normalized.items():
+        existing_stripped = existing_norm.replace('.', '').replace(' ', '').replace('mag', '')
+        if input_stripped == existing_stripped:
+            return original
+
+    # 3. Substring match - prefer the longest (most specific) match
+    best_match = None
+    best_len = 0
+    for existing_norm, original in existing_calibers_normalized.items():
+        if normalized_input in existing_norm or existing_norm in normalized_input:
+            match_len = len(existing_norm)
+            if match_len > best_len:
+                best_match = original
+                best_len = match_len
+
+    return best_match
 
 
 def get_standardized_caliber(db: Session, raw_caliber: str) -> Optional[str]:
     """Get the standardized caliber name from the database for a raw caliber string."""
     if not raw_caliber:
         return None
-    
+
     # Filter out column header names
     excluded_names = {'calibre', 'caliber', 'calibres', 'calibers'}
     if raw_caliber.lower() in excluded_names:
         return None
-    
+
     # Get all existing calibers from database
     # Try caliber column first, fall back to name column if caliber is empty
     caliber_ammo = db.query(AmmunitionModel.caliber).filter(
         AmmunitionModel.caliber.isnot(None),
         AmmunitionModel.caliber != ''
     ).all()
-    
+
     if not caliber_ammo:
         # If caliber column is empty, use name column
         caliber_ammo = db.query(AmmunitionModel.name).filter(
             AmmunitionModel.name.isnot(None),
             AmmunitionModel.name != ''
         ).all()
-    
+
     existing_calibers_normalized = {
         normalize_caliber(caliber[0]): caliber[0] for caliber in caliber_ammo
     }
-    
+
     normalized_input = normalize_caliber(raw_caliber)
-    
-    # Try exact match first (normalized)
-    if normalized_input in existing_calibers_normalized:
-        return existing_calibers_normalized[normalized_input]
-    
-    # Try fuzzy matching for common variations
-    for existing_norm in existing_calibers_normalized:
-        # Check if one is a substring of the other (for cases like "9mm" vs "9 mm")
-        if normalized_input in existing_norm or existing_norm in normalized_input:
-            return existing_calibers_normalized[existing_norm]
-        
-        # Check for common variations (e.g., .357 vs .357 mag)
-        # Remove dots, spaces, and "mag" for comparison
-        input_stripped = normalized_input.replace('.', '').replace(' ', '').replace('mag', '')
-        existing_stripped = existing_norm.replace('.', '').replace(' ', '').replace('mag', '')
-        if input_stripped == existing_stripped:
-            return existing_calibers_normalized[existing_norm]
-    
+
+    match = _match_caliber(normalized_input, existing_calibers_normalized)
+    if match:
+        return match
+
     # No match found, return original
     return raw_caliber
 
@@ -162,28 +182,8 @@ def validate_calibers_exist(db: Session, calibers: Set[str]) -> Set[str]:
     missing_calibers = set()
     for caliber in calibers_to_check:
         normalized_input = normalize_caliber(caliber)
-        
-        # Try exact match first (normalized)
-        if normalized_input in existing_calibers_normalized:
-            continue
-        
-        # Try fuzzy matching for common variations
-        found_match = False
-        for existing_norm in existing_calibers_normalized:
-            # Check if one is a substring of the other (for cases like "9mm" vs "9 mm")
-            if normalized_input in existing_norm or existing_norm in normalized_input:
-                found_match = True
-                break
-            
-            # Check for common variations (e.g., .357 vs .357 mag)
-            # Remove dots, spaces, and "mag" for comparison
-            input_stripped = normalized_input.replace('.', '').replace(' ', '').replace('mag', '')
-            existing_stripped = existing_norm.replace('.', '').replace(' ', '').replace('mag', '')
-            if input_stripped == existing_stripped:
-                found_match = True
-                break
-        
-        if not found_match:
+        match = _match_caliber(normalized_input, existing_calibers_normalized)
+        if not match:
             missing_calibers.add(caliber)
     
     return missing_calibers
