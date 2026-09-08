@@ -9,8 +9,8 @@ class AuditLogBase(BaseModel):
     action: str
     entity_type: Optional[str] = None
     entity_id: Optional[UUID] = None
-    before_json: dict[str, Any] | None = None
-    after_json: dict[str, Any] | None = None
+    before_json: Optional[dict] = None
+    after_json: Optional[dict] = None
 
 
 class AuditLogInDB(AuditLogBase):

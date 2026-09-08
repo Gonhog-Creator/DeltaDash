@@ -13,6 +13,7 @@ from app.db.models.geometry import Geometry
 from app.api.v1.auth import get_current_active_user
 from app.db.models.user import User
 from app.core.config import settings
+from app.services.audit import log_action, serialize_model
 from app.services.geometry_excel_service import (
     export_geometries_to_excel,
     import_geometries_from_excel,
@@ -179,6 +180,8 @@ def create_geometry(
     db.add(db_geometry)
     db.commit()
     db.refresh(db_geometry)
+    log_action(db, current_user, "create", "geometry", db_geometry.id, after=serialize_model(db_geometry))
+    db.commit()
     return GeometryResponse.from_orm(db_geometry)
 
 
@@ -197,12 +200,15 @@ def update_geometry(
     if not db_geometry:
         raise HTTPException(status_code=404, detail="Geometry not found")
     
+    before = serialize_model(db_geometry)
     update_data = geometry.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_geometry, key, value)
     
     db.commit()
     db.refresh(db_geometry)
+    log_action(db, current_user, "update", "geometry", db_geometry.id, before=before, after=serialize_model(db_geometry))
+    db.commit()
     return GeometryResponse.from_orm(db_geometry)
 
 
@@ -220,6 +226,7 @@ def delete_geometry(
     if not db_geometry:
         raise HTTPException(status_code=404, detail="Geometry not found")
     
+    log_action(db, current_user, "delete", "geometry", db_geometry.id, before=serialize_model(db_geometry))
     db.delete(db_geometry)
     db.commit()
     return {"message": "Geometry deleted successfully"}
@@ -275,9 +282,8 @@ def upload_geometry_pdf(
 def download_geometry_pdf(
     geometry_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
 ):
-    """Download the single PDF for a geometry."""
+    """Download the single PDF for a geometry. Publicly accessible so it can be used in <a> tags and file sync."""
     geometry = db.query(Geometry).filter(Geometry.id == geometry_id).first()
     if not geometry:
         raise HTTPException(status_code=404, detail="Geometry not found")

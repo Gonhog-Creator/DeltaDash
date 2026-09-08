@@ -51,7 +51,7 @@ export function Covers() {
   const updateMutation = useUpdateCover();
   const deleteMutation = useDeleteCover();
 
-  const canEdit = isAdmin && role !== 'viewer';
+  const canEdit = role !== 'viewer';
 
   const queryClient = useQueryClient();
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -134,6 +134,28 @@ export function Covers() {
       queryClient.invalidateQueries({ queryKey: ['covers'] });
     } catch (err: any) {
       alert(`Failed to delete PDF: ${err.message || err.detail}`);
+    }
+  };
+
+  const handlePdfDownload = async (coverId: string, filename?: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(coversApi.downloadPdf(coverId), {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!response.ok) throw new Error('Failed to download PDF');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'cover.pdf';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download cover PDF:', err);
+      alert('Failed to download PDF. Please try again.');
     }
   };
 
@@ -501,14 +523,13 @@ export function Covers() {
                       <span className="text-sm text-gray-700 truncate max-w-xs">
                         {editingCover.pdf_document.original_name}
                       </span>
-                      <a
-                        href={coversApi.downloadPdf(editingId)}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => handlePdfDownload(editingId, editingCover?.pdf_document?.original_name)}
                         className="text-indigo-600 hover:text-indigo-900 text-sm"
                       >
                         Download
-                      </a>
+                      </button>
                       <button
                         type="button"
                         onClick={handleFormPdfDelete}
@@ -691,14 +712,12 @@ export function Covers() {
               <span className="text-gray-500 text-sm">Ficha Tecnica (PDF):</span>
               {selectedCover.pdf_document ? (
                 <div className="mt-1 flex items-center gap-3">
-                  <a
-                    href={coversApi.downloadPdf(selectedCover.id)}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => handlePdfDownload(selectedCover.id, selectedCover.pdf_document?.original_name)}
                     className="text-sm text-indigo-600 hover:text-indigo-900"
                   >
                     {selectedCover.pdf_document.original_name}
-                  </a>
+                  </button>
                   {canEdit && (
                     <button
                       onClick={handleDeletePdf}
@@ -781,12 +800,23 @@ export function Covers() {
                 <p className="mt-1 text-sm text-gray-700">{selectedCover.notes}</p>
               </div>
             )}
-            {canEdit && (
-              <div className="mt-4 pt-4 border-t flex gap-3">
-                <button onClick={() => { handleEdit(selectedCover); setSelectedCover(null); }} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm">Edit</button>
-                <button onClick={() => { handleDelete(selectedCover.id); setSelectedCover(null); }} className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm">Delete</button>
-              </div>
-            )}
+            <div className="mt-4 pt-4 border-t flex justify-end gap-3">
+              {selectedCover.pdf_document && (
+                <button
+                  onClick={() => handlePdfDownload(selectedCover.id, selectedCover.pdf_document?.original_name)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm"
+                >
+                  Download PDF
+                </button>
+              )}
+              {canEdit && (
+                <>
+                  <button onClick={() => { handleEdit(selectedCover); setSelectedCover(null); }} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm">Edit</button>
+                  <button onClick={() => { handleDelete(selectedCover.id); setSelectedCover(null); }} className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm">Delete</button>
+                </>
+              )}
+              <button onClick={() => setSelectedCover(null)} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm">Close</button>
+            </div>
           </div>
         </div>
       )}

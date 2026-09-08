@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel, Field
@@ -15,6 +15,7 @@ from app.api.v1.auth import get_current_active_user, require_write_access
 from app.db.models.user import User
 from app.core.config import settings
 from sqlalchemy.orm.attributes import flag_modified
+from app.services.audit import log_action, serialize_model
 
 router = APIRouter()
 
@@ -193,6 +194,8 @@ def create_cover(
     db.add(db_cover)
     db.commit()
     db.refresh(db_cover)
+    log_action(db, current_user, "create", "cover", db_cover.id, after=serialize_model(db_cover))
+    db.commit()
 
     geometry_name = None
     if db_cover.geometry_id:
@@ -213,6 +216,8 @@ def update_cover(
     if not cover:
         raise HTTPException(status_code=404, detail="Cover not found")
 
+    before = serialize_model(cover)
+
     if cover_update.geometry_id is not None:
         if cover_update.geometry_id:
             geometry = db.query(Geometry).filter(Geometry.id == uuid.UUID(cover_update.geometry_id)).first()
@@ -228,6 +233,8 @@ def update_cover(
 
     db.commit()
     db.refresh(cover)
+    log_action(db, current_user, "update", "cover", cover.id, before=before, after=serialize_model(cover))
+    db.commit()
 
     geometry_name = None
     if cover.geometry_id:
@@ -247,6 +254,7 @@ def delete_cover(
     if not cover:
         raise HTTPException(status_code=404, detail="Cover not found")
 
+    log_action(db, current_user, "delete", "cover", cover.id, before=serialize_model(cover))
     db.delete(cover)
     db.commit()
     return {"message": "Cover deleted successfully"}
@@ -304,9 +312,8 @@ def upload_cover_pdf(
 def download_cover_pdf(
     cover_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
 ):
-    """Download the PDF for a cover."""
+    """Download the PDF for a cover. Publicly accessible so it can be used in <a> tags and file sync."""
     cover = db.query(Cover).filter(Cover.id == uuid.UUID(cover_id)).first()
     if not cover:
         raise HTTPException(status_code=404, detail="Cover not found")
@@ -435,10 +442,10 @@ def upload_cover_image(
 def download_cover_image(
     cover_id: str,
     side: str,
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
 ):
-    """Download a front or back image for a cover."""
+    """Download a front or back image for a cover. Publicly accessible so it can be used in <img> tags."""
     if side not in ('front', 'back'):
         raise HTTPException(status_code=400, detail="side must be 'front' or 'back'")
 
@@ -454,8 +461,26 @@ def download_cover_image(
     if not os.path.exists(full_path):
         raise HTTPException(status_code=404, detail="Image file not found on disk")
 
-    download_filename = entry.get('original_name') or entry['path']
-    return FileResponse(full_path, filename=download_filename)
+    ext = os.path.splitext(full_path)[1].lower()
+    media_type = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }.get(ext, "application/octet-stream")
+    origin = request.headers.get("origin", "*")
+    with open(full_path, "rb") as f:
+        data = f.read()
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
 
 
 @router.delete("/{cover_id}/delete-image/{side}", response_model=CoverResponse)

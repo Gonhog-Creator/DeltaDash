@@ -5,6 +5,7 @@ from app.db.session import get_db
 from app.db.models import Ammunition as AmmunitionModel
 from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.ammunition import AmmunitionCreate, AmmunitionUpdate, Ammunition, AmmunitionListItem
+from app.services.audit import log_action, serialize_model
 from app.db.models.user import User as UserModel
 import logging
 from datetime import datetime
@@ -51,6 +52,8 @@ def create_ammunition(
         db.add(db_ammunition)
         db.commit()
         db.refresh(db_ammunition)
+        log_action(db, current_user, "create", "ammunition", db_ammunition.id, after=serialize_model(db_ammunition))
+        db.commit()
         logger.info(f"Successfully created ammunition with id: {db_ammunition.id}")
         return db_ammunition
     except Exception as e:
@@ -92,6 +95,7 @@ def update_ammunition(
     if not ammunition:
         raise HTTPException(status_code=404, detail="Ammunition not found")
     
+    before = serialize_model(ammunition)
     old_caliber = ammunition.caliber
     update_data = ammunition_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -113,6 +117,8 @@ def update_ammunition(
                 anchor.caliber_ids.append(ammunition.caliber)
         db.commit()
     
+    log_action(db, current_user, "update", "ammunition", ammunition.id, before=before, after=serialize_model(ammunition))
+    db.commit()
     return ammunition
 
 
@@ -128,6 +134,7 @@ def delete_ammunition(
     
     caliber = ammunition.caliber
     
+    log_action(db, current_user, "delete", "ammunition", ammunition.id, before=serialize_model(ammunition))
     db.delete(ammunition)
     db.commit()
     

@@ -7,6 +7,7 @@ from app.db.models import Protocol as ProtocolModel
 from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.protocol import ProtocolCreate, ProtocolUpdate, Protocol
 from app.db.models.user import User as UserModel
+from app.services.audit import log_action, serialize_model
 
 
 router = APIRouter()
@@ -31,6 +32,8 @@ def create_protocol(
     db.add(db_protocol)
     db.commit()
     db.refresh(db_protocol)
+    log_action(db, current_user, "create", "protocol", db_protocol.id, after=serialize_model(db_protocol))
+    db.commit()
     return db_protocol
 
 
@@ -57,12 +60,15 @@ def update_protocol(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
     
+    before = serialize_model(protocol)
     update_data = protocol_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(protocol, field, value)
     
     db.commit()
     db.refresh(protocol)
+    log_action(db, current_user, "update", "protocol", protocol.id, before=before, after=serialize_model(protocol))
+    db.commit()
     return protocol
 
 
@@ -76,6 +82,7 @@ def delete_protocol(
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
     
+    log_action(db, current_user, "delete", "protocol", protocol.id, before=serialize_model(protocol))
     db.delete(protocol)
     db.commit()
 

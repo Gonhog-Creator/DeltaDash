@@ -13,7 +13,7 @@ from app.core.logging import setup_logging
 from app.core.security import get_password_hash
 from app.db.session import SessionLocal
 from app.db.models.user import User
-from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns, analytics, locations, protocols, shot_data, vests, admin, ballistic, anchor_points, geometries, fabric_estimation, geometry_material_configs, covers, pliego
+from app.api.v1 import auth, materials, ammunition, test_sessions, panels, shots, shot_patterns, analytics, locations, protocols, shot_data, vests, admin, ballistic, anchor_points, geometries, fabric_estimation, geometry_material_configs, covers, pliego, audit_logs
 
 setup_logging()
 
@@ -54,6 +54,7 @@ app.include_router(fabric_estimation.router, prefix="/api/v1/fabric-estimation",
 app.include_router(geometry_material_configs.router, prefix="/api/v1/geometry-material-configs", tags=["geometry-material-configs"])
 app.include_router(covers.router, prefix="/api/v1/covers", tags=["covers"])
 app.include_router(pliego.router, prefix="/api/v1/pliego", tags=["pliego"])
+app.include_router(audit_logs.router, prefix="/api/v1/audit-logs", tags=["audit-logs"])
 
 
 @app.on_event("startup")

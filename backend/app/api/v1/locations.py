@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.models import Location as LocationModel
 from app.api.v1.auth import get_current_active_user, require_write_access
+from app.services.audit import log_action, serialize_model
 from app.schemas.location import LocationCreate, LocationUpdate, Location
 from app.db.models.user import User as UserModel
 
@@ -31,6 +32,8 @@ def create_location(
     db.add(db_location)
     db.commit()
     db.refresh(db_location)
+    log_action(db, current_user, "create", "location", db_location.id, after=serialize_model(db_location))
+    db.commit()
     return db_location
 
 
@@ -57,12 +60,15 @@ def update_location(
     if not location:
         raise HTTPException(status_code=404, detail="Location not found")
     
+    before = serialize_model(location)
     update_data = location_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(location, field, value)
     
     db.commit()
     db.refresh(location)
+    log_action(db, current_user, "update", "location", location.id, before=before, after=serialize_model(location))
+    db.commit()
     return location
 
 
@@ -76,5 +82,6 @@ def delete_location(
     if not location:
         raise HTTPException(status_code=404, detail="Location not found")
     
+    log_action(db, current_user, "delete", "location", location.id, before=serialize_model(location))
     db.delete(location)
     db.commit()

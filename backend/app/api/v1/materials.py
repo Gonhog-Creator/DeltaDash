@@ -12,6 +12,7 @@ from app.db.models.user import User as UserModel
 from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.material import MaterialCreate, MaterialUpdate, Material as MaterialSchema, MaterialListItem
 from app.core.config import settings
+from app.services.audit import log_action, serialize_model
 
 router = APIRouter(redirect_slashes=False)
 
@@ -121,6 +122,8 @@ def create_material(
     db.add(db_material)
     db.commit()
     db.refresh(db_material)
+    log_action(db, current_user, "create", "material", db_material.id, after=serialize_model(db_material))
+    db.commit()
     return db_material
 
 
@@ -147,6 +150,7 @@ def update_material(
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
     
+    before = serialize_model(material)
     update_data = material_update.model_dump(exclude_unset=True)
     
     # Convert Decimal values to floats for JSON serialization
@@ -158,6 +162,8 @@ def update_material(
     
     db.commit()
     db.refresh(material)
+    log_action(db, current_user, "update", "material", material.id, before=before, after=serialize_model(material))
+    db.commit()
     return material
 
 
@@ -191,6 +197,7 @@ def delete_material(
             db.delete(layer)
         db.commit()
     
+    log_action(db, current_user, "delete", "material", material.id, before=serialize_model(material))
     db.delete(material)
     db.commit()
 

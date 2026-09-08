@@ -16,6 +16,7 @@ from app.db.models.user import User as UserModel
 from app.services.excel_parser import ExcelParser, ExcelParseError
 from app.services.test_session_service import create_sessions_from_excel_data
 from app.core.config import settings
+from app.services.audit import log_action, serialize_model
 
 
 
@@ -87,6 +88,8 @@ def create_test_session(
     db.add(db_test_session)
     db.commit()
     db.refresh(db_test_session)
+    log_action(db, current_user, "create", "test_session", db_test_session.id, after=serialize_model(db_test_session))
+    db.commit()
     return db_test_session
 
 
@@ -384,6 +387,7 @@ def update_test_session(
     if not test_session:
         raise HTTPException(status_code=404, detail="Test session not found")
     
+    before = serialize_model(test_session)
     update_data = test_session_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(test_session, field, value)
@@ -407,6 +411,8 @@ def update_test_session(
         for child in children:
             db.refresh(child)
     
+    log_action(db, current_user, "update", "test_session", test_session.id, before=before, after=serialize_model(test_session))
+    db.commit()
     return test_session
 
 

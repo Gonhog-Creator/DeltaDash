@@ -18,6 +18,7 @@ from app.db.models.pliego_document import PliegoDocument
 from app.db.models.user import User as UserModel
 from app.api.v1.auth import get_current_active_user, require_write_access
 from app.core.config import settings
+from app.services.audit import log_action
 
 router = APIRouter(redirect_slashes=False)
 
@@ -87,6 +88,9 @@ def upload_pliego(
     db.add(doc)
     db.commit()
     db.refresh(doc)
+
+    log_action(db, current_user, "upload_pliego", "pliego_document", doc.id, after={"original_name": doc.original_name, "status": doc.status})
+    db.commit()
 
     # Run analysis
     try:
@@ -258,6 +262,8 @@ def delete_pliego_document(
     doc.extracted_requirements = None
     doc.match_results = None
     doc.error_message = None
+
+    log_action(db, current_user, "delete_pliego", "pliego_document", doc.id, before={"original_name": doc.original_name, "status": doc.status})
     db.delete(doc)
     db.commit()
     return {"message": "Document and associated data deleted successfully"}

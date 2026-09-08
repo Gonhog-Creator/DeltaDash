@@ -12,7 +12,7 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const { user, logout, isLoggingOut, isAdmin } = useAuth();
   const location = useLocation();
-  const [version, setVersion] = useState<string>('1.0.10');
+  const [version, setVersion] = useState<string>('1.2.0');
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
   
   // Location management state
@@ -39,7 +39,7 @@ export function Layout({ children }: LayoutProps) {
     { path: '/analytics', label: 'Analytics' },
     { path: '/comparison', label: 'Comparison' },
     { path: '/predictions', label: 'Predictions' },
-    ...(isAdmin ? [{ path: '/protocols', label: 'Protocols', isAdmin: true }, { path: '/model-training', label: 'Model Training', isAdmin: true }] : []),
+    ...(isAdmin ? [{ path: '/protocols', label: 'Protocols', isAdmin: true }, { path: '/model-training', label: 'Model Training', isAdmin: true }, { path: '/audit-logs', label: 'Audit Trail', isAdmin: true }] : []),
   ];
 
   const isActive = (path: string) => location.pathname === path;

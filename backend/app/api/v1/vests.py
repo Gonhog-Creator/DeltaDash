@@ -16,6 +16,7 @@ from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.vest import VestCreate, VestUpdate, Vest, VestListItem, VestLayerCreate, ModelDocumentSchema
 from app.db.models.user import User as UserModel
 from app.core.config import settings
+from app.services.audit import log_action, serialize_model
 
 
 
@@ -134,6 +135,8 @@ def create_vest(
     
     db.commit()
     db.refresh(db_vest)
+    log_action(db, current_user, "create", "vest", db_vest.id, after=serialize_model(db_vest))
+    db.commit()
     # Reload with layers
     db_vest = db.query(VestModel).options(joinedload(VestModel.layers), joinedload(VestModel.documents)).filter(VestModel.id == db_vest.id).first()
     return db_vest
@@ -162,12 +165,15 @@ def update_vest(
     if not vest:
         raise HTTPException(status_code=404, detail="Vest not found")
     
+    before = serialize_model(vest)
     update_data = vest_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(vest, field, value)
     
     db.commit()
     db.refresh(vest)
+    log_action(db, current_user, "update", "vest", vest.id, before=before, after=serialize_model(vest))
+    db.commit()
     # Reload with layers
     vest = db.query(VestModel).options(joinedload(VestModel.layers), joinedload(VestModel.documents)).filter(VestModel.id == vest_id).first()
     return vest
@@ -204,6 +210,7 @@ def delete_vest(
             detail=f"Cannot delete vest: it is referenced by {', '.join(msg_parts)}. Delete the test sessions first."
         )
     
+    log_action(db, current_user, "delete", "vest", vest.id, before=serialize_model(vest))
     db.delete(vest)
     db.commit()
 
@@ -249,6 +256,8 @@ def update_vest_layers(
     if calculated_thickness is not None:
         vest.total_thickness_mm = calculated_thickness
     
+    db.commit()
+    log_action(db, current_user, "update_layers", "vest", vest_id, after={"layer_count": len(layers)})
     db.commit()
     
     return db.query(VestLayer).filter(VestLayer.vest_id == vest_id).order_by(VestLayer.layer_index).all()
@@ -463,6 +472,8 @@ def upload_vest_document(
     db.add(doc)
     db.commit()
     db.refresh(doc)
+    log_action(db, current_user, "upload_document", "vest", vest_id, after={"document_name": doc.name, "document_id": str(doc.id)})
+    db.commit()
     return ModelDocumentSchema.model_validate(doc)
 
 
@@ -507,6 +518,7 @@ def delete_vest_document(
     if os.path.exists(full_path):
         os.remove(full_path)
 
+    log_action(db, current_user, "delete_document", "vest", vest_id, before={"document_name": doc.name, "document_id": str(doc.id)})
     db.delete(doc)
     db.commit()
     return {"message": "Document deleted successfully"}

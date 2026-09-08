@@ -2262,6 +2262,35 @@ def run_alembic_upgrade(
         raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")
 
 
+@router.post("/sync-files")
+def sync_files_only(
+    current_user: User = Depends(get_current_active_user)
+):
+    """Sync only files (images, PDFs, documents) from production without database sync."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    remote_db_url = os.getenv("REMOTE_DATABASE_URL")
+    if not remote_db_url:
+        raise HTTPException(status_code=500, detail="REMOTE_DATABASE_URL not configured")
+
+    try:
+        remote_conn = psycopg2.connect(remote_db_url, connect_timeout=30)
+        remote_conn.autocommit = True
+        remote_cursor = remote_conn.cursor()
+
+        try:
+            file_sync_results = sync_all_files(remote_cursor)
+            return {"message": "File sync completed", "file_sync": file_sync_results}
+        finally:
+            remote_cursor.close()
+            remote_conn.close()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"File sync failed: {str(e)}")
+
+
 @router.post("/alembic/execute-sql")
 def execute_sql(
     sql: str = Body(..., embed=True),

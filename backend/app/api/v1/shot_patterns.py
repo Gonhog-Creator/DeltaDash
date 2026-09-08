@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.models import ShotPattern, ShotPatternPosition
 from app.api.v1.auth import get_current_active_user, require_write_access
+from app.services.audit import log_action, serialize_model
 from app.schemas.shot_pattern import ShotPatternCreate, ShotPatternUpdate, ShotPattern, ShotPatternPositionCreate
 from app.db.models.user import User as UserModel
 
@@ -41,6 +42,7 @@ def create_shot_pattern(
     db.add(db_pattern)
     db.flush()
     
+    
     # Create positions
     for position_data in pattern.positions:
         position = ShotPatternPosition(
@@ -51,6 +53,8 @@ def create_shot_pattern(
     
     db.commit()
     db.refresh(db_pattern)
+    log_action(db, current_user, "create", "shot_pattern", db_pattern.id, after=serialize_model(db_pattern))
+    db.commit()
     return db_pattern
 
 
@@ -77,12 +81,15 @@ def update_shot_pattern(
     if not pattern:
         raise HTTPException(status_code=404, detail="Shot pattern not found")
     
+    before = serialize_model(pattern)
     update_data = pattern_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(pattern, field, value)
     
     db.commit()
     db.refresh(pattern)
+    log_action(db, current_user, "update", "shot_pattern", pattern.id, before=before, after=serialize_model(pattern))
+    db.commit()
     return pattern
 
 
@@ -96,6 +103,7 @@ def delete_shot_pattern(
     if not pattern:
         raise HTTPException(status_code=404, detail="Shot pattern not found")
     
+    log_action(db, current_user, "delete", "shot_pattern", pattern.id, before=serialize_model(pattern))
     db.delete(pattern)
     db.commit()
 

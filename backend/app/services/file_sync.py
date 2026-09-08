@@ -73,31 +73,28 @@ def sync_geometry_files(remote_cursor, base_url: str, token: Optional[str] = Non
         except Exception as e:
             print(f"[file_sync] Image failed for {geometry_id}: {e}")
 
-    if token:
-        remote_cursor.execute("SELECT id, pdf_document FROM geometries WHERE pdf_document IS NOT NULL")
-        for row in remote_cursor.fetchall():
-            geometry_id = str(row[0])
-            raw = row[1]
-            if isinstance(raw, str):
-                try:
-                    pdf_doc = json.loads(raw)
-                except (json.JSONDecodeError, TypeError):
-                    continue
-            elif isinstance(raw, dict):
-                pdf_doc = raw
-            else:
+    remote_cursor.execute("SELECT id, pdf_document FROM geometries WHERE pdf_document IS NOT NULL")
+    for row in remote_cursor.fetchall():
+        geometry_id = str(row[0])
+        raw = row[1]
+        if isinstance(raw, str):
+            try:
+                pdf_doc = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
                 continue
-            if not pdf_doc or not pdf_doc.get("path"):
-                continue
-            dest = os.path.join(settings.geometry_docs_dir, pdf_doc["path"])
-            if os.path.exists(dest):
-                stats["pdfs_skipped"] += 1
-                continue
-            url = f"{base_url}/api/v1/geometries/{geometry_id}/download-pdf"
-            if _download_to(url, dest, token):
-                stats["pdfs_downloaded"] += 1
-    else:
-        print("[file_sync] No PRODUCTION_API_TOKEN — skipping geometry PDFs")
+        elif isinstance(raw, dict):
+            pdf_doc = raw
+        else:
+            continue
+        if not pdf_doc or not pdf_doc.get("path"):
+            continue
+        dest = os.path.join(settings.geometry_docs_dir, pdf_doc["path"])
+        if os.path.exists(dest):
+            stats["pdfs_skipped"] += 1
+            continue
+        url = f"{base_url}/api/v1/geometries/{geometry_id}/download-pdf"
+        if _download_to(url, dest, token):
+            stats["pdfs_downloaded"] += 1
 
     return stats
 
@@ -166,6 +163,60 @@ def sync_vest_documents(remote_cursor, base_url: str, token: Optional[str] = Non
     return stats
 
 
+def sync_cover_files(remote_cursor, base_url: str, token: Optional[str] = None) -> dict:
+    stats = {"pdfs_downloaded": 0, "pdfs_skipped": 0, "images_downloaded": 0, "images_skipped": 0}
+
+    remote_cursor.execute("SELECT id, pdf_document, front_image, back_image FROM covers")
+    for row in remote_cursor.fetchall():
+        cover_id = str(row[0])
+
+        # Sync PDF
+        raw_pdf = row[1]
+        if isinstance(raw_pdf, str):
+            try:
+                pdf_doc = json.loads(raw_pdf)
+            except (json.JSONDecodeError, TypeError):
+                pdf_doc = None
+        elif isinstance(raw_pdf, dict):
+            pdf_doc = raw_pdf
+        else:
+            pdf_doc = None
+
+        if pdf_doc and pdf_doc.get("path"):
+            dest = os.path.join(settings.cover_docs_dir, pdf_doc["path"])
+            if os.path.exists(dest):
+                stats["pdfs_skipped"] += 1
+            else:
+                url = f"{base_url}/api/v1/covers/{cover_id}/download-pdf"
+                if _download_to(url, dest, token):
+                    stats["pdfs_downloaded"] += 1
+
+        # Sync front and back images
+        for idx, field_name in enumerate(["front_image", "back_image"]):
+            raw_img = row[2 + idx]
+            if isinstance(raw_img, str):
+                try:
+                    img_doc = json.loads(raw_img)
+                except (json.JSONDecodeError, TypeError):
+                    img_doc = None
+            elif isinstance(raw_img, dict):
+                img_doc = raw_img
+            else:
+                img_doc = None
+
+            if img_doc and img_doc.get("path"):
+                dest = os.path.join(settings.cover_images_dir, img_doc["path"])
+                if os.path.exists(dest):
+                    stats["images_skipped"] += 1
+                else:
+                    side = field_name.replace("_image", "")
+                    url = f"{base_url}/api/v1/covers/{cover_id}/download-image/{side}"
+                    if _download_to(url, dest, token):
+                        stats["images_downloaded"] += 1
+
+    return stats
+
+
 def sync_all_files(remote_cursor, base_url: Optional[str] = None, token: Optional[str] = None) -> dict:
     base_url = base_url or settings.PRODUCTION_BACKEND_URL
     token = token or (settings.PRODUCTION_API_TOKEN or None)
@@ -175,5 +226,6 @@ def sync_all_files(remote_cursor, base_url: Optional[str] = None, token: Optiona
     results["geometry"] = sync_geometry_files(remote_cursor, base_url, token)
     results["materials"] = sync_material_files(remote_cursor, base_url, token)
     results["vest_documents"] = sync_vest_documents(remote_cursor, base_url, token)
+    results["covers"] = sync_cover_files(remote_cursor, base_url, token)
     print(f"[file_sync] Done: {results}")
     return results
