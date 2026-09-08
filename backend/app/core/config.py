@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     LOCAL_MODEL_ARTIFACTS_DIR: str = "storage/model_artifacts"
     LOCAL_MODEL_DOCS_DIR: str = "storage/model_docs"
     LOCAL_PLIEGO_DOCS_DIR: str = "storage/pliego_docs"
+    LOCAL_COVER_DOCS_DIR: str = "storage/cover_docs"
+    LOCAL_COVER_IMAGES_DIR: str = "storage/cover_images"
     
     # Production storage paths (Railway)
     UPLOAD_DIR: str = "/app/storage/uploads"
@@ -36,6 +38,8 @@ class Settings(BaseSettings):
     MODEL_ARTIFACTS_DIR: str = "/app/storage/model_artifacts"
     MODEL_DOCS_DIR: str = "/app/storage/model_docs"
     PLIEGO_DOCS_DIR: str = "/app/storage/pliego_docs"
+    COVER_DOCS_DIR: str = "/app/storage/cover_docs"
+    COVER_IMAGES_DIR: str = "/app/storage/cover_images"
     
     @property
     def cors_origins_list(self) -> list[str]:
@@ -110,6 +114,22 @@ class Settings(BaseSettings):
             return self.PLIEGO_DOCS_DIR
         os.makedirs(self.LOCAL_PLIEGO_DOCS_DIR, exist_ok=True)
         return self.LOCAL_PLIEGO_DOCS_DIR
+
+    @property
+    def cover_docs_dir(self) -> str:
+        """Get the appropriate cover docs directory based on environment"""
+        if self.USE_RAILWAY_STORAGE and os.path.exists(self.COVER_DOCS_DIR):
+            return self.COVER_DOCS_DIR
+        os.makedirs(self.LOCAL_COVER_DOCS_DIR, exist_ok=True)
+        return self.LOCAL_COVER_DOCS_DIR
+
+    @property
+    def cover_images_dir(self) -> str:
+        """Get the appropriate cover images directory based on environment"""
+        if self.USE_RAILWAY_STORAGE and os.path.exists(self.COVER_IMAGES_DIR):
+            return self.COVER_IMAGES_DIR
+        os.makedirs(self.LOCAL_COVER_IMAGES_DIR, exist_ok=True)
+        return self.LOCAL_COVER_IMAGES_DIR
 
     GEMINI_API_KEY: str = ""
 

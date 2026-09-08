@@ -20,7 +20,13 @@ class Cover(Base):
     # Fabric characteristics
     fabric_type = Column(String, nullable=True)  # e.g., "Cordura 500D", "NyCo"
     fabric_weight_g_m2 = Column(Numeric(10, 2), nullable=True)
-    layer_count = Column(Integer, nullable=True)
+    layer_count = Column(Integer, nullable=True)  # Kept in DB but hidden from UI
+
+    # Cover color (e.g., "Negro", "Azul", "Multicam")
+    color = Column(String, nullable=True)
+
+    # Construction description (free text, e.g., "Doble tela + spacer")
+    construction_description = Column(String, nullable=True)
 
     # Cover weight (total, including fabric + accessories)
     weight_g = Column(Numeric(10, 2), nullable=True)
@@ -33,6 +39,11 @@ class Cover(Base):
     # Quick release (sueltos rápidos)
     has_quick_release = Column(Boolean, default=False)
     quick_release_type = Column(String, nullable=True)  # e.g., "Tubo", "Cinta", "Ladder"
+
+    # Accessories
+    has_badana = Column(Boolean, default=False)
+    has_escudo = Column(Boolean, default=False)
+    has_hombreras = Column(Boolean, default=False)
 
     # Fin/aleta dimensions
     fin_height_mm = Column(Numeric(10, 2), nullable=True)
@@ -47,6 +58,16 @@ class Cover(Base):
     compatible_vest_types = Column(JSON, nullable=True)
 
     notes = Column(String)
+
+    # Technical spec sheet (ficha técnica)
+    # Format: {"path": "uuid.pdf", "original_name": "filename.pdf"}
+    pdf_document = Column(JSON, nullable=True)
+
+    # Front and back cover images
+    # Format: {"path": "uuid.ext", "original_name": "filename.ext"}
+    front_image = Column(JSON, nullable=True)
+    back_image = Column(JSON, nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
