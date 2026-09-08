@@ -1,159 +1,174 @@
-# Ballistic Test Analytics & Prediction Platform
+# DeltaDash - Ballistic Test Analytics & Prediction Platform
 
-A private, always-on, React-based web application for storing ballistic test data, managing material specifications, analyzing BFD / trauma outcomes, and estimating outcomes for theoretical armor layups.
+A private, always-on web application for storing ballistic test data, managing material specifications, analyzing BFD/trauma outcomes, predicting vest performance, and matching RFP requirements to certified vests.
 
-## Quick Start (First Launch)
+## Quick Start
 
 ### Prerequisites
-- Docker and Docker Compose installed
-- Git
 
-### 1. Clone and Setup
+- Python 3.11+
+- Node.js 18+
+- PostgreSQL 15+ (or Docker for containerized DB)
+
+### First-Time Setup
+
 ```bash
-git clone <repository-url>
-cd DeltaDash
-```
+# Install all dependencies (backend + frontend)
+npm install
 
-### 2. Environment Configuration
-```bash
-# Copy the environment file (already done for this setup)
-# .env file is already configured for development
-```
+# Create database and user
+createdb ballistic
+createuser ballistic_user
+psql -d ballistic -c "ALTER USER ballistic_user PASSWORD 'change_me_in_production';"
+psql -d ballistic -c "GRANT ALL PRIVILEGES ON DATABASE ballistic TO ballistic_user;"
 
-### 3. Launch with Docker Compose
-```bash
-# Start all services
-docker-compose up -d
-
-# Check service status
-docker-compose ps
-```
-
-### 4. Initialize Database
-```bash
 # Run database migrations
-docker-compose exec backend alembic upgrade head
+npm run migrate
 
-# Create seed data (admin user and sample data)
+# Start development servers
+npm run dev
+```
+
+### Daily Development
+
+```bash
+npm run dev          # Start both backend (port 8000) and frontend (port 5173)
+npm run dev:backend  # Backend only
+npm run dev:frontend # Frontend only
+npm run stop         # Stop all services
+npm run build        # Build frontend for production
+```
+
+### Alternative: Docker Compose
+
+```bash
+docker-compose up -d
+docker-compose exec backend alembic upgrade head
 docker-compose exec backend python seed_data.py
 ```
 
-### 5. Access the Application
-- **Frontend**: http://localhost:5173
-- **Backend API**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/docs
+### Database-Only (Docker)
 
-### 6. Login Credentials
-- **Admin**: admin@ballistic.test / admin123
-- **Researcher**: researcher@ballistic.test / research123
+```bash
+docker compose up -d postgres
+```
 
-## Development Status
+Then run backend and frontend natively:
+```bash
+cd backend && source .venv/bin/activate && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+cd frontend && npm run dev
+```
 
-### ✅ Implemented Features
-- **Backend**: FastAPI with SQLAlchemy models
-- **Database**: PostgreSQL with all core tables
-- **Authentication**: JWT-based auth with role-based access
-- **Frontend**: React + TypeScript + Tailwind CSS
-- **Basic Pages**: Login, Dashboard, Materials, Ammunition
-- **API Endpoints**: Full CRUD for materials, ammunition, test sessions, panels, shots
+### Access URLs
 
-### 🚧 In Progress / Missing Features
-- **Frontend Pages**: Test Sessions, Panels, Shots, Analytics, Prediction, Import
-- **Spreadsheet Import**: File upload and data mapping
-- **Analytics Engine**: ANOVA, regression, mixed-effects models
-- **Prediction System**: BFD and penetration prediction
-- **Report Generation**: PDF/CSV export
-- **Material Document Upload**: Specification sheet management
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
 
-### 📝 Current Limitations
-- No data visualization/charts yet
-- No statistical modeling implementation
-- No file upload functionality
-- Limited frontend functionality (only materials and ammunition fully implemented)
+### Default Login
+
+- Admin: admin@ballistic.test / admin123
+- Researcher: researcher@ballistic.test / research123
+
+## Features
+
+- **Test Sessions**: Upload Excel test data, group by vest/protocol, track official certifications
+- **ML Prediction**: XGBoost models for backface deformation (regression) and perforation (classification) with extrapolation detection
+- **Test Planner**: Candidate vest scoring and recommendations for new tests
+- **Vests Library**: Material composition, layers, construction details, female vest support
+- **Materials**: Physical properties, mechanical specs, weave types, coatings
+- **Ammunition**: Caliber normalization, projectile mass, velocity data
+- **Geometries**: Panel surface areas by size for energy distribution calculations
+- **Analytics**: BFD distributions, velocity comparisons, vest performance dashboards
+- **RFP / Pliego Matcher**: AI-powered requirement extraction from bid documents, vest matching with multi-threat-level support, per-level weight limits, female vest scoring, PDF export (EN/ES)
+- **Model Management**: Versioned model storage, training metrics, health checks, hyperparameter optimization
 
 ## Project Structure
+
 ```
 DeltaDash/
-├── backend/                 # FastAPI Python backend
+├── package.json              # Unified npm commands
+├── backend/                   # FastAPI Python backend
 │   ├── app/
-│   │   ├── api/v1/        # API endpoints
-│   │   ├── db/models/     # SQLAlchemy models
-│   │   └── core/          # Configuration and security
-│   ├── migrations/        # Alembic database migrations
-│   └── seed_data.py       # Initial data setup
-├── frontend/               # React TypeScript frontend
+│   │   ├── api/v1/           # API endpoints
+│   │   ├── core/             # Config, security
+│   │   ├── db/models/        # SQLAlchemy models
+│   │   ├── schemas/          # Pydantic schemas
+│   │   ├── services/
+│   │   │   ├── ml/           # ML training and prediction
+│   │   │   ├── pliego_matcher.py
+│   │   │   ├── test_session_service.py
+│   │   │   └── excel_parser.py
+│   ├── migrations/           # Alembic database migrations
+│   └── requirements.txt
+├── frontend/                  # React + TypeScript + Tailwind
 │   ├── src/
-│   │   ├── pages/        # React pages
-│   │   ├── components/    # Shared components
-│   │   ├── hooks/         # Custom React hooks
-│   │   └── types/         # TypeScript definitions
-├── storage/                # File storage directory
-├── docker-compose.yml      # Docker service configuration
-└── .env                   # Environment variables
+│   │   ├── pages/            # React pages
+│   │   ├── components/       # Shared components
+│   │   ├── hooks/           # Custom React hooks
+│   │   ├── api/             # API client and types
+│   │   └── utils/           # PDF export, helpers
+├── storage/                  # File storage (uploads, model artifacts, reports)
+├── docs/                     # Documentation
+│   └── 1.2-BL-Plan.md       # Ballistic limit ML plan
+├── docker-compose.yml
+└── .env
 ```
 
-## Development Workflow
+## Database Commands
 
-### Adding New Features
-1. **Backend**: Add models in `backend/app/db/models/`
-2. **API**: Create endpoints in `backend/app/api/v1/`
-3. **Frontend**: Add pages in `frontend/src/pages/`
-4. **Types**: Update TypeScript definitions in `frontend/src/types/`
-
-### Database Changes
 ```bash
-# Create new migration
-docker-compose exec backend alembic revision --autogenerate -m "Description"
+npm run migrate              # Run Alembic migrations
 
-# Apply migrations
-docker-compose exec backend alembic upgrade head
+# Create new migration after model changes
+cd backend && alembic revision --autogenerate -m "Description"
+
+# Access database directly
+docker compose exec postgres psql -U ballistic_user -d ballistic
 ```
-
-### Development Commands
-```bash
-# View logs
-docker-compose logs -f [service-name]
-
-# Access backend shell
-docker-compose exec backend bash
-
-# Access database
-docker-compose exec postgres psql -U ballistic_user -d ballistic
-```
-
-## Security Notes
-- Default passwords are for development only
-- Change SECRET_KEY in production
-- Use HTTPS in production
-- Review CORS settings for production
 
 ## Troubleshooting
 
 ### Port Conflicts
-If ports 5173, 8000, or 5432 are occupied, modify them in `docker-compose.yml`
 
-### Database Connection Issues
 ```bash
-# Reset database
+lsof -i :5173    # Check frontend port
+lsof -i :8000    # Check backend port
+npm run stop     # Kill all dev servers
+```
+
+### Database Issues
+
+```bash
+# Check PostgreSQL status
+brew services list | grep postgresql  # macOS
+sudo systemctl status postgresql      # Ubuntu
+
+# Restart PostgreSQL
+brew services restart postgresql@15  # macOS
+sudo systemctl restart postgresql     # Ubuntu
+
+# Reset database (Docker)
 docker-compose down -v
 docker-compose up -d
 docker-compose exec backend alembic upgrade head
-docker-compose exec backend python seed_data.py
 ```
 
 ### Frontend Build Issues
+
 ```bash
-# Rebuild frontend
-docker-compose build --no-cache frontend
-docker-compose up -d frontend
+rm -rf node_modules frontend/node_modules
+npm install
 ```
 
-## Next Steps for Full Implementation
-1. Implement remaining frontend pages
-2. Add spreadsheet import functionality
-3. Build analytics and modeling engine
-4. Create prediction system
-5. Add report generation
-6. Implement material document upload
-7. Add data visualization charts
-8. Enhance security features
+## Security Notes
+
+- Change `SECRET_KEY` in production
+- Change default database password
+- Use HTTPS in production
+- Review CORS settings for production
+
+## Documentation
+
+- [Railway Deployment & Troubleshooting](RAILWAY.md)
+- [Ballistic Limit ML Plan (v1.2.0)](docs/1.2-BL-Plan.md)
