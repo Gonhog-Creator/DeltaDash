@@ -3,11 +3,13 @@ import { apiClient } from './client';
 export interface AuditLogEntry {
   id: string;
   user_id: string | null;
+  username: string | null;
   action: string;
   entity_type: string | null;
   entity_id: string | null;
   before_json: Record<string, any> | null;
   after_json: Record<string, any> | null;
+  source: string | null;
   created_at: string;
 }
 

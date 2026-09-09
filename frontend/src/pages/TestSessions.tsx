@@ -78,6 +78,7 @@ export function TestSessions() {
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [bulkFiles, setBulkFiles] = useState<File[]>([]);
   const [selectedBulkGeometryId, setSelectedBulkGeometryId] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   useEffect(() => {
     if (defaultGeometryId && !selectedBulkGeometryId && showBulkUpload) {
       setSelectedBulkGeometryId(defaultGeometryId);
@@ -101,6 +102,29 @@ export function TestSessions() {
   }, {} as Record<string, TestSession[]>) || {};
 
   const parentSessions = testSessions?.filter(s => !s.parent_test_group_id) || [];
+
+  const filteredParentSessions = (() => {
+    if (!searchQuery.trim()) return parentSessions;
+    const q = searchQuery.toLowerCase();
+    return parentSessions.filter(parent => {
+      const children = groupedTests[parent.id] || [];
+      const parentMatch =
+        parent.name?.toLowerCase().includes(q) ||
+        parent.lab_name?.toLowerCase().includes(q) ||
+        parent.protocol?.toLowerCase().includes(q) ||
+        parent.vest_name?.toLowerCase().includes(q) ||
+        parent.vest_code?.toLowerCase().includes(q) ||
+        parent.geometry_name?.toLowerCase().includes(q) ||
+        parent.certification_number?.toLowerCase().includes(q);
+      const childMatch = children.some(child =>
+        child.name?.toLowerCase().includes(q) ||
+        child.vest_name?.toLowerCase().includes(q) ||
+        child.vest_code?.toLowerCase().includes(q) ||
+        child.geometry_name?.toLowerCase().includes(q)
+      );
+      return parentMatch || childMatch;
+    });
+  })();
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error loading test sessions</div>;
@@ -344,6 +368,16 @@ export function TestSessions() {
         </div>
       </div>
 
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder="Search test sessions..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+        />
+      </div>
+
       <div className="bg-white shadow rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -361,7 +395,7 @@ export function TestSessions() {
               </tr>
             </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {parentSessions.map((parent) => {
+            {filteredParentSessions.map((parent) => {
               const children = groupedTests[parent.id] || [];
               const hasChildren = children.length > 0;
               const isExpanded = expandedGroups.has(parent.id);

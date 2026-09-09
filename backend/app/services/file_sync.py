@@ -217,6 +217,64 @@ def sync_cover_files(remote_cursor, base_url: str, token: Optional[str] = None) 
     return stats
 
 
+def sync_material_document_files(remote_cursor, base_url: str, token: Optional[str] = None) -> dict:
+    stats = {"downloaded": 0, "skipped": 0}
+
+    if not token:
+        print("[file_sync] No PRODUCTION_API_TOKEN — skipping material document files")
+        return stats
+
+    try:
+        remote_cursor.execute("SELECT id, stored_path FROM material_documents WHERE stored_path IS NOT NULL")
+    except Exception:
+        print("[file_sync] material_documents table not found on remote — skipping")
+        return stats
+
+    for row in remote_cursor.fetchall():
+        doc_id = str(row[0])
+        stored_path = row[1]
+        if not stored_path:
+            continue
+        dest = os.path.join(settings.material_docs_dir, stored_path)
+        if os.path.exists(dest):
+            stats["skipped"] += 1
+            continue
+        url = f"{base_url}/api/v1/materials/documents/{doc_id}/download"
+        if _download_to(url, dest, token):
+            stats["downloaded"] += 1
+
+    return stats
+
+
+def sync_pliego_document_files(remote_cursor, base_url: str, token: Optional[str] = None) -> dict:
+    stats = {"downloaded": 0, "skipped": 0}
+
+    if not token:
+        print("[file_sync] No PRODUCTION_API_TOKEN — skipping pliego document files")
+        return stats
+
+    try:
+        remote_cursor.execute("SELECT id, file_path FROM pliego_documents WHERE file_path IS NOT NULL")
+    except Exception:
+        print("[file_sync] pliego_documents table not found on remote — skipping")
+        return stats
+
+    for row in remote_cursor.fetchall():
+        doc_id = str(row[0])
+        file_path = row[1]
+        if not file_path:
+            continue
+        dest = os.path.join(settings.pliego_docs_dir, file_path)
+        if os.path.exists(dest):
+            stats["skipped"] += 1
+            continue
+        url = f"{base_url}/api/v1/pliego/documents/{doc_id}/download"
+        if _download_to(url, dest, token):
+            stats["downloaded"] += 1
+
+    return stats
+
+
 def sync_all_files(remote_cursor, base_url: Optional[str] = None, token: Optional[str] = None) -> dict:
     base_url = base_url or settings.PRODUCTION_BACKEND_URL
     token = token or (settings.PRODUCTION_API_TOKEN or None)
@@ -225,7 +283,9 @@ def sync_all_files(remote_cursor, base_url: Optional[str] = None, token: Optiona
     results = {}
     results["geometry"] = sync_geometry_files(remote_cursor, base_url, token)
     results["materials"] = sync_material_files(remote_cursor, base_url, token)
+    results["material_documents"] = sync_material_document_files(remote_cursor, base_url, token)
     results["vest_documents"] = sync_vest_documents(remote_cursor, base_url, token)
     results["covers"] = sync_cover_files(remote_cursor, base_url, token)
+    results["pliego_documents"] = sync_pliego_document_files(remote_cursor, base_url, token)
     print(f"[file_sync] Done: {results}")
     return results

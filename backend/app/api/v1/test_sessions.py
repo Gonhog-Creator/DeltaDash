@@ -432,6 +432,7 @@ def delete_test_session(
     # Audit log: Record what will be deleted before deletion
     audit_log = AuditLog(
         user_id=current_user.id,
+        username=current_user.username,
         action="delete_test_session",
         entity_type="test_session",
         entity_id=test_session.id,
@@ -455,6 +456,7 @@ def delete_test_session(
             ],
         },
         after_json={"status": "deleted"},
+        source="production" if os.getenv("USE_RAILWAY_STORAGE") else "local",
         created_at=datetime.now(timezone.utc)
     )
     db.add(audit_log)
@@ -580,6 +582,7 @@ def bulk_reupload_all_test_sessions(
     
     audit_log = AuditLog(
         user_id=current_user.id,
+        username=current_user.username,
         action="bulk_reupload_all_test_sessions",
         entity_type="test_session",
         entity_id=None,
@@ -601,6 +604,7 @@ def bulk_reupload_all_test_sessions(
             "session_count": len(deleted_test_sessions),
         },
         after_json={"status": "deleted_before_reupload"},
+        source="production" if os.getenv("USE_RAILWAY_STORAGE") else "local",
         created_at=datetime.now(timezone.utc)
     )
     db.add(audit_log)

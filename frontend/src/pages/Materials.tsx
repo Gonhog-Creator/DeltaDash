@@ -49,6 +49,7 @@ export function Materials() {
   const [vestUsage, setVestUsage] = useState<MaterialVestUsageResponse | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [loadingVestUsage, setLoadingVestUsage] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [formData, setFormData] = useState<MaterialCreate>({
     name: '',
     material_class: '',
@@ -296,6 +297,17 @@ export function Materials() {
     
     let filtered = materials;
     
+    // Apply search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(material =>
+        material.name?.toLowerCase().includes(q) ||
+        material.material_class?.toLowerCase().includes(q) ||
+        material.manufacturer?.toLowerCase().includes(q) ||
+        material.material_function?.toLowerCase().includes(q)
+      );
+    }
+    
     // Apply filter
     if (activeFilterField && activeFilters.length > 0) {
       filtered = materials.filter(material => {
@@ -431,6 +443,16 @@ export function Materials() {
             {showCreateForm ? 'Cancel' : 'Add Material'}
           </button>
         )}
+      </div>
+
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder="Search materials..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+        />
       </div>
 
       {(showCreateForm || editingMaterial) && (
@@ -921,7 +943,7 @@ export function Materials() {
                 Name {sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}
               </th>
               <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 whitespace-nowrap"
                 onClick={() => handleSort('material_class')}
               >
                 <div className="flex items-center gap-1">
@@ -961,10 +983,10 @@ export function Materials() {
                 </div>
               </th>
               <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 max-w-28"
                 onClick={() => handleSort('areal_density_g_m2')}
               >
-                Areal Density (g/m²) {sortField === 'areal_density_g_m2' && (sortDirection === 'asc' ? '↑' : '↓')}
+                Areal Density<br/>(g/m²) {sortField === 'areal_density_g_m2' && (sortDirection === 'asc' ? '↑' : '↓')}
               </th>
               <th 
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -988,7 +1010,7 @@ export function Materials() {
                 onClick={() => handleMaterialClick(material)}
               >
                 <td className="px-6 py-4 text-sm font-medium text-gray-900 break-words">{material.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
                   {normalizeString(material.material_class) || '-'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{material.manufacturer || '-'}</td>

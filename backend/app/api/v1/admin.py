@@ -16,6 +16,14 @@ from app.db.models.geometry import Geometry
 from app.db.models.geometry_material_config import GeometryMaterialConfig
 from app.db.models.cover import Cover
 from app.db.models.vest_model import ModelDocument
+from app.db.models.material_document import MaterialDocument
+from app.db.models.pliego_document import PliegoDocument
+from app.db.models.shot import Shot
+from app.db.models.armor_panel import ArmorPanel
+from app.db.models.armor_panel_layer import ArmorPanelLayer
+from app.db.models.shot_pattern import ShotPattern
+from app.db.models.shot_pattern_position import ShotPatternPosition
+from app.db.models.audit_log import AuditLog
 from app.api.v1.auth import get_current_active_user, get_current_user
 from app.db.models.user import User
 from app.core.config import settings
@@ -120,11 +128,13 @@ def get_preview_changes(remote_cursor, local_db: Session) -> SyncPreview:
     entities = [
         ("ammunition", Ammunition, "SELECT * FROM ammunition"),
         ("materials", Material, "SELECT * FROM materials"),
+        ("material_documents", MaterialDocument, "SELECT * FROM material_documents"),
         ("vests", Vest, "SELECT * FROM vests"),
         ("vest_layers", VestLayer, "SELECT * FROM vest_layers"),
         ("model_documents", ModelDocument, "SELECT * FROM model_documents"),
         ("test_sessions", TestSession, "SELECT * FROM test_sessions"),
         ("shot_data", ShotData, "SELECT * FROM shot_data"),
+        ("shots", Shot, "SELECT * FROM shots"),
         ("protocols", Protocol, "SELECT * FROM protocols"),
         ("locations", Location, "SELECT * FROM locations"),
         ("geometries", Geometry, "SELECT * FROM geometries"),
@@ -132,6 +142,12 @@ def get_preview_changes(remote_cursor, local_db: Session) -> SyncPreview:
         ("covers", Cover, "SELECT * FROM covers"),
         ("anchor_points", AnchorPoint, "SELECT * FROM anchor_points"),
         ("anchor_point_layers", AnchorPointLayer, "SELECT * FROM anchor_point_layers"),
+        ("armor_panels", ArmorPanel, "SELECT * FROM armor_panels"),
+        ("armor_panel_layers", ArmorPanelLayer, "SELECT * FROM armor_panel_layers"),
+        ("shot_patterns", ShotPattern, "SELECT * FROM shot_patterns"),
+        ("shot_pattern_positions", ShotPatternPosition, "SELECT * FROM shot_pattern_positions"),
+        ("pliego_documents", PliegoDocument, "SELECT * FROM pliego_documents"),
+        ("audit_log", AuditLog, "SELECT * FROM audit_log"),
     ]
     
     for idx, (entity_name, model_class, query) in enumerate(entities):
@@ -262,11 +278,13 @@ def get_count_preview(remote_cursor, local_db: Session) -> SyncPreview:
     entities = [
         ("ammunition", Ammunition, "SELECT COUNT(*) FROM ammunition"),
         ("materials", Material, "SELECT COUNT(*) FROM materials"),
+        ("material_documents", MaterialDocument, "SELECT COUNT(*) FROM material_documents"),
         ("vests", Vest, "SELECT COUNT(*) FROM vests"),
         ("vest_layers", VestLayer, "SELECT COUNT(*) FROM vest_layers"),
         ("model_documents", ModelDocument, "SELECT COUNT(*) FROM model_documents"),
         ("test_sessions", TestSession, "SELECT COUNT(*) FROM test_sessions"),
         ("shot_data", ShotData, "SELECT COUNT(*) FROM shot_data"),
+        ("shots", Shot, "SELECT COUNT(*) FROM shots"),
         ("protocols", Protocol, "SELECT COUNT(*) FROM protocols"),
         ("locations", Location, "SELECT COUNT(*) FROM locations"),
         ("geometries", Geometry, "SELECT COUNT(*) FROM geometries"),
@@ -275,6 +293,12 @@ def get_count_preview(remote_cursor, local_db: Session) -> SyncPreview:
         ("users", User, "SELECT COUNT(*) FROM users"),
         ("anchor_points", AnchorPoint, "SELECT COUNT(*) FROM anchor_points"),
         ("anchor_point_layers", AnchorPointLayer, "SELECT COUNT(*) FROM anchor_point_layers"),
+        ("armor_panels", ArmorPanel, "SELECT COUNT(*) FROM armor_panels"),
+        ("armor_panel_layers", ArmorPanelLayer, "SELECT COUNT(*) FROM armor_panel_layers"),
+        ("shot_patterns", ShotPattern, "SELECT COUNT(*) FROM shot_patterns"),
+        ("shot_pattern_positions", ShotPatternPosition, "SELECT COUNT(*) FROM shot_pattern_positions"),
+        ("pliego_documents", PliegoDocument, "SELECT COUNT(*) FROM pliego_documents"),
+        ("audit_log", AuditLog, "SELECT COUNT(*) FROM audit_log"),
     ]
     
     for idx, (entity_name, model_class, query) in enumerate(entities):
@@ -1139,9 +1163,330 @@ def sync_database(
                 
                 local_db.commit()
             
+            # Sync material_documents
+            remote_cursor.execute("SELECT * FROM material_documents")
+            columns = [desc[0] for desc in remote_cursor.description]
+            material_documents_data = remote_cursor.fetchall()
+
+            if material_documents_data:
+                sync_all_new = should_sync_all("material_documents", "new")
+                sync_all_updated = should_sync_all("material_documents", "updated")
+
+                existing_material_documents = {}
+                for item in local_db.query(MaterialDocument).all():
+                    existing_material_documents[str(item.id)] = item
+
+                new_material_documents = []
+                updated_material_documents = []
+
+                for row in material_documents_data:
+                    doc_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in doc_dict.items() if hasattr(MaterialDocument, key)}
+                    if 'id' in valid_columns and isinstance(valid_columns['id'], str):
+                        valid_columns['id'] = uuid.UUID(valid_columns['id'])
+                    if 'material_id' in valid_columns and isinstance(valid_columns['material_id'], str):
+                        valid_columns['material_id'] = uuid.UUID(valid_columns['material_id'])
+                    if 'uploaded_by' in valid_columns and isinstance(valid_columns['uploaded_by'], str):
+                        valid_columns['uploaded_by'] = uuid.UUID(valid_columns['uploaded_by'])
+                    existing = existing_material_documents.get(str(valid_columns['id']))
+                    if not existing:
+                        if sync_all_new or should_sync_record("material_documents", str(valid_columns['id']), "new"):
+                            new_material_documents.append(valid_columns)
+                    else:
+                        if sync_all_updated or should_sync_record("material_documents", str(valid_columns['id']), "updated"):
+                            updated_material_documents.append(valid_columns)
+
+                if new_material_documents:
+                    local_db.bulk_insert_mappings(MaterialDocument, new_material_documents)
+                    applied_changes["new"] += len(new_material_documents)
+                if updated_material_documents:
+                    local_db.bulk_update_mappings(MaterialDocument, updated_material_documents)
+                    applied_changes["updated"] += len(updated_material_documents)
+                local_db.commit()
+            else:
+                material_documents_data = []
+
+            # Sync shot_patterns
+            remote_cursor.execute("SELECT * FROM shot_patterns")
+            columns = [desc[0] for desc in remote_cursor.description]
+            shot_patterns_data = remote_cursor.fetchall()
+
+            if shot_patterns_data:
+                sync_all_new = should_sync_all("shot_patterns", "new")
+                sync_all_updated = should_sync_all("shot_patterns", "updated")
+
+                existing_shot_patterns = {}
+                for item in local_db.query(ShotPattern).all():
+                    existing_shot_patterns[str(item.id)] = item
+
+                new_shot_patterns = []
+                updated_shot_patterns = []
+
+                for row in shot_patterns_data:
+                    pattern_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in pattern_dict.items() if hasattr(ShotPattern, key)}
+                    existing = existing_shot_patterns.get(str(valid_columns['id']))
+                    if not existing:
+                        if sync_all_new or should_sync_record("shot_patterns", str(valid_columns['id']), "new"):
+                            new_shot_patterns.append(valid_columns)
+                    else:
+                        if sync_all_updated or should_sync_record("shot_patterns", str(valid_columns['id']), "updated"):
+                            updated_shot_patterns.append(valid_columns)
+
+                if new_shot_patterns:
+                    local_db.bulk_insert_mappings(ShotPattern, new_shot_patterns)
+                    applied_changes["new"] += len(new_shot_patterns)
+                if updated_shot_patterns:
+                    local_db.bulk_update_mappings(ShotPattern, updated_shot_patterns)
+                    applied_changes["updated"] += len(updated_shot_patterns)
+                local_db.commit()
+            else:
+                shot_patterns_data = []
+
+            # Sync shot_pattern_positions
+            remote_cursor.execute("SELECT * FROM shot_pattern_positions")
+            columns = [desc[0] for desc in remote_cursor.description]
+            shot_pattern_positions_data = remote_cursor.fetchall()
+
+            if shot_pattern_positions_data:
+                sync_all_new = should_sync_all("shot_pattern_positions", "new")
+                sync_all_updated = should_sync_all("shot_pattern_positions", "updated")
+
+                existing_shot_pattern_positions = {}
+                for item in local_db.query(ShotPatternPosition).all():
+                    existing_shot_pattern_positions[str(item.id)] = item
+
+                new_shot_pattern_positions = []
+                updated_shot_pattern_positions = []
+
+                for row in shot_pattern_positions_data:
+                    pos_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in pos_dict.items() if hasattr(ShotPatternPosition, key)}
+                    existing = existing_shot_pattern_positions.get(str(valid_columns['id']))
+                    if not existing:
+                        if sync_all_new or should_sync_record("shot_pattern_positions", str(valid_columns['id']), "new"):
+                            new_shot_pattern_positions.append(valid_columns)
+                    else:
+                        if sync_all_updated or should_sync_record("shot_pattern_positions", str(valid_columns['id']), "updated"):
+                            updated_shot_pattern_positions.append(valid_columns)
+
+                if new_shot_pattern_positions:
+                    local_db.bulk_insert_mappings(ShotPatternPosition, new_shot_pattern_positions)
+                    applied_changes["new"] += len(new_shot_pattern_positions)
+                if updated_shot_pattern_positions:
+                    local_db.bulk_update_mappings(ShotPatternPosition, updated_shot_pattern_positions)
+                    applied_changes["updated"] += len(updated_shot_pattern_positions)
+                local_db.commit()
+            else:
+                shot_pattern_positions_data = []
+
+            # Sync armor_panels
+            remote_cursor.execute("SELECT * FROM armor_panels")
+            columns = [desc[0] for desc in remote_cursor.description]
+            armor_panels_data = remote_cursor.fetchall()
+
+            if armor_panels_data:
+                sync_all_new = should_sync_all("armor_panels", "new")
+                sync_all_updated = should_sync_all("armor_panels", "updated")
+
+                existing_armor_panels = {}
+                for item in local_db.query(ArmorPanel).all():
+                    existing_armor_panels[str(item.id)] = item
+
+                new_armor_panels = []
+                updated_armor_panels = []
+
+                for row in armor_panels_data:
+                    panel_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in panel_dict.items() if hasattr(ArmorPanel, key)}
+                    existing = existing_armor_panels.get(str(valid_columns['id']))
+                    if not existing:
+                        if sync_all_new or should_sync_record("armor_panels", str(valid_columns['id']), "new"):
+                            new_armor_panels.append(valid_columns)
+                    else:
+                        if sync_all_updated or should_sync_record("armor_panels", str(valid_columns['id']), "updated"):
+                            updated_armor_panels.append(valid_columns)
+
+                if new_armor_panels:
+                    local_db.bulk_insert_mappings(ArmorPanel, new_armor_panels)
+                    applied_changes["new"] += len(new_armor_panels)
+                if updated_armor_panels:
+                    local_db.bulk_update_mappings(ArmorPanel, updated_armor_panels)
+                    applied_changes["updated"] += len(updated_armor_panels)
+                local_db.commit()
+            else:
+                armor_panels_data = []
+
+            # Sync armor_panel_layers
+            remote_cursor.execute("SELECT * FROM armor_panel_layers")
+            columns = [desc[0] for desc in remote_cursor.description]
+            armor_panel_layers_data = remote_cursor.fetchall()
+
+            if armor_panel_layers_data:
+                sync_all_new = should_sync_all("armor_panel_layers", "new")
+                sync_all_updated = should_sync_all("armor_panel_layers", "updated")
+
+                existing_armor_panel_layers = {}
+                for item in local_db.query(ArmorPanelLayer).all():
+                    existing_armor_panel_layers[str(item.id)] = item
+
+                new_armor_panel_layers = []
+                updated_armor_panel_layers = []
+
+                for row in armor_panel_layers_data:
+                    layer_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in layer_dict.items() if hasattr(ArmorPanelLayer, key)}
+                    existing = existing_armor_panel_layers.get(str(valid_columns['id']))
+                    if not existing:
+                        if sync_all_new or should_sync_record("armor_panel_layers", str(valid_columns['id']), "new"):
+                            new_armor_panel_layers.append(valid_columns)
+                    else:
+                        if sync_all_updated or should_sync_record("armor_panel_layers", str(valid_columns['id']), "updated"):
+                            updated_armor_panel_layers.append(valid_columns)
+
+                if new_armor_panel_layers:
+                    local_db.bulk_insert_mappings(ArmorPanelLayer, new_armor_panel_layers)
+                    applied_changes["new"] += len(new_armor_panel_layers)
+                if updated_armor_panel_layers:
+                    local_db.bulk_update_mappings(ArmorPanelLayer, updated_armor_panel_layers)
+                    applied_changes["updated"] += len(updated_armor_panel_layers)
+                local_db.commit()
+            else:
+                armor_panel_layers_data = []
+
+            # Sync shots
+            remote_cursor.execute("SELECT * FROM shots")
+            columns = [desc[0] for desc in remote_cursor.description]
+            shots_data = remote_cursor.fetchall()
+
+            if shots_data:
+                sync_all_new = should_sync_all("shots", "new")
+                sync_all_updated = should_sync_all("shots", "updated")
+
+                existing_shots = {}
+                for item in local_db.query(Shot).all():
+                    existing_shots[str(item.id)] = item
+
+                new_shots = []
+                updated_shots = []
+
+                for row in shots_data:
+                    shot_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in shot_dict.items() if hasattr(Shot, key)}
+                    existing = existing_shots.get(str(valid_columns['id']))
+                    if not existing:
+                        if sync_all_new or should_sync_record("shots", str(valid_columns['id']), "new"):
+                            new_shots.append(valid_columns)
+                    else:
+                        if sync_all_updated or should_sync_record("shots", str(valid_columns['id']), "updated"):
+                            updated_shots.append(valid_columns)
+
+                if new_shots:
+                    local_db.bulk_insert_mappings(Shot, new_shots)
+                    applied_changes["new"] += len(new_shots)
+                if updated_shots:
+                    local_db.bulk_update_mappings(Shot, updated_shots)
+                    applied_changes["updated"] += len(updated_shots)
+                local_db.commit()
+            else:
+                shots_data = []
+
+            # Sync pliego_documents
+            remote_cursor.execute("SELECT * FROM pliego_documents")
+            columns = [desc[0] for desc in remote_cursor.description]
+            pliego_documents_data = remote_cursor.fetchall()
+
+            if pliego_documents_data:
+                sync_all_new = should_sync_all("pliego_documents", "new")
+                sync_all_updated = should_sync_all("pliego_documents", "updated")
+
+                existing_pliego_documents = {}
+                for item in local_db.query(PliegoDocument).all():
+                    existing_pliego_documents[str(item.id)] = item
+
+                new_pliego_documents = []
+                updated_pliego_documents = []
+
+                for row in pliego_documents_data:
+                    pliego_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in pliego_dict.items() if hasattr(PliegoDocument, key)}
+                    existing = existing_pliego_documents.get(str(valid_columns['id']))
+                    if not existing:
+                        if sync_all_new or should_sync_record("pliego_documents", str(valid_columns['id']), "new"):
+                            new_pliego_documents.append(valid_columns)
+                    else:
+                        if sync_all_updated or should_sync_record("pliego_documents", str(valid_columns['id']), "updated"):
+                            updated_pliego_documents.append(valid_columns)
+
+                if new_pliego_documents:
+                    local_db.bulk_insert_mappings(PliegoDocument, new_pliego_documents)
+                    applied_changes["new"] += len(new_pliego_documents)
+                if updated_pliego_documents:
+                    local_db.bulk_update_mappings(PliegoDocument, updated_pliego_documents)
+                    applied_changes["updated"] += len(updated_pliego_documents)
+                local_db.commit()
+            else:
+                pliego_documents_data = []
+
+            # Sync audit_log (dev-only: controlled by SYNC_AUDIT_LOG env flag)
+            sync_audit_log = os.getenv("SYNC_AUDIT_LOG", "true").lower() in ("true", "1", "yes")
+            audit_log_data = []
+            if sync_audit_log:
+                remote_cursor.execute("SELECT * FROM audit_log")
+                columns = [desc[0] for desc in remote_cursor.description]
+                audit_log_data = remote_cursor.fetchall()
+
+                if audit_log_data:
+                    sync_all_new = should_sync_all("audit_log", "new")
+                    sync_all_updated = should_sync_all("audit_log", "updated")
+
+                    existing_audit_logs = {}
+                    for item in local_db.query(AuditLog).all():
+                        existing_audit_logs[str(item.id)] = item
+
+                    local_user_ids = set(str(u.id) for u in local_db.query(User.id).all())
+
+                    new_audit_logs = []
+                    updated_audit_logs = []
+
+                    for row in audit_log_data:
+                        log_dict = dict(zip(columns, row))
+                        valid_columns = {key: value for key, value in log_dict.items() if hasattr(AuditLog, key)}
+                        if 'id' in valid_columns and isinstance(valid_columns['id'], str):
+                            valid_columns['id'] = uuid.UUID(valid_columns['id'])
+                        if 'user_id' in valid_columns and isinstance(valid_columns['user_id'], str):
+                            valid_columns['user_id'] = uuid.UUID(valid_columns['user_id'])
+                        if 'entity_id' in valid_columns and isinstance(valid_columns['entity_id'], str):
+                            valid_columns['entity_id'] = uuid.UUID(valid_columns['entity_id'])
+                        if 'user_id' in valid_columns and valid_columns['user_id'] and str(valid_columns['user_id']) not in local_user_ids:
+                            valid_columns['user_id'] = None
+                        existing = existing_audit_logs.get(str(valid_columns['id']))
+                        if not existing:
+                            if sync_all_new or should_sync_record("audit_log", str(valid_columns['id']), "new"):
+                                new_audit_logs.append(valid_columns)
+                        else:
+                            if sync_all_updated or should_sync_record("audit_log", str(valid_columns['id']), "updated"):
+                                updated_audit_logs.append(valid_columns)
+
+                    if new_audit_logs:
+                        local_db.bulk_insert_mappings(AuditLog, new_audit_logs)
+                        applied_changes["new"] += len(new_audit_logs)
+                    if updated_audit_logs:
+                        local_db.bulk_update_mappings(AuditLog, updated_audit_logs)
+                        applied_changes["updated"] += len(updated_audit_logs)
+                    local_db.commit()
+
             # Handle deletions based on confirmation - order matters for foreign key constraints
             # Delete in reverse dependency order: children before parents
             deletion_order = [
+                ("audit_log", AuditLog),
+                ("pliego_documents", PliegoDocument),
+                ("shots", Shot),
+                ("armor_panel_layers", ArmorPanelLayer),
+                ("armor_panels", ArmorPanel),
+                ("shot_pattern_positions", ShotPatternPosition),
+                ("shot_patterns", ShotPattern),
+                ("material_documents", MaterialDocument),
                 ("shot_data", ShotData),
                 ("anchor_point_layers", AnchorPointLayer),
                 ("anchor_points", AnchorPoint),
@@ -1198,6 +1543,22 @@ def sync_database(
                                 remote_cursor.execute("SELECT id FROM geometry_material_configs")
                             elif entity_name == "covers":
                                 remote_cursor.execute("SELECT id FROM covers")
+                            elif entity_name == "material_documents":
+                                remote_cursor.execute("SELECT id FROM material_documents")
+                            elif entity_name == "shots":
+                                remote_cursor.execute("SELECT id FROM shots")
+                            elif entity_name == "armor_panels":
+                                remote_cursor.execute("SELECT id FROM armor_panels")
+                            elif entity_name == "armor_panel_layers":
+                                remote_cursor.execute("SELECT id FROM armor_panel_layers")
+                            elif entity_name == "shot_patterns":
+                                remote_cursor.execute("SELECT id FROM shot_patterns")
+                            elif entity_name == "shot_pattern_positions":
+                                remote_cursor.execute("SELECT id FROM shot_pattern_positions")
+                            elif entity_name == "pliego_documents":
+                                remote_cursor.execute("SELECT id FROM pliego_documents")
+                            elif entity_name == "audit_log":
+                                remote_cursor.execute("SELECT id FROM audit_log")
                             
                             for row in remote_cursor.fetchall():
                                 remote_ids.add(str(row[0]))
@@ -1238,11 +1599,13 @@ def sync_database(
             return {"message": "Database sync completed successfully", "synced_records": {
                 "ammunition": len(ammunition_data),
                 "materials": len(materials_data),
+                "material_documents": len(material_documents_data),
                 "vests": len(vests_data),
                 "vest_layers": len(vest_layers_data),
                 "model_documents": len(model_documents_data),
                 "test_sessions": len(test_sessions_data),
                 "shot_data": len(shot_data),
+                "shots": len(shots_data),
                 "protocols": len(protocols_data),
                 "locations": len(locations_data),
                 "users": len(users_data),
@@ -1250,7 +1613,13 @@ def sync_database(
                 "anchor_point_layers": len(anchor_point_layers_data),
                 "geometries": len(geometries_data),
                 "geometry_material_configs": len(geometry_material_configs_data),
-                "covers": len(covers_data)
+                "covers": len(covers_data),
+                "armor_panels": len(armor_panels_data),
+                "armor_panel_layers": len(armor_panel_layers_data),
+                "shot_patterns": len(shot_patterns_data),
+                "shot_pattern_positions": len(shot_pattern_positions_data),
+                "pliego_documents": len(pliego_documents_data),
+                "audit_log": len(audit_log_data),
             }, "file_sync": file_sync_results}
             
         except Exception as e:
@@ -1313,6 +1682,13 @@ def reset_database(
         # Define entity deletion order (children before parents)
         # Must delete all entities in proper order to handle FK dependencies
         deletion_order = [
+            ("audit_log", AuditLog),
+            ("pliego_documents", PliegoDocument),
+            ("shots", Shot),
+            ("armor_panel_layers", ArmorPanelLayer),
+            ("armor_panels", ArmorPanel),
+            ("shot_pattern_positions", ShotPatternPosition),
+            ("shot_patterns", ShotPattern),
             ("anchor_point_layers", AnchorPointLayer),
             ("shot_data", ShotData),
             ("vest_layers", VestLayer),
@@ -1322,6 +1698,7 @@ def reset_database(
             ("vests", Vest),
             ("geometry_material_configs", GeometryMaterialConfig),
             ("covers", Cover),
+            ("material_documents", MaterialDocument),
             ("materials", Material),
             ("ammunition", Ammunition),
             ("protocols", Protocol),
@@ -1602,6 +1979,126 @@ def reset_database(
                 
                 local_db.commit()
             
+            # Sync material_documents
+            material_documents_data = []
+            if not entities_to_reset or "material_documents" in entities_to_reset:
+                remote_cursor.execute("SELECT * FROM material_documents")
+                columns = [desc[0] for desc in remote_cursor.description]
+                material_documents_data = remote_cursor.fetchall()
+                for row in material_documents_data:
+                    doc_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in doc_dict.items() if hasattr(MaterialDocument, key)}
+                    if 'id' in valid_columns and isinstance(valid_columns['id'], str):
+                        valid_columns['id'] = uuid.UUID(valid_columns['id'])
+                    if 'material_id' in valid_columns and isinstance(valid_columns['material_id'], str):
+                        valid_columns['material_id'] = uuid.UUID(valid_columns['material_id'])
+                    if 'uploaded_by' in valid_columns and isinstance(valid_columns['uploaded_by'], str):
+                        valid_columns['uploaded_by'] = uuid.UUID(valid_columns['uploaded_by'])
+                    new_doc = MaterialDocument(**valid_columns)
+                    local_db.add(new_doc)
+                local_db.commit()
+
+            # Sync shot_patterns
+            shot_patterns_data = []
+            if not entities_to_reset or "shot_patterns" in entities_to_reset:
+                remote_cursor.execute("SELECT * FROM shot_patterns")
+                columns = [desc[0] for desc in remote_cursor.description]
+                shot_patterns_data = remote_cursor.fetchall()
+                for row in shot_patterns_data:
+                    pattern_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in pattern_dict.items() if hasattr(ShotPattern, key)}
+                    new_pattern = ShotPattern(**valid_columns)
+                    local_db.add(new_pattern)
+                local_db.commit()
+
+            # Sync shot_pattern_positions
+            shot_pattern_positions_data = []
+            if not entities_to_reset or "shot_pattern_positions" in entities_to_reset:
+                remote_cursor.execute("SELECT * FROM shot_pattern_positions")
+                columns = [desc[0] for desc in remote_cursor.description]
+                shot_pattern_positions_data = remote_cursor.fetchall()
+                for row in shot_pattern_positions_data:
+                    pos_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in pos_dict.items() if hasattr(ShotPatternPosition, key)}
+                    new_pos = ShotPatternPosition(**valid_columns)
+                    local_db.add(new_pos)
+                local_db.commit()
+
+            # Sync armor_panels
+            armor_panels_data = []
+            if not entities_to_reset or "armor_panels" in entities_to_reset:
+                remote_cursor.execute("SELECT * FROM armor_panels")
+                columns = [desc[0] for desc in remote_cursor.description]
+                armor_panels_data = remote_cursor.fetchall()
+                for row in armor_panels_data:
+                    panel_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in panel_dict.items() if hasattr(ArmorPanel, key)}
+                    new_panel = ArmorPanel(**valid_columns)
+                    local_db.add(new_panel)
+                local_db.commit()
+
+            # Sync armor_panel_layers
+            armor_panel_layers_data = []
+            if not entities_to_reset or "armor_panel_layers" in entities_to_reset:
+                remote_cursor.execute("SELECT * FROM armor_panel_layers")
+                columns = [desc[0] for desc in remote_cursor.description]
+                armor_panel_layers_data = remote_cursor.fetchall()
+                for row in armor_panel_layers_data:
+                    layer_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in layer_dict.items() if hasattr(ArmorPanelLayer, key)}
+                    new_layer = ArmorPanelLayer(**valid_columns)
+                    local_db.add(new_layer)
+                local_db.commit()
+
+            # Sync shots
+            shots_data = []
+            if not entities_to_reset or "shots" in entities_to_reset:
+                remote_cursor.execute("SELECT * FROM shots")
+                columns = [desc[0] for desc in remote_cursor.description]
+                shots_data = remote_cursor.fetchall()
+                for row in shots_data:
+                    shot_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in shot_dict.items() if hasattr(Shot, key)}
+                    new_shot = Shot(**valid_columns)
+                    local_db.add(new_shot)
+                local_db.commit()
+
+            # Sync pliego_documents
+            pliego_documents_data = []
+            if not entities_to_reset or "pliego_documents" in entities_to_reset:
+                remote_cursor.execute("SELECT * FROM pliego_documents")
+                columns = [desc[0] for desc in remote_cursor.description]
+                pliego_documents_data = remote_cursor.fetchall()
+                for row in pliego_documents_data:
+                    pliego_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in pliego_dict.items() if hasattr(PliegoDocument, key)}
+                    new_pliego = PliegoDocument(**valid_columns)
+                    local_db.add(new_pliego)
+                local_db.commit()
+
+            # Sync audit_log (dev-only: controlled by SYNC_AUDIT_LOG env flag)
+            audit_log_data = []
+            sync_audit_log = os.getenv("SYNC_AUDIT_LOG", "true").lower() in ("true", "1", "yes")
+            if sync_audit_log and (not entities_to_reset or "audit_log" in entities_to_reset):
+                remote_cursor.execute("SELECT * FROM audit_log")
+                columns = [desc[0] for desc in remote_cursor.description]
+                audit_log_data = remote_cursor.fetchall()
+                local_user_ids = set(str(u.id) for u in local_db.query(User.id).all())
+                for row in audit_log_data:
+                    log_dict = dict(zip(columns, row))
+                    valid_columns = {key: value for key, value in log_dict.items() if hasattr(AuditLog, key)}
+                    if 'id' in valid_columns and isinstance(valid_columns['id'], str):
+                        valid_columns['id'] = uuid.UUID(valid_columns['id'])
+                    if 'user_id' in valid_columns and isinstance(valid_columns['user_id'], str):
+                        valid_columns['user_id'] = uuid.UUID(valid_columns['user_id'])
+                    if 'entity_id' in valid_columns and isinstance(valid_columns['entity_id'], str):
+                        valid_columns['entity_id'] = uuid.UUID(valid_columns['entity_id'])
+                    if 'user_id' in valid_columns and valid_columns['user_id'] and str(valid_columns['user_id']) not in local_user_ids:
+                        valid_columns['user_id'] = None
+                    new_log = AuditLog(**valid_columns)
+                    local_db.add(new_log)
+                local_db.commit()
+
             # Sync files (images, PDFs, documents) from production
             file_sync_results = {}
             try:
@@ -1612,11 +2109,13 @@ def reset_database(
             return {"message": "Database reset completed successfully", "synced_records": {
                 "ammunition": len(ammunition_data),
                 "materials": len(materials_data),
+                "material_documents": len(material_documents_data),
                 "vests": len(vests_data),
                 "vest_layers": len(vest_layers_data),
                 "model_documents": len(model_documents_data),
                 "test_sessions": len(test_sessions_data),
                 "shot_data": len(shot_data),
+                "shots": len(shots_data),
                 "protocols": len(protocols_data),
                 "locations": len(locations_data),
                 "users": len(users_data),
@@ -1624,7 +2123,13 @@ def reset_database(
                 "anchor_point_layers": len(anchor_point_layers_data),
                 "geometries": len(geometries_data),
                 "geometry_material_configs": len(geometry_material_configs_data),
-                "covers": len(covers_data)
+                "covers": len(covers_data),
+                "armor_panels": len(armor_panels_data),
+                "armor_panel_layers": len(armor_panel_layers_data),
+                "shot_patterns": len(shot_patterns_data),
+                "shot_pattern_positions": len(shot_pattern_positions_data),
+                "pliego_documents": len(pliego_documents_data),
+                "audit_log": len(audit_log_data),
             }, "file_sync": file_sync_results}
             
         except Exception as e:

@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from typing import Any, Optional
+import os
 import uuid
 
 from app.db.models.audit_log import AuditLog
@@ -15,15 +16,18 @@ def log_action(
     entity_id: Optional[Any] = None,
     before: Optional[dict] = None,
     after: Optional[dict] = None,
+    source: Optional[str] = None,
 ):
     """Create an audit log entry. Call before db.commit() so it's in the same transaction."""
     entry = AuditLog(
         user_id=user.id if user else None,
+        username=user.username if user else None,
         action=action,
         entity_type=entity_type,
         entity_id=uuid.UUID(str(entity_id)) if entity_id else None,
         before_json=before,
         after_json=after,
+        source=source or ("production" if os.getenv("USE_RAILWAY_STORAGE") else "local"),
         created_at=datetime.now(timezone.utc),
     )
     db.add(entry)

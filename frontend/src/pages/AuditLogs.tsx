@@ -167,9 +167,10 @@ export function AuditLogs() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timestamp</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Entity</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Entity ID</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Details</th>
               </tr>
             </thead>
@@ -183,14 +184,17 @@ export function AuditLogs() {
                     <td className="px-4 py-2.5 text-sm text-gray-700 whitespace-nowrap">
                       {formatTimestamp(log.created_at)}
                     </td>
+                    <td className="px-4 py-2.5 text-sm text-gray-700 whitespace-nowrap">
+                      {log.username || (log.user_id ? log.user_id.substring(0, 8) : '-')}
+                    </td>
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${ACTION_COLORS[log.action] || 'bg-gray-100 text-gray-800'}`}>
                         {log.action}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-sm text-gray-700">{log.entity_type || '-'}</td>
-                    <td className="px-4 py-2.5 text-sm text-gray-500 font-mono truncate max-w-[120px]">
-                      {log.entity_id ? log.entity_id.substring(0, 8) : '-'}
+                    <td className="px-4 py-2.5 text-sm text-gray-500">
+                      {log.source || '-'}
                     </td>
                     <td className="px-4 py-2.5 text-sm text-gray-400">
                       {expandedId === log.id ? '▲' : '▼'}
@@ -198,7 +202,7 @@ export function AuditLogs() {
                   </tr>
                   {expandedId === log.id && (
                     <tr>
-                      <td colSpan={5} className="px-4 py-3 bg-gray-50">
+                      <td colSpan={6} className="px-4 py-3 bg-gray-50">
                         <JsonDiff before={log.before_json} after={log.after_json} />
                       </td>
                     </tr>

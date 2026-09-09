@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app.db.session import get_db
 from app.db.models import Material as MaterialModel
+from app.db.models.material_document import MaterialDocument as MaterialDocumentModel
 from app.db.models.user import User as UserModel
 from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.material import MaterialCreate, MaterialUpdate, Material as MaterialSchema, MaterialListItem
@@ -370,3 +371,20 @@ def remove_material_file(
         raise HTTPException(status_code=400, detail="Invalid file type")
 
     db.commit()
+
+
+@router.get("/documents/{doc_id}/download")
+def download_material_document(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user)
+):
+    doc = db.query(MaterialDocumentModel).filter(MaterialDocumentModel.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    full_path = os.path.join(settings.material_docs_dir, doc.stored_path)
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    return FileResponse(full_path, filename=doc.original_filename)

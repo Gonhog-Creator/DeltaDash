@@ -4,6 +4,7 @@ import { useGeometries } from '../hooks/useGeometries';
 import { useAuth } from '../hooks/useAuth';
 import { useQueryClient } from '@tanstack/react-query';
 import { Cover, CoverCreate, coversApi } from '../api/covers';
+import { exportCoverResumenPdf } from '../utils/coverPdfExport';
 
 const COVER_COLORS = [
   { value: 'Black', label: 'Black / Negro' },
@@ -46,7 +47,7 @@ const emptyForm: CoverCreate = {
 export function Covers() {
   const { data: covers, isLoading, error } = useCovers();
   const { data: geometries } = useGeometries();
-  const { isAdmin, role } = useAuth();
+  const { role } = useAuth();
   const createMutation = useCreateCover();
   const updateMutation = useUpdateCover();
   const deleteMutation = useDeleteCover();
@@ -65,6 +66,7 @@ export function Covers() {
   const [editingCover, setEditingCover] = useState<Cover | null>(null);
   const [pdfUploading, setPdfUploading] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
+  const [resumenExporting, setResumenExporting] = useState(false);
 
   const refreshCover = async (coverId: string) => {
     const updated = await coversApi.get(coverId);
@@ -156,6 +158,41 @@ export function Covers() {
     } catch (err) {
       console.error('Failed to download cover PDF:', err);
       alert('Failed to download PDF. Please try again.');
+    }
+  };
+
+  const handleGenerateResumen = async (cover: Cover) => {
+    setResumenExporting(true);
+    try {
+      await exportCoverResumenPdf({
+        title: cover.name,
+        coverCode: cover.cover_code,
+        geometryName: cover.geometry_name || '',
+        fabricType: cover.fabric_type || '',
+        fabricWeight: cover.fabric_weight_g_m2 != null ? String(cover.fabric_weight_g_m2) : '',
+        layerCount: cover.layer_count != null ? String(cover.layer_count) : '',
+        color: cover.color || '',
+        weightG: cover.weight_g != null ? String(cover.weight_g) : '',
+        constructionDescription: cover.construction_description || '',
+        availableSizes: cover.available_sizes || [],
+        compatibleVestTypes: cover.compatible_vest_types || [],
+        hasMolle: cover.has_molle,
+        hasQuickRelease: cover.has_quick_release,
+        quickReleaseType: cover.quick_release_type || '',
+        hasBadana: cover.has_badana,
+        hasEscudo: cover.has_escudo,
+        hasHombreras: cover.has_hombreras,
+        finHeightMm: cover.fin_height_mm != null ? String(cover.fin_height_mm) : '',
+        finWidthMm: cover.fin_width_mm != null ? String(cover.fin_width_mm) : '',
+        notes: cover.notes || '',
+        frontImageUrl: cover.front_image ? coversApi.downloadImage(cover.id, 'front') : '',
+        backImageUrl: cover.back_image ? coversApi.downloadImage(cover.id, 'back') : '',
+      });
+    } catch (err) {
+      console.error('Resumen generation failed:', err);
+      alert('Failed to generate resumen: ' + (err as Error).message);
+    } finally {
+      setResumenExporting(false);
     }
   };
 
@@ -801,6 +838,13 @@ export function Covers() {
               </div>
             )}
             <div className="mt-4 pt-4 border-t flex justify-end gap-3">
+              <button
+                onClick={() => handleGenerateResumen(selectedCover)}
+                disabled={resumenExporting}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm disabled:opacity-50"
+              >
+                {resumenExporting ? 'Generating...' : 'Generate Resumen'}
+              </button>
               {selectedCover.pdf_document && (
                 <button
                   onClick={() => handlePdfDownload(selectedCover.id, selectedCover.pdf_document?.original_name)}

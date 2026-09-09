@@ -796,7 +796,7 @@ export function GeometryListTab() {
                 disabled={pdfExporting}
                 className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm disabled:opacity-50"
               >
-                {pdfExporting ? 'Generating...' : 'Generate PDF'}
+                {pdfExporting ? 'Generating...' : 'Generate Resumen'}
               </button>
               {viewing.pdf_document && (
                 <button
