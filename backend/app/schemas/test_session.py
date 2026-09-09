@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime, date
 from uuid import UUID
 from decimal import Decimal
@@ -23,6 +23,9 @@ class TestSessionBase(BaseModel):
     notes: Optional[str] = None
     is_official: Optional[bool] = False
     certification_number: Optional[str] = None
+    pdf_documents: Optional[list[dict[str, Any]]] = None
+    front_image: Optional[dict[str, Any]] = None
+    back_image: Optional[dict[str, Any]] = None
 
 
 class TestSessionCreate(TestSessionBase):

@@ -79,6 +79,14 @@ const guideData: GuideContent[] = [
           ],
         },
         {
+          heading: 'Using the page',
+          body: [
+            'The table shows parent certification sessions. Click a row to open a detail modal with full session information, PDF documents, front/back images, and child sessions.',
+            'Child sessions (wet, ambient, different sizes) are listed at the bottom of the modal. Click a child session row to view its shot-by-shot data.',
+            'PDF documents and front/back images can be uploaded, downloaded, and removed from the modal, just like in the Covers section.',
+          ],
+        },
+        {
           heading: 'Required inputs',
           body: [
             'To create a certification you need:',

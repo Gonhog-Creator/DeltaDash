@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTestSessions, useDeleteTestSession, useUploadExcel, useCreateFromExcel, useUpdateTestSession } from '../hooks/useTestSessions';
 import { useLocations, useCreateLocation, useDeleteLocation, useUpdateLocation } from '../hooks/useLocations';
@@ -6,8 +6,9 @@ import { useProtocols, useCreateProtocol, useDeleteProtocol, useUpdateProtocol }
 import { useVests } from '../hooks/useVests';
 import { useGeometries } from '../hooks/useGeometries';
 import { useAuth } from '../hooks/useAuth';
-import { TestSession } from '../api/test_session';
+import { TestSession, testSessionsApi } from '../api/test_session';
 import { apiClient, API_BASE_URL } from '../api/client';
+import { useQueryClient } from '@tanstack/react-query';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { LocationManagementModal } from '../components/LocationManagementModal';
 import { ProtocolManagementModal } from '../components/ProtocolManagementModal';
@@ -61,7 +62,6 @@ export function OfficialCertifications() {
   const [testDate, setTestDate] = useState(new Date().toISOString().split('T')[0]);
   const [certificationNumber, setCertificationNumber] = useState('');
   const [isOfficial, setIsOfficial] = useState(true);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminModalType, setAdminModalType] = useState<'locations' | 'protocols' | 'bulk-reupload'>('locations');
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -80,24 +80,91 @@ export function OfficialCertifications() {
   const [bulkFiles, setBulkFiles] = useState<File[]>([]);
   const [selectedBulkGeometryId, setSelectedBulkGeometryId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSession, setSelectedSession] = useState<TestSession | null>(null);
+  const queryClient = useQueryClient();
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const frontImageInputRef = useRef<HTMLInputElement>(null);
+  const backImageInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshSession = async (sessionId: string) => {
+    const updated = await testSessionsApi.get(sessionId);
+    setSelectedSession(updated);
+    queryClient.invalidateQueries({ queryKey: ['test-sessions'] });
+  };
+
+  const handleUploadPdf = async (file: File) => {
+    if (!selectedSession) return;
+    try {
+      await testSessionsApi.uploadPdf(selectedSession.id, file);
+      await refreshSession(selectedSession.id);
+    } catch (err: any) {
+      alert(`Failed to upload PDF: ${err.message || err.detail}`);
+    }
+  };
+
+  const handleDeletePdf = async (index: number) => {
+    if (!selectedSession) return;
+    try {
+      await testSessionsApi.deletePdf(selectedSession.id, index);
+      await refreshSession(selectedSession.id);
+    } catch (err: any) {
+      alert(`Failed to delete PDF: ${err.message || err.detail}`);
+    }
+  };
+
+  const handleUploadImage = async (side: 'front' | 'back', file: File) => {
+    if (!selectedSession) return;
+    try {
+      await testSessionsApi.uploadImage(selectedSession.id, side, file);
+      await refreshSession(selectedSession.id);
+    } catch (err: any) {
+      alert(`Failed to upload image: ${err.message || err.detail}`);
+    }
+  };
+
+  const handleDeleteImage = async (side: 'front' | 'back') => {
+    if (!selectedSession) return;
+    try {
+      await testSessionsApi.deleteImage(selectedSession.id, side);
+      await refreshSession(selectedSession.id);
+    } catch (err: any) {
+      alert(`Failed to delete image: ${err.message || err.detail}`);
+    }
+  };
+
+  const handlePdfDownload = async (sessionId: string, index: number, filename?: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(testSessionsApi.downloadPdf(sessionId, index), {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!response.ok) throw new Error('Failed to download PDF');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'document.pdf';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download PDF:', err);
+      alert('Failed to download PDF. Please try again.');
+    }
+  };
   useEffect(() => {
     if (defaultGeometryId && !selectedBulkGeometryId && showBulkUpload) {
       setSelectedBulkGeometryId(defaultGeometryId);
     }
   }, [defaultGeometryId, selectedBulkGeometryId, showBulkUpload]);
 
-  // Group test sessions by parent_test_group_id
   const groupedTests = testSessions?.reduce((acc, session) => {
     if (session.parent_test_group_id) {
       if (!acc[session.parent_test_group_id]) {
         acc[session.parent_test_group_id] = [];
       }
       acc[session.parent_test_group_id].push(session);
-    } else {
-      // This is a parent session or has no parent
-      if (!acc[session.id]) {
-        acc[session.id] = [];
-      }
     }
     return acc;
   }, {} as Record<string, TestSession[]>) || {};
@@ -284,18 +351,6 @@ export function OfficialCertifications() {
     }
   };
 
-  const toggleGroup = (groupId: string) => {
-    setExpandedGroups(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(groupId)) {
-        newSet.delete(groupId);
-      } else {
-        newSet.add(groupId);
-      }
-      return newSet;
-    });
-  };
-
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -381,167 +436,81 @@ export function OfficialCertifications() {
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredParentSessions.map((parent) => {
               const children = groupedTests[parent.id] || [];
-              const hasChildren = children.length > 0;
-              const isExpanded = expandedGroups.has(parent.id);
               const totalShotCount = children.reduce((sum, child) => sum + (child.shot_count || 0), 0);
-              
-              const sortedChildren = [...children].sort((a, b) => {
-                const extractTestNumber = (name: string, parentName: string) => {
-                  const suffix = name.replace(parentName + ' - ', '');
-                  const match = suffix.match(/^(\d+)/);
-                  return match ? parseInt(match[1], 10) : 0;
-                };
-                const numA = extractTestNumber(a.name, parent.name);
-                const numB = extractTestNumber(b.name, parent.name);
-                return numA - numB;
-              });
 
               return (
-                <Fragment key={parent.id}>
-                  <tr
-                    className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => hasChildren && toggleGroup(parent.id)}
-                  >
-                    <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 max-w-xs truncate" title={parent.name}>
-                      {hasChildren && (
-                        <span className="mr-2 text-gray-500">
-                          {isExpanded ? '▼' : '▶'}
-                        </span>
-                      )}
-                      {parent.name.length > 30 ? parent.name.substring(0, 30) + '...' : parent.name}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.test_date || '-'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 max-w-24 truncate" title={parent.lab_name || ''}>{parent.lab_name || '-'}</td>
-                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={parent.protocol || ''}>{parent.protocol || '-'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={parent.vest_code || ''}>
-                      {parent.vest_code ? (parent.vest_code.length > 15 ? parent.vest_code.substring(0, 15) + '...' : parent.vest_code) : '-'}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={parent.geometry_name || ''}>
-                      {parent.geometry_name ? (parent.geometry_name.length > 15 ? parent.geometry_name.substring(0, 15) + '...' : parent.geometry_name) : '-'}
-                    </td>
-                    <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate">{hasChildren ? totalShotCount : '-'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.certification_number || '-'}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
-                      {role !== 'viewer' && (
-                        parent.excel_file_path ? (
-                          <span className="text-green-600">Uploaded</span>
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setUploadTarget(parent);
-                            }}
-                            className="text-indigo-600 hover:text-indigo-900"
-                          >
-                            Upload
-                          </button>
-                        )
-                      )}
-                      {role === 'viewer' && (
-                        parent.excel_file_path ? (
-                          <span className="text-green-600">Uploaded</span>
-                        ) : '-'
-                      )}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-right text-sm font-medium">
-                      {role !== 'viewer' && (
-                        <>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditTarget(parent);
-                            }}
-                            className="text-indigo-600 hover:text-indigo-900 mr-3"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteTarget(parent);
-                            }}
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            Delete
-                          </button>
-                        </>
-                      )}
-                      {role === 'viewer' && '-'}
-                    </td>
-                  </tr>
-                  {isExpanded && hasChildren && sortedChildren.map((child) => (
-                    <tr key={child.id} className="bg-gray-50 hover:bg-gray-100">
-                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 pl-12 max-w-xs truncate" title={child.name.replace(parent.name + ' - ', '')}>
-                        {(() => {
-                          const childName = child.name.replace(parent.name + ' - ', '');
-                          return childName.length > 30 ? childName.substring(0, 30) + '...' : childName;
-                        })()}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{child.test_date || '-'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 max-w-24 truncate" title={child.lab_name || ''}>{child.lab_name || '-'}</td>
-                      <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={child.protocol || ''}>{child.protocol || '-'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={child.vest_code || ''}>
-                        {child.vest_code ? (child.vest_code.length > 15 ? child.vest_code.substring(0, 15) + '...' : child.vest_code) : '-'}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={child.geometry_name || ''}>
-                        {child.geometry_name ? (child.geometry_name.length > 15 ? child.geometry_name.substring(0, 15) + '...' : child.geometry_name) : '-'}
-                      </td>
-                      <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate">{child.shot_count ?? '-'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{child.certification_number || '-'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
-                        {role !== 'viewer' && (
-                          child.excel_file_path ? (
-                            <span className="text-green-600">Uploaded</span>
-                          ) : (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setUploadTarget(child);
-                              }}
-                              className="text-indigo-600 hover:text-indigo-900"
-                            >
-                              Upload
-                            </button>
-                          )
-                        )}
-                        {role === 'viewer' && (
-                          child.excel_file_path ? (
-                            <span className="text-green-600">Uploaded</span>
-                          ) : '-'
-                        )}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-right text-sm font-medium">
+                <tr
+                  key={parent.id}
+                  className="hover:bg-gray-50 cursor-pointer"
+                  onClick={() => setSelectedSession(parent)}
+                >
+                  <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 max-w-xs truncate" title={parent.name}>
+                    {parent.name.length > 30 ? parent.name.substring(0, 30) + '...' : parent.name}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.test_date || '-'}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 max-w-24 truncate" title={parent.lab_name || ''}>{parent.lab_name || '-'}</td>
+                  <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={parent.protocol || ''}>{parent.protocol || '-'}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={parent.vest_code || ''}>
+                    {parent.vest_code ? (parent.vest_code.length > 15 ? parent.vest_code.substring(0, 15) + '...' : parent.vest_code) : '-'}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={parent.geometry_name || ''}>
+                    {parent.geometry_name ? (parent.geometry_name.length > 15 ? parent.geometry_name.substring(0, 15) + '...' : parent.geometry_name) : '-'}
+                  </td>
+                  <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate">{children.length > 0 ? totalShotCount : '-'}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.certification_number || '-'}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
+                    {role !== 'viewer' && (
+                      parent.excel_file_path ? (
+                        <span className="text-green-600">Uploaded</span>
+                      ) : (
                         <button
-                          onClick={() => navigate(`/test-sessions/${child.id}`)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setUploadTarget(parent);
+                          }}
+                          className="text-indigo-600 hover:text-indigo-900"
+                        >
+                          Upload
+                        </button>
+                      )
+                    )}
+                    {role === 'viewer' && (
+                      parent.excel_file_path ? (
+                        <span className="text-green-600">Uploaded</span>
+                      ) : '-'
+                    )}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-right text-sm font-medium">
+                    {role !== 'viewer' && (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditTarget(parent);
+                          }}
                           className="text-indigo-600 hover:text-indigo-900 mr-3"
                         >
-                          View
+                          Edit
                         </button>
-                        {role !== 'viewer' && (
-                          <>
-                            <button
-                              onClick={() => setEditTarget(child)}
-                              className="text-indigo-600 hover:text-indigo-900 mr-3"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => setDeleteTarget(child)}
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </Fragment>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTarget(parent);
+                          }}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                    {role === 'viewer' && '-'}
+                  </td>
+                </tr>
               );
             })}
             {testSessions?.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={10} className="px-6 py-4 text-center text-sm text-gray-500">
                   No official certifications found. Click "Upload Excel" to create one.
                 </td>
               </tr>
@@ -1248,6 +1217,222 @@ export function OfficialCertifications() {
             setSelectedBulkGeometryId('');
           }}
         />
+      )}
+
+      {selectedSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setSelectedSession(null)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-7xl mx-4 p-6 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">{selectedSession.name}</h3>
+                <p className="text-sm text-gray-500">
+                  {selectedSession.certification_number && `Cert. #${selectedSession.certification_number} - `}
+                  {selectedSession.test_date || 'No date'}
+                </p>
+              </div>
+              <button onClick={() => setSelectedSession(null)} className="text-gray-400 hover:text-gray-600 text-xl">x</button>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+              <div><span className="text-gray-500">Lab:</span> <span className="ml-2 font-medium">{selectedSession.lab_name || '-'}</span></div>
+              <div><span className="text-gray-500">Protocol:</span> <span className="ml-2 font-medium">{selectedSession.protocol || '-'}</span></div>
+              <div><span className="text-gray-500">Vest:</span> <span className="ml-2 font-medium">{selectedSession.vest_code || '-'}</span></div>
+              <div><span className="text-gray-500">Geometry:</span> <span className="ml-2 font-medium">{selectedSession.geometry_name || '-'}</span></div>
+              <div><span className="text-gray-500">Shots:</span> <span className="ml-2 font-medium">{selectedSession.shot_count ?? '-'}</span></div>
+              <div><span className="text-gray-500">Conditioning:</span> <span className="ml-2 font-medium">{formatConditioning(selectedSession.conditioning)}</span></div>
+              <div><span className="text-gray-500">Size:</span> <span className="ml-2 font-medium">{selectedSession.size || '-'}</span></div>
+              <div><span className="text-gray-500">Ambient Temp:</span> <span className="ml-2 font-medium">{selectedSession.ambient_temperature_c ? `${selectedSession.ambient_temperature_c} C` : '-'}</span></div>
+              <div><span className="text-gray-500">Humidity:</span> <span className="ml-2 font-medium">{selectedSession.humidity_percent ? `${selectedSession.humidity_percent}%` : '-'}</span></div>
+              <div><span className="text-gray-500">Clay Temp:</span> <span className="ml-2 font-medium">{selectedSession.clay_temperature_c ? `${selectedSession.clay_temperature_c} C` : '-'}</span></div>
+              <div><span className="text-gray-500">Ballistic Limit:</span> <span className="ml-2 font-medium">{selectedSession.ballistic_limit ? 'Yes' : 'No'}</span></div>
+              <div><span className="text-gray-500">Excel:</span> <span className="ml-2 font-medium">{selectedSession.excel_file_path ? 'Uploaded' : '-'}</span></div>
+            </div>
+
+            {selectedSession.notes && (
+              <div className="mt-4 pt-4 border-t">
+                <span className="text-gray-500 text-sm">Notes:</span>
+                <p className="mt-1 text-sm text-gray-700">{selectedSession.notes}</p>
+              </div>
+            )}
+
+            {/* PDF documents (multiple) */}
+            <div className="mt-4 pt-4 border-t">
+              <span className="text-gray-500 text-sm">PDF Documents:</span>
+              {selectedSession.pdf_documents && selectedSession.pdf_documents.length > 0 ? (
+                <div className="mt-1 space-y-1">
+                  {selectedSession.pdf_documents.map((doc, index) => (
+                    <div key={index} className="flex items-center gap-3">
+                      <button
+                        onClick={() => handlePdfDownload(selectedSession.id, index, doc.original_name)}
+                        className="text-sm text-indigo-600 hover:text-indigo-900"
+                      >
+                        {doc.original_name}
+                      </button>
+                      {role !== 'viewer' && (
+                        <button
+                          onClick={() => handleDeletePdf(index)}
+                          className="text-sm text-red-600 hover:text-red-900"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {role !== 'viewer' && (
+                <div className="mt-2">
+                  <input
+                    ref={pdfInputRef}
+                    type="file"
+                    accept=".pdf"
+                    multiple
+                    className="hidden"
+                    onChange={e => {
+                      if (e.target.files) {
+                        Array.from(e.target.files).forEach(f => handleUploadPdf(f));
+                      }
+                      e.target.value = '';
+                    }}
+                  />
+                  <button
+                    onClick={() => pdfInputRef.current?.click()}
+                    className="text-sm text-indigo-600 hover:text-indigo-900"
+                  >
+                    Upload PDF{selectedSession.pdf_documents && selectedSession.pdf_documents.length > 0 ? ' (more)' : ''}
+                  </button>
+                </div>
+              )}
+              {(!selectedSession.pdf_documents || selectedSession.pdf_documents.length === 0) && role === 'viewer' && (
+                <span className="ml-2 text-sm text-gray-400">-</span>
+              )}
+            </div>
+
+            {/* Front and back images */}
+            <div className="mt-4 pt-4 border-t">
+              <span className="text-gray-500 text-sm">Images:</span>
+              <div className="mt-2 grid grid-cols-2 gap-4">
+                {(['front', 'back'] as const).map(side => (
+                  <div key={side}>
+                    <span className="text-xs text-gray-500 capitalize">{side}</span>
+                    {selectedSession[`${side}_image`] ? (
+                      <div className="mt-1">
+                        <img
+                          src={testSessionsApi.downloadImage(selectedSession.id, side)}
+                          alt={`${side} image`}
+                          className="w-full h-48 object-contain border rounded"
+                        />
+                        {role !== 'viewer' && (
+                          <button
+                            onClick={() => handleDeleteImage(side)}
+                            className="mt-1 text-sm text-red-600 hover:text-red-900"
+                          >
+                            Remove {side} image
+                          </button>
+                        )}
+                      </div>
+                    ) : role !== 'viewer' ? (
+                      <div className="mt-1">
+                        <input
+                          ref={side === 'front' ? frontImageInputRef : backImageInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={e => { if (e.target.files?.[0]) handleUploadImage(side, e.target.files[0]); e.target.value = ''; }}
+                        />
+                        <button
+                          onClick={() => (side === 'front' ? frontImageInputRef : backImageInputRef).current?.click()}
+                          className="text-sm text-indigo-600 hover:text-indigo-900"
+                        >
+                          Upload {side} image
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="ml-2 text-sm text-gray-400">-</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Child sessions (at the bottom) */}
+            {(() => {
+              const children = groupedTests[selectedSession.id] || [];
+              if (children.length === 0) return null;
+              const sortedChildren = [...children].sort((a, b) => {
+                const extractTestNumber = (name: string, parentName: string) => {
+                  const suffix = name.replace(parentName + ' - ', '');
+                  const match = suffix.match(/^(\d+)/);
+                  return match ? parseInt(match[1], 10) : 0;
+                };
+                const numA = extractTestNumber(a.name, selectedSession.name);
+                const numB = extractTestNumber(b.name, selectedSession.name);
+                return numA - numB;
+              });
+              return (
+                <div className="mt-4 pt-4 border-t">
+                  <span className="text-gray-500 text-sm">Child Sessions:</span>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                          <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Vest</th>
+                          <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Size</th>
+                          <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Ambient</th>
+                          <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Clay</th>
+                          <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Humidity</th>
+                          <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Cond.</th>
+                          <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Shots</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {sortedChildren.map(child => {
+                          const childName = child.name.replace(selectedSession.name + ' - ', '');
+                          return (
+                            <tr
+                              key={child.id}
+                              className="hover:bg-indigo-50 cursor-pointer"
+                              onClick={() => navigate(`/test-sessions/${child.id}`)}
+                            >
+                              <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-900 max-w-xs truncate" title={childName}>{childName}</td>
+                              <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500" title={child.vest_code || ''}>{child.vest_code || '-'}</td>
+                              <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{child.size || '-'}</td>
+                              <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{child.ambient_temperature_c ? `${child.ambient_temperature_c} C` : '-'}</td>
+                              <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{child.clay_temperature_c ? `${child.clay_temperature_c} C` : '-'}</td>
+                              <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{child.humidity_percent ? `${child.humidity_percent}%` : '-'}</td>
+                              <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{formatConditioning(child.conditioning)}</td>
+                              <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{child.shot_count ?? '-'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="mt-4 pt-4 border-t flex justify-end gap-3">
+              {selectedSession.pdf_documents && selectedSession.pdf_documents.length > 0 && (
+                <button
+                  onClick={() => handlePdfDownload(selectedSession.id, 0, selectedSession.pdf_documents?.[0]?.original_name)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm"
+                >
+                  Download First PDF
+                </button>
+              )}
+              {role !== 'viewer' && (
+                <>
+                  <button onClick={() => { setEditTarget(selectedSession); setSelectedSession(null); }} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm">Edit</button>
+                  <button onClick={() => { setDeleteTarget(selectedSession); setSelectedSession(null); }} className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm">Delete</button>
+                </>
+              )}
+              <button onClick={() => setSelectedSession(null)} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm">Close</button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

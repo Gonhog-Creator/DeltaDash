@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Numeric, Date, DateTime, ForeignKey, func, Boolean
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 import uuid
 
 from app.db.base import Base
@@ -26,5 +26,8 @@ class TestSession(Base):
     notes = Column(String)
     is_official = Column(Boolean, default=False)
     certification_number = Column(String)
+    pdf_documents = Column(JSONB, nullable=True)
+    front_image = Column(JSONB, nullable=True)
+    back_image = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

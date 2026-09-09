@@ -1,4 +1,9 @@
-import { apiClient } from './client';
+import { apiClient, API_BASE_URL } from './client';
+
+export interface FileEntry {
+  path: string;
+  original_name: string;
+}
 
 export interface TestSession {
   id: string;
@@ -22,6 +27,9 @@ export interface TestSession {
   notes: string | null;
   is_official: boolean;
   certification_number: string | null;
+  pdf_documents: FileEntry[] | null;
+  front_image: FileEntry | null;
+  back_image: FileEntry | null;
   created_at: string;
   updated_at: string;
   shot_count?: number | null;
@@ -112,4 +120,24 @@ export const testSessionsApi = {
   },
 
   delete: (id: string) => apiClient.delete<void>(`/api/v1/test-sessions/${id}`),
+
+  uploadPdf: (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append('pdf_file', file);
+    return apiClient.post<TestSession>(`/api/v1/test-sessions/${id}/upload-pdf`, formData);
+  },
+
+  downloadPdf: (id: string, index: number) => `${API_BASE_URL}/api/v1/test-sessions/${id}/download-pdf/${index}`,
+
+  deletePdf: (id: string, index: number) => apiClient.delete<TestSession>(`/api/v1/test-sessions/${id}/delete-pdf/${index}`),
+
+  uploadImage: (id: string, side: 'front' | 'back', file: File) => {
+    const formData = new FormData();
+    formData.append('image_file', file);
+    return apiClient.post<TestSession>(`/api/v1/test-sessions/${id}/upload-image/${side}`, formData);
+  },
+
+  downloadImage: (id: string, side: 'front' | 'back') => `${API_BASE_URL}/api/v1/test-sessions/${id}/download-image/${side}`,
+
+  deleteImage: (id: string, side: 'front' | 'back') => apiClient.delete<TestSession>(`/api/v1/test-sessions/${id}/delete-image/${side}`),
 };

@@ -1,6 +1,8 @@
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from typing import List, Optional, Any
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 import os
 import uuid
 from pathlib import Path
@@ -698,3 +700,256 @@ def update_all_child_protocols(
     return {
         "message": f"Updated {updated_count} child sessions, skipped {skipped_count}"
     }
+
+
+# --- PDF and image endpoints for test sessions ---
+
+ALLOWED_IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
+
+
+def _session_to_dict(session: TestSessionModel) -> dict:
+    return {
+        "id": str(session.id),
+        "name": session.name,
+        "test_date": str(session.test_date) if session.test_date else None,
+        "lab_name": session.lab_name,
+        "protocol": session.protocol,
+        "clay_temperature_c": float(session.clay_temperature_c) if session.clay_temperature_c else None,
+        "ambient_temperature_c": float(session.ambient_temperature_c) if session.ambient_temperature_c else None,
+        "humidity_percent": float(session.humidity_percent) if session.humidity_percent else None,
+        "conditioning": session.conditioning,
+        "size": session.size,
+        "ballistic_limit": session.ballistic_limit,
+        "parent_test_group_id": str(session.parent_test_group_id) if session.parent_test_group_id else None,
+        "vest_id": str(session.vest_id) if session.vest_id else None,
+        "geometry_id": str(session.geometry_id) if session.geometry_id else None,
+        "excel_file_path": session.excel_file_path,
+        "notes": session.notes,
+        "is_official": session.is_official,
+        "certification_number": session.certification_number,
+        "pdf_documents": session.pdf_documents,
+        "front_image": session.front_image,
+        "back_image": session.back_image,
+        "created_at": session.created_at.isoformat() if session.created_at else None,
+        "updated_at": session.updated_at.isoformat() if session.updated_at else None,
+    }
+
+
+@router.post("/{session_id}/upload-pdf", response_model=TestSession)
+def upload_session_pdf(
+    session_id: str,
+    pdf_file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access),
+):
+    """Upload a PDF document for a test session. Appends to the list of PDFs."""
+    session = db.query(TestSessionModel).filter(TestSessionModel.id == uuid.UUID(session_id)).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found")
+
+    if not pdf_file.filename or not pdf_file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+
+    os.makedirs(settings.test_session_docs_dir, exist_ok=True)
+
+    ext = os.path.splitext(pdf_file.filename)[1].lower() or '.pdf'
+    unique_filename = f"{uuid.uuid4()}{ext}"
+    file_path = os.path.join(settings.test_session_docs_dir, unique_filename)
+
+    with open(file_path, 'wb') as f:
+        f.write(pdf_file.file.read())
+
+    docs = session.pdf_documents or []
+    docs.append({
+        'path': unique_filename,
+        'original_name': pdf_file.filename,
+    })
+    session.pdf_documents = docs
+    flag_modified(session, 'pdf_documents')
+
+    db.commit()
+    db.refresh(session)
+    return _session_to_dict(session)
+
+
+@router.get("/{session_id}/download-pdf/{doc_index}")
+def download_session_pdf(
+    session_id: str,
+    doc_index: int,
+    db: Session = Depends(get_db),
+):
+    """Download a specific PDF for a test session by index."""
+    session = db.query(TestSessionModel).filter(TestSessionModel.id == uuid.UUID(session_id)).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found")
+
+    docs = session.pdf_documents or []
+    if doc_index < 0 or doc_index >= len(docs):
+        raise HTTPException(status_code=404, detail="PDF index out of range")
+
+    entry = docs[doc_index]
+    if not entry.get('path'):
+        raise HTTPException(status_code=404, detail="PDF not found for this session")
+
+    full_path = os.path.join(settings.test_session_docs_dir, entry['path'])
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="PDF file not found on disk")
+
+    return FileResponse(full_path, filename=entry.get('original_name') or entry['path'])
+
+
+@router.delete("/{session_id}/delete-pdf/{doc_index}", response_model=TestSession)
+def delete_session_pdf(
+    session_id: str,
+    doc_index: int,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access),
+):
+    """Delete a specific PDF for a test session by index."""
+    session = db.query(TestSessionModel).filter(TestSessionModel.id == uuid.UUID(session_id)).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found")
+
+    docs = session.pdf_documents or []
+    if doc_index < 0 or doc_index >= len(docs):
+        raise HTTPException(status_code=404, detail="PDF index out of range")
+
+    entry = docs[doc_index]
+    if entry.get('path'):
+        full_path = os.path.join(settings.test_session_docs_dir, entry['path'])
+        if os.path.exists(full_path):
+            os.remove(full_path)
+
+    docs.pop(doc_index)
+    session.pdf_documents = docs if docs else None
+    flag_modified(session, 'pdf_documents')
+    db.commit()
+    db.refresh(session)
+
+    return _session_to_dict(session)
+
+
+@router.post("/{session_id}/upload-image/{side}", response_model=TestSession)
+def upload_session_image(
+    session_id: str,
+    side: str,
+    image_file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access),
+):
+    """Upload a front or back image for a test session. side must be 'front' or 'back'."""
+    if side not in ('front', 'back'):
+        raise HTTPException(status_code=400, detail="side must be 'front' or 'back'")
+
+    session = db.query(TestSessionModel).filter(TestSessionModel.id == uuid.UUID(session_id)).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found")
+
+    if not image_file.filename:
+        raise HTTPException(status_code=400, detail="No image file provided")
+
+    ext = os.path.splitext(image_file.filename)[1].lower()
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only image files are allowed: {', '.join(ALLOWED_IMAGE_EXTENSIONS)}"
+        )
+
+    os.makedirs(settings.test_session_images_dir, exist_ok=True)
+
+    unique_filename = f"{uuid.uuid4()}{ext}"
+    file_path = os.path.join(settings.test_session_images_dir, unique_filename)
+
+    field_name = f"{side}_image"
+    old_entry = getattr(session, field_name) or {}
+    if old_entry.get('path'):
+        old_full_path = os.path.join(settings.test_session_images_dir, old_entry['path'])
+        if os.path.exists(old_full_path):
+            os.remove(old_full_path)
+
+    with open(file_path, 'wb') as f:
+        f.write(image_file.file.read())
+
+    setattr(session, field_name, {
+        'path': unique_filename,
+        'original_name': image_file.filename,
+    })
+    flag_modified(session, field_name)
+
+    db.commit()
+    db.refresh(session)
+    return _session_to_dict(session)
+
+
+@router.get("/{session_id}/download-image/{side}")
+def download_session_image(
+    session_id: str,
+    side: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Download a front or back image for a test session."""
+    if side not in ('front', 'back'):
+        raise HTTPException(status_code=400, detail="side must be 'front' or 'back'")
+
+    session = db.query(TestSessionModel).filter(TestSessionModel.id == uuid.UUID(session_id)).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found")
+
+    entry = getattr(session, f"{side}_image") or {}
+    if not entry.get('path'):
+        raise HTTPException(status_code=404, detail=f"{side} image not found for this session")
+
+    full_path = os.path.join(settings.test_session_images_dir, entry['path'])
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="Image file not found on disk")
+
+    ext = os.path.splitext(full_path)[1].lower()
+    media_type = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }.get(ext, "application/octet-stream")
+    origin = request.headers.get("origin", "*")
+    with open(full_path, "rb") as f:
+        data = f.read()
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
+
+
+@router.delete("/{session_id}/delete-image/{side}", response_model=TestSession)
+def delete_session_image(
+    session_id: str,
+    side: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access),
+):
+    """Delete a front or back image for a test session."""
+    if side not in ('front', 'back'):
+        raise HTTPException(status_code=400, detail="side must be 'front' or 'back'")
+
+    session = db.query(TestSessionModel).filter(TestSessionModel.id == uuid.UUID(session_id)).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Test session not found")
+
+    field_name = f"{side}_image"
+    entry = getattr(session, field_name) or {}
+    if entry.get('path'):
+        full_path = os.path.join(settings.test_session_images_dir, entry['path'])
+        if os.path.exists(full_path):
+            os.remove(full_path)
+        setattr(session, field_name, None)
+        flag_modified(session, field_name)
+        db.commit()
+        db.refresh(session)
+
+    return _session_to_dict(session)

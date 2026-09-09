@@ -275,6 +275,67 @@ def sync_pliego_document_files(remote_cursor, base_url: str, token: Optional[str
     return stats
 
 
+def sync_test_session_files(remote_cursor, base_url: str, token: Optional[str] = None) -> dict:
+    stats = {"pdfs_downloaded": 0, "pdfs_skipped": 0, "images_downloaded": 0, "images_skipped": 0}
+
+    try:
+        remote_cursor.execute("SELECT id, pdf_documents, front_image, back_image FROM test_sessions")
+    except Exception:
+        print("[file_sync] test_sessions table not found on remote — skipping")
+        return stats
+
+    for row in remote_cursor.fetchall():
+        session_id = str(row[0])
+
+        # Sync PDFs (array)
+        raw_pdfs = row[1]
+        if isinstance(raw_pdfs, str):
+            try:
+                pdf_list = json.loads(raw_pdfs)
+            except (json.JSONDecodeError, TypeError):
+                pdf_list = None
+        elif isinstance(raw_pdfs, list):
+            pdf_list = raw_pdfs
+        else:
+            pdf_list = None
+
+        if pdf_list:
+            for pdf_doc in pdf_list:
+                if pdf_doc and pdf_doc.get("path"):
+                    dest = os.path.join(settings.test_session_docs_dir, pdf_doc["path"])
+                    if os.path.exists(dest):
+                        stats["pdfs_skipped"] += 1
+                    else:
+                        url = f"{base_url}/api/v1/test-sessions/{session_id}/download-pdf/0"
+                        if _download_to(url, dest, token):
+                            stats["pdfs_downloaded"] += 1
+
+        # Sync front and back images
+        for idx, field_name in enumerate(["front_image", "back_image"]):
+            raw_img = row[2 + idx]
+            if isinstance(raw_img, str):
+                try:
+                    img_doc = json.loads(raw_img)
+                except (json.JSONDecodeError, TypeError):
+                    img_doc = None
+            elif isinstance(raw_img, dict):
+                img_doc = raw_img
+            else:
+                img_doc = None
+
+            if img_doc and img_doc.get("path"):
+                dest = os.path.join(settings.test_session_images_dir, img_doc["path"])
+                if os.path.exists(dest):
+                    stats["images_skipped"] += 1
+                else:
+                    side = field_name.replace("_image", "")
+                    url = f"{base_url}/api/v1/test-sessions/{session_id}/download-image/{side}"
+                    if _download_to(url, dest, token):
+                        stats["images_downloaded"] += 1
+
+    return stats
+
+
 def sync_all_files(remote_cursor, base_url: Optional[str] = None, token: Optional[str] = None) -> dict:
     base_url = base_url or settings.PRODUCTION_BACKEND_URL
     token = token or (settings.PRODUCTION_API_TOKEN or None)
@@ -287,5 +348,6 @@ def sync_all_files(remote_cursor, base_url: Optional[str] = None, token: Optiona
     results["vest_documents"] = sync_vest_documents(remote_cursor, base_url, token)
     results["covers"] = sync_cover_files(remote_cursor, base_url, token)
     results["pliego_documents"] = sync_pliego_document_files(remote_cursor, base_url, token)
+    results["test_sessions"] = sync_test_session_files(remote_cursor, base_url, token)
     print(f"[file_sync] Done: {results}")
     return results

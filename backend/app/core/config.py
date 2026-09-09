@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000,https://deltadash-production.up.railway.app"
-    VERSION: str = "1.2.0"
+    VERSION: str = "1.2.2"
     
     # Storage configuration
     USE_RAILWAY_STORAGE: bool = False  # Set to True to use Railway storage
@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     LOCAL_PLIEGO_DOCS_DIR: str = "storage/pliego_docs"
     LOCAL_COVER_DOCS_DIR: str = "storage/cover_docs"
     LOCAL_COVER_IMAGES_DIR: str = "storage/cover_images"
+    LOCAL_TEST_SESSION_DOCS_DIR: str = "storage/test_session_docs"
+    LOCAL_TEST_SESSION_IMAGES_DIR: str = "storage/test_session_images"
     
     # Production storage paths (Railway)
     UPLOAD_DIR: str = "/app/storage/uploads"
@@ -40,6 +42,8 @@ class Settings(BaseSettings):
     PLIEGO_DOCS_DIR: str = "/app/storage/pliego_docs"
     COVER_DOCS_DIR: str = "/app/storage/cover_docs"
     COVER_IMAGES_DIR: str = "/app/storage/cover_images"
+    TEST_SESSION_DOCS_DIR: str = "/app/storage/test_session_docs"
+    TEST_SESSION_IMAGES_DIR: str = "/app/storage/test_session_images"
     
     @property
     def cors_origins_list(self) -> list[str]:
@@ -130,6 +134,22 @@ class Settings(BaseSettings):
             return self.COVER_IMAGES_DIR
         os.makedirs(self.LOCAL_COVER_IMAGES_DIR, exist_ok=True)
         return self.LOCAL_COVER_IMAGES_DIR
+
+    @property
+    def test_session_docs_dir(self) -> str:
+        """Get the appropriate test session docs directory based on environment"""
+        if self.USE_RAILWAY_STORAGE and os.path.exists(self.TEST_SESSION_DOCS_DIR):
+            return self.TEST_SESSION_DOCS_DIR
+        os.makedirs(self.LOCAL_TEST_SESSION_DOCS_DIR, exist_ok=True)
+        return self.LOCAL_TEST_SESSION_DOCS_DIR
+
+    @property
+    def test_session_images_dir(self) -> str:
+        """Get the appropriate test session images directory based on environment"""
+        if self.USE_RAILWAY_STORAGE and os.path.exists(self.TEST_SESSION_IMAGES_DIR):
+            return self.TEST_SESSION_IMAGES_DIR
+        os.makedirs(self.LOCAL_TEST_SESSION_IMAGES_DIR, exist_ok=True)
+        return self.LOCAL_TEST_SESSION_IMAGES_DIR
 
     GEMINI_API_KEY: str = ""
 
