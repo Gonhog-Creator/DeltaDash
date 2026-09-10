@@ -9,6 +9,7 @@ interface ConfirmModalProps {
   onConfirm: () => void;
   onCancel: () => void;
   disabled?: boolean;
+  maxWidth?: string;
 }
 
 export function ConfirmModal({
@@ -20,6 +21,7 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
   disabled = false,
+  maxWidth = 'max-w-md',
 }: ConfirmModalProps) {
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -43,7 +45,7 @@ export function ConfirmModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md mx-4 p-6">
+      <div className={`relative bg-white rounded-lg shadow-xl w-full ${maxWidth} mx-4 p-6 max-h-[92vh] overflow-y-auto`}>
         <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
         <div className="text-sm text-gray-600 mb-6">{message}</div>
         <div className="flex justify-end space-x-3">

@@ -49,6 +49,14 @@ def list_test_sessions(
         # Count shot data for this test session
         shot_count = db.query(ShotDataModel).filter(ShotDataModel.test_session_id == session.id).count()
         
+        # Get distinct protection levels from shot data
+        protection_levels_query = db.query(ShotDataModel.protection_level).filter(
+            ShotDataModel.test_session_id == session.id,
+            ShotDataModel.protection_level.isnot(None),
+            ShotDataModel.protection_level != ''
+        ).distinct().all()
+        protection_levels = list(set(pl[0] for pl in protection_levels_query if pl[0]))
+        
         session_dict = {
             "id": session.id,
             "name": session.name,
@@ -74,6 +82,7 @@ def list_test_sessions(
             "created_at": session.created_at,
             "updated_at": session.updated_at,
             "shot_count": shot_count,
+            "protection_levels": protection_levels,
         }
         result.append(session_dict)
     
@@ -375,6 +384,37 @@ def get_test_session(
         "updated_at": session.updated_at,
     }
     return session_dict
+
+
+@router.get("/{test_session_id}/child-stats")
+def get_child_session_stats(
+    test_session_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user)
+):
+    """Get highest trauma and average of first three shots for each child session of a parent."""
+    child_sessions = db.query(TestSessionModel).filter(
+        TestSessionModel.parent_test_group_id == test_session_id
+    ).all()
+
+    stats = {}
+    for child in child_sessions:
+        shots = db.query(ShotDataModel).filter(
+            ShotDataModel.test_session_id == child.id
+        ).order_by(ShotDataModel.shot_number).all()
+
+        trauma_values = [float(s.trauma_mm) for s in shots if s.trauma_mm is not None]
+        highest_trauma = max(trauma_values) if trauma_values else None
+
+        first_three = trauma_values[:3]
+        avg_first_three = round(sum(first_three) / len(first_three), 2) if first_three else None
+
+        stats[str(child.id)] = {
+            "highest_trauma": highest_trauma,
+            "avg_first_three": avg_first_three,
+        }
+
+    return stats
 
 
 @router.patch("/{test_session_id}", response_model=TestSession)

@@ -33,6 +33,7 @@ export interface TestSession {
   created_at: string;
   updated_at: string;
   shot_count?: number | null;
+  protection_levels?: string[] | null;
   vest?: { id: string; vest_code: string | null; name: string | null } | null;
   geometry?: { id: string; name: string | null } | null;
 }
@@ -140,4 +141,6 @@ export const testSessionsApi = {
   downloadImage: (id: string, side: 'front' | 'back') => `${API_BASE_URL}/api/v1/test-sessions/${id}/download-image/${side}`,
 
   deleteImage: (id: string, side: 'front' | 'back') => apiClient.delete<TestSession>(`/api/v1/test-sessions/${id}/delete-image/${side}`),
+
+  getChildStats: (id: string) => apiClient.get<Record<string, { highest_trauma: number | null; avg_first_three: number | null }>>(`/api/v1/test-sessions/${id}/child-stats`),
 };

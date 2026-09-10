@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useTestSessions, useDeleteTestSession, useUploadExcel, useCreateFromExcel, useUpdateTestSession } from '../hooks/useTestSessions';
 import { useLocations, useCreateLocation, useDeleteLocation, useUpdateLocation } from '../hooks/useLocations';
 import { useProtocols, useCreateProtocol, useDeleteProtocol, useUpdateProtocol } from '../hooks/useProtocols';
@@ -80,11 +81,37 @@ export function OfficialCertifications() {
   const [bulkFiles, setBulkFiles] = useState<File[]>([]);
   const [selectedBulkGeometryId, setSelectedBulkGeometryId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedProtectionLevels, setSelectedProtectionLevels] = useState<string[]>([]);
   const [selectedSession, setSelectedSession] = useState<TestSession | null>(null);
   const queryClient = useQueryClient();
   const pdfInputRef = useRef<HTMLInputElement>(null);
-  const frontImageInputRef = useRef<HTMLInputElement>(null);
-  const backImageInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch child stats when a session is selected
+  const { data: childStats } = useQuery({
+    queryKey: ['childStats', selectedSession?.id],
+    queryFn: () => testSessionsApi.getChildStats(selectedSession!.id),
+    enabled: !!selectedSession,
+  });
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedSession(null);
+        setDeleteTarget(null);
+        setUploadTarget(null);
+        setEditTarget(null);
+        setShowCreateFromExcel(false);
+        setShowAdminModal(false);
+        setShowAmmoModal(false);
+        setShowDateFormatModal(false);
+        setShowBulkUpload(false);
+        setDeleteTargetId(null);
+        setEditTargetId(null);
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, []);
 
   const refreshSession = async (sessionId: string) => {
     const updated = await testSessionsApi.get(sessionId);
@@ -109,26 +136,6 @@ export function OfficialCertifications() {
       await refreshSession(selectedSession.id);
     } catch (err: any) {
       alert(`Failed to delete PDF: ${err.message || err.detail}`);
-    }
-  };
-
-  const handleUploadImage = async (side: 'front' | 'back', file: File) => {
-    if (!selectedSession) return;
-    try {
-      await testSessionsApi.uploadImage(selectedSession.id, side, file);
-      await refreshSession(selectedSession.id);
-    } catch (err: any) {
-      alert(`Failed to upload image: ${err.message || err.detail}`);
-    }
-  };
-
-  const handleDeleteImage = async (side: 'front' | 'back') => {
-    if (!selectedSession) return;
-    try {
-      await testSessionsApi.deleteImage(selectedSession.id, side);
-      await refreshSession(selectedSession.id);
-    } catch (err: any) {
-      alert(`Failed to delete image: ${err.message || err.detail}`);
     }
   };
 
@@ -171,26 +178,103 @@ export function OfficialCertifications() {
 
   const parentSessions = testSessions?.filter(s => !s.parent_test_group_id) || [];
 
+  const normalizeProtectionLevel = (level: string): string => {
+    const match = level.match(/RB(\d+)/i);
+    return match ? `RB${match[1]}`.toUpperCase() : level;
+  };
+
+  // Collect all unique protection levels from parent sessions and their children
+  const allProtectionLevels = useMemo(() => {
+    const levels = new Set<string>();
+    parentSessions.forEach(parent => {
+      const children = groupedTests[parent.id] || [];
+      children.forEach(child => {
+        child.protection_levels?.forEach(pl => levels.add(pl));
+      });
+    });
+    return Array.from(levels);
+  }, [parentSessions, groupedTests]);
+
+  // Group protection levels by RBX pattern (like analytics)
+  const { groups: protectionGroups, nonGrouped: nonGroupedProtectionLevels } = useMemo(() => {
+    const groups = new Map<string, string[]>();
+    const nonGrouped: string[] = [];
+    allProtectionLevels.forEach(level => {
+      const match = level.match(/RB(\d+)/i);
+      if (match) {
+        const rbLevel = `RB${match[1]}`.toUpperCase();
+        if (!groups.has(rbLevel)) groups.set(rbLevel, []);
+        groups.get(rbLevel)!.push(level);
+      } else {
+        nonGrouped.push(level);
+      }
+    });
+    return { groups, nonGrouped };
+  }, [allProtectionLevels]);
+
+  // Expand selected group levels (e.g. "RB3") to all matching protection levels
+  const getExpandedProtectionLevels = (selected: string[]) => {
+    const expanded: string[] = [];
+    selected.forEach(level => {
+      if (level.startsWith('RB') && level.length === 3 && level.match(/RB\d+/)) {
+        const groupMembers = protectionGroups.get(level);
+        if (groupMembers) expanded.push(...groupMembers);
+      } else {
+        expanded.push(level);
+      }
+    });
+    return expanded;
+  };
+
   const filteredParentSessions = (() => {
-    if (!searchQuery.trim()) return parentSessions;
-    const q = searchQuery.toLowerCase();
+    const expandedLevels = getExpandedProtectionLevels(selectedProtectionLevels);
     return parentSessions.filter(parent => {
       const children = groupedTests[parent.id] || [];
-      const parentMatch =
-        parent.name?.toLowerCase().includes(q) ||
-        parent.lab_name?.toLowerCase().includes(q) ||
-        parent.protocol?.toLowerCase().includes(q) ||
-        parent.vest_name?.toLowerCase().includes(q) ||
-        parent.vest_code?.toLowerCase().includes(q) ||
-        parent.geometry_name?.toLowerCase().includes(q) ||
-        parent.certification_number?.toLowerCase().includes(q);
-      const childMatch = children.some(child =>
-        child.name?.toLowerCase().includes(q) ||
-        child.vest_name?.toLowerCase().includes(q) ||
-        child.vest_code?.toLowerCase().includes(q) ||
-        child.geometry_name?.toLowerCase().includes(q)
-      );
-      return parentMatch || childMatch;
+
+      // Filter by protection level
+      if (selectedProtectionLevels.length > 0) {
+        const allLevels = new Set<string>();
+        children.forEach(child => {
+          child.protection_levels?.forEach(pl => allLevels.add(pl));
+        });
+        const hasMatch = expandedLevels.some(lvl => allLevels.has(lvl));
+        if (!hasMatch) return false;
+      }
+
+      // Filter by search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const parentMatch =
+          parent.name?.toLowerCase().includes(q) ||
+          parent.lab_name?.toLowerCase().includes(q) ||
+          parent.protocol?.toLowerCase().includes(q) ||
+          parent.vest_name?.toLowerCase().includes(q) ||
+          parent.vest_code?.toLowerCase().includes(q) ||
+          parent.geometry_name?.toLowerCase().includes(q) ||
+          parent.certification_number?.toLowerCase().includes(q);
+        const childMatch = children.some(child =>
+          child.name?.toLowerCase().includes(q) ||
+          child.vest_name?.toLowerCase().includes(q) ||
+          child.vest_code?.toLowerCase().includes(q) ||
+          child.geometry_name?.toLowerCase().includes(q) ||
+          (child.protection_levels || []).some(pl => pl?.toLowerCase().includes(q))
+        );
+        // Also search by protection level group name (e.g. "RB3")
+        const protectionLevelMatch = children.some(child =>
+          (child.protection_levels || []).some(pl => {
+            if (!pl) return false;
+            const match = pl.match(/RB(\d+)/i);
+            if (match) {
+              const rbLevel = `RB${match[1]}`.toLowerCase();
+              return rbLevel.includes(q);
+            }
+            return pl.toLowerCase().includes(q);
+          })
+        );
+        if (!parentMatch && !childMatch && !protectionLevelMatch) return false;
+      }
+
+      return true;
     });
   })();
 
@@ -406,14 +490,65 @@ export function OfficialCertifications() {
         </div>
       </div>
 
-      <div className="mb-4">
+      <div className="mb-4 space-y-2">
         <input
           type="text"
-          placeholder="Search certifications..."
+          placeholder="Search certifications... (e.g. RB3, vest code, name)"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
         />
+        {allProtectionLevels.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-gray-700">Protection Level:</span>
+            {Array.from(protectionGroups.keys()).sort().map(rbLevel => (
+              <button
+                key={rbLevel}
+                onClick={() => {
+                  if (selectedProtectionLevels.includes(rbLevel)) {
+                    setSelectedProtectionLevels(selectedProtectionLevels.filter(l => l !== rbLevel));
+                  } else {
+                    setSelectedProtectionLevels([...selectedProtectionLevels, rbLevel]);
+                  }
+                }}
+                className={`px-2 py-1 text-xs rounded-md border ${
+                  selectedProtectionLevels.includes(rbLevel)
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                {rbLevel}
+              </button>
+            ))}
+            {nonGroupedProtectionLevels.map(level => (
+              <button
+                key={level}
+                onClick={() => {
+                  if (selectedProtectionLevels.includes(level)) {
+                    setSelectedProtectionLevels(selectedProtectionLevels.filter(l => l !== level));
+                  } else {
+                    setSelectedProtectionLevels([...selectedProtectionLevels, level]);
+                  }
+                }}
+                className={`px-2 py-1 text-xs rounded-md border ${
+                  selectedProtectionLevels.includes(level)
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                {level}
+              </button>
+            ))}
+            {selectedProtectionLevels.length > 0 && (
+              <button
+                onClick={() => setSelectedProtectionLevels([])}
+                className="text-sm text-indigo-600 hover:text-indigo-800"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="bg-white shadow rounded-lg overflow-hidden">
@@ -425,8 +560,9 @@ export function OfficialCertifications() {
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-24 truncate">Lab</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">Protocol</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vest</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Geometry</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sizes</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Protection</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-32 truncate">N° of shots</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cert. #</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Excel</th>
@@ -437,6 +573,7 @@ export function OfficialCertifications() {
             {filteredParentSessions.map((parent) => {
               const children = groupedTests[parent.id] || [];
               const totalShotCount = children.reduce((sum, child) => sum + (child.shot_count || 0), 0);
+              const childSizes = [...new Set(children.map(c => c.size).filter(Boolean))].join(', ');
 
               return (
                 <tr
@@ -450,11 +587,17 @@ export function OfficialCertifications() {
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.test_date || '-'}</td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 max-w-24 truncate" title={parent.lab_name || ''}>{parent.lab_name || '-'}</td>
                   <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={parent.protocol || ''}>{parent.protocol || '-'}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={parent.vest_code || ''}>
-                    {parent.vest_code ? (parent.vest_code.length > 15 ? parent.vest_code.substring(0, 15) + '...' : parent.vest_code) : '-'}
-                  </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={parent.geometry_name || ''}>
                     {parent.geometry_name ? (parent.geometry_name.length > 15 ? parent.geometry_name.substring(0, 15) + '...' : parent.geometry_name) : '-'}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={childSizes || ''}>{childSizes || '-'}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={(() => { const allLevels = new Set<string>(); children.forEach(c => c.protection_levels?.forEach(pl => allLevels.add(normalizeProtectionLevel(pl)))); return Array.from(allLevels).join(', '); })()}>
+                    {(() => {
+                      const allLevels = new Set<string>();
+                      children.forEach(c => c.protection_levels?.forEach(pl => allLevels.add(normalizeProtectionLevel(pl))));
+                      const levels = Array.from(allLevels);
+                      return levels.length > 0 ? levels.join(', ') : '-';
+                    })()}
                   </td>
                   <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate">{children.length > 0 ? totalShotCount : '-'}</td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.certification_number || '-'}</td>
@@ -510,7 +653,7 @@ export function OfficialCertifications() {
             })}
             {testSessions?.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={11} className="px-6 py-4 text-center text-sm text-gray-500">
                   No official certifications found. Click "Upload Excel" to create one.
                 </td>
               </tr>
@@ -973,6 +1116,7 @@ export function OfficialCertifications() {
       {editTarget && (
         <ConfirmModal
           title="Edit Test Session"
+          maxWidth="max-w-2xl"
           message={
             <div className="space-y-4">
               <div>
@@ -999,7 +1143,7 @@ export function OfficialCertifications() {
                 />
               </div>
               {!editTarget.parent_test_group_id && (
-                <>
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Test Date</label>
                     <input
@@ -1024,52 +1168,56 @@ export function OfficialCertifications() {
                       ))}
                     </select>
                   </div>
-                                    <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Protocol</label>
-                    <select
-                      value={editTarget.protocol || ''}
-                      onChange={(e) => setEditTarget({ ...editTarget, protocol: e.target.value || null })}
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
-                    >
-                      <option value="">Select protocol...</option>
-                      {protocols?.map((protocol) => (
-                        <option key={protocol.id} value={protocol.name}>
-                          {protocol.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </>
+                </div>
               )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Vest</label>
-                <select
-                  value={editTarget.vest_id || ''}
-                  onChange={(e) => setEditTarget({ ...editTarget, vest_id: e.target.value || null })}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
-                >
-                  <option value="">Select vest...</option>
-                  {vests?.map((vest) => (
-                    <option key={vest.id} value={vest.id}>
-                      {vest.vest_code} - {vest.vest_type || 'N/A'} - {vest.threat_level || 'N/A'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
-                <select
-                  value={editTarget.geometry_id || ''}
-                  onChange={(e) => setEditTarget({ ...editTarget, geometry_id: e.target.value || null })}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
-                >
-                  <option value="">Select geometry (optional)</option>
-                  {geometries?.sort((a, b) => a.name.localeCompare(b.name)).map((geometry) => (
-                    <option key={geometry.id} value={geometry.id}>
-                      {geometry.name}
-                    </option>
-                  ))}
-                </select>
+              {!editTarget.parent_test_group_id && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Protocol</label>
+                  <select
+                    value={editTarget.protocol || ''}
+                    onChange={(e) => setEditTarget({ ...editTarget, protocol: e.target.value || null })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  >
+                    <option value="">Select protocol...</option>
+                    {protocols?.map((protocol) => (
+                      <option key={protocol.id} value={protocol.name}>
+                        {protocol.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Vest</label>
+                  <select
+                    value={editTarget.vest_id || ''}
+                    onChange={(e) => setEditTarget({ ...editTarget, vest_id: e.target.value || null })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  >
+                    <option value="">Select vest...</option>
+                    {vests?.map((vest) => (
+                      <option key={vest.id} value={vest.id}>
+                        {vest.vest_code} - {vest.vest_type || 'N/A'} - {vest.threat_level || 'N/A'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
+                  <select
+                    value={editTarget.geometry_id || ''}
+                    onChange={(e) => setEditTarget({ ...editTarget, geometry_id: e.target.value || null })}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  >
+                    <option value="">Select geometry (optional)</option>
+                    {geometries?.sort((a, b) => a.name.localeCompare(b.name)).map((geometry) => (
+                      <option key={geometry.id} value={geometry.id}>
+                        {geometry.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
               {editTarget.parent_test_group_id && (
                 <div>
@@ -1097,7 +1245,7 @@ export function OfficialCertifications() {
                 />
               </div>
               {editTarget.parent_test_group_id && (
-                <>
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Ambient Temperature (°C)</label>
                     <input
@@ -1118,7 +1266,7 @@ export function OfficialCertifications() {
                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
                     />
                   </div>
-                </>
+                </div>
               )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
@@ -1237,15 +1385,14 @@ export function OfficialCertifications() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
               <div><span className="text-gray-500">Lab:</span> <span className="ml-2 font-medium">{selectedSession.lab_name || '-'}</span></div>
               <div><span className="text-gray-500">Protocol:</span> <span className="ml-2 font-medium">{selectedSession.protocol || '-'}</span></div>
-              <div><span className="text-gray-500">Vest:</span> <span className="ml-2 font-medium">{selectedSession.vest_code || '-'}</span></div>
               <div><span className="text-gray-500">Geometry:</span> <span className="ml-2 font-medium">{selectedSession.geometry_name || '-'}</span></div>
-              <div><span className="text-gray-500">Shots:</span> <span className="ml-2 font-medium">{selectedSession.shot_count ?? '-'}</span></div>
+              <div><span className="text-gray-500">Shots:</span> <span className="ml-2 font-medium">{(() => { const children = groupedTests[selectedSession.id] || []; const total = children.reduce((sum, child) => sum + (child.shot_count || 0), 0); return children.length > 0 ? total : (selectedSession.shot_count ?? '-'); })()}</span></div>
               <div><span className="text-gray-500">Conditioning:</span> <span className="ml-2 font-medium">{formatConditioning(selectedSession.conditioning)}</span></div>
-              <div><span className="text-gray-500">Size:</span> <span className="ml-2 font-medium">{selectedSession.size || '-'}</span></div>
+              <div><span className="text-gray-500">Sizes:</span> <span className="ml-2 font-medium">{(() => { const children = groupedTests[selectedSession.id] || []; const sizes = [...new Set(children.map(c => c.size).filter(Boolean))]; return sizes.length > 0 ? sizes.join(', ') : (selectedSession.size || '-'); })()}</span></div>
               <div><span className="text-gray-500">Ambient Temp:</span> <span className="ml-2 font-medium">{selectedSession.ambient_temperature_c ? `${selectedSession.ambient_temperature_c} C` : '-'}</span></div>
               <div><span className="text-gray-500">Humidity:</span> <span className="ml-2 font-medium">{selectedSession.humidity_percent ? `${selectedSession.humidity_percent}%` : '-'}</span></div>
-              <div><span className="text-gray-500">Clay Temp:</span> <span className="ml-2 font-medium">{selectedSession.clay_temperature_c ? `${selectedSession.clay_temperature_c} C` : '-'}</span></div>
               <div><span className="text-gray-500">Ballistic Limit:</span> <span className="ml-2 font-medium">{selectedSession.ballistic_limit ? 'Yes' : 'No'}</span></div>
+              <div><span className="text-gray-500">Protection:</span> <span className="ml-2 font-medium">{(() => { const children = groupedTests[selectedSession.id] || []; const allLevels = new Set<string>(); children.forEach(c => c.protection_levels?.forEach(pl => allLevels.add(normalizeProtectionLevel(pl)))); const levels = Array.from(allLevels); return levels.length > 0 ? levels.join(', ') : '-'; })()}</span></div>
               <div><span className="text-gray-500">Excel:</span> <span className="ml-2 font-medium">{selectedSession.excel_file_path ? 'Uploaded' : '-'}</span></div>
             </div>
 
@@ -1309,53 +1456,6 @@ export function OfficialCertifications() {
               )}
             </div>
 
-            {/* Front and back images */}
-            <div className="mt-4 pt-4 border-t">
-              <span className="text-gray-500 text-sm">Images:</span>
-              <div className="mt-2 grid grid-cols-2 gap-4">
-                {(['front', 'back'] as const).map(side => (
-                  <div key={side}>
-                    <span className="text-xs text-gray-500 capitalize">{side}</span>
-                    {selectedSession[`${side}_image`] ? (
-                      <div className="mt-1">
-                        <img
-                          src={testSessionsApi.downloadImage(selectedSession.id, side)}
-                          alt={`${side} image`}
-                          className="w-full h-48 object-contain border rounded"
-                        />
-                        {role !== 'viewer' && (
-                          <button
-                            onClick={() => handleDeleteImage(side)}
-                            className="mt-1 text-sm text-red-600 hover:text-red-900"
-                          >
-                            Remove {side} image
-                          </button>
-                        )}
-                      </div>
-                    ) : role !== 'viewer' ? (
-                      <div className="mt-1">
-                        <input
-                          ref={side === 'front' ? frontImageInputRef : backImageInputRef}
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={e => { if (e.target.files?.[0]) handleUploadImage(side, e.target.files[0]); e.target.value = ''; }}
-                        />
-                        <button
-                          onClick={() => (side === 'front' ? frontImageInputRef : backImageInputRef).current?.click()}
-                          className="text-sm text-indigo-600 hover:text-indigo-900"
-                        >
-                          Upload {side} image
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="ml-2 text-sm text-gray-400">-</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
             {/* Child sessions (at the bottom) */}
             {(() => {
               const children = groupedTests[selectedSession.id] || [];
@@ -1381,10 +1481,11 @@ export function OfficialCertifications() {
                           <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Vest</th>
                           <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Size</th>
                           <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Ambient</th>
-                          <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Clay</th>
                           <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Humidity</th>
                           <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Cond.</th>
                           <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Shots</th>
+                          <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Highest Trauma</th>
+                          <th className="px-3 py-1 text-left text-xs font-medium text-gray-500 uppercase">Avg First 3</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
@@ -1400,10 +1501,11 @@ export function OfficialCertifications() {
                               <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500" title={child.vest_code || ''}>{child.vest_code || '-'}</td>
                               <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{child.size || '-'}</td>
                               <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{child.ambient_temperature_c ? `${child.ambient_temperature_c} C` : '-'}</td>
-                              <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{child.clay_temperature_c ? `${child.clay_temperature_c} C` : '-'}</td>
                               <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{child.humidity_percent ? `${child.humidity_percent}%` : '-'}</td>
                               <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{formatConditioning(child.conditioning)}</td>
                               <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{child.shot_count ?? '-'}</td>
+                              <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{childStats?.[child.id]?.highest_trauma != null ? `${childStats[child.id].highest_trauma} mm` : '-'}</td>
+                              <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">{childStats?.[child.id]?.avg_first_three != null ? `${childStats[child.id].avg_first_three} mm` : '-'}</td>
                             </tr>
                           );
                         })}
