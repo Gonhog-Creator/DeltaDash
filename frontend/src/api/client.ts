@@ -178,6 +178,37 @@ class ApiClient {
       body: data ? JSON.stringify(data) : undefined,
     });
   }
+
+  async downloadFile(endpoint: string): Promise<Blob> {
+    const url = `${this.baseUrl}${endpoint}`;
+    const token = localStorage.getItem('token');
+    const config: RequestInit = {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+    };
+
+    const response = await fetch(url, config);
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (!window.location.pathname.includes('/login') && !endpoint.includes('/auth/me')) {
+          window.location.href = '/login';
+        }
+        throw new Error('Unauthorized');
+      }
+      const error = await response.json().catch(() => ({ detail: 'An error occurred' }));
+      let errorMessage = 'An error occurred';
+      if (typeof error.detail === 'string') {
+        errorMessage = error.detail;
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.blob();
+  }
 }
 
 export const apiClient = new ApiClient(API_BASE_URL);

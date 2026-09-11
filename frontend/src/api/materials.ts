@@ -182,4 +182,16 @@ export const materialsApi = {
   removeFile: (id: string, fileType: 'mss' | 'sds') => apiClient.delete<void>(`/api/v1/materials/${id}/file/${fileType}`),
 
   getVestUsage: (id: string) => apiClient.get<MaterialVestUsageResponse>(`/api/v1/materials/${id}/vest-usage`),
+
+  downloadFile: async (id: string, fileType: 'mss' | 'sds', originalFilename?: string | null) => {
+    const blob = await apiClient.downloadFile(`/api/v1/materials/${id}/download/${fileType}`);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = originalFilename || `${fileType.toUpperCase()}_file`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  },
 };

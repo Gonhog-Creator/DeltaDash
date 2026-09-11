@@ -431,6 +431,16 @@ export function Materials() {
     setShowDetailsModal(false);
   };
 
+  const handleDownload = async (material: Material, fileType: 'mss' | 'sds') => {
+    try {
+      const originalFilename = fileType === 'mss' ? material.mss_original_filename : material.sds_original_filename;
+      await materialsApi.downloadFile(material.id, fileType, originalFilename);
+    } catch (err) {
+      console.error('Failed to download file:', err);
+      alert('Failed to download file. Please try again.');
+    }
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -794,14 +804,13 @@ export function Materials() {
                 <label className="block text-sm font-medium text-gray-700">MSS (Material Specification Sheet)</label>
                 {editingMaterial && editingMaterial.mss_file_path && !pendingMssDelete && (
                   <div className="mt-1 mb-2 flex items-center space-x-2">
-                    <a
-                      href={`/api/v1/materials/${editingMaterial.id}/download/mss`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => handleDownload(editingMaterial, 'mss')}
                       className="text-indigo-600 hover:text-indigo-900 text-sm"
                     >
                       Current file: {editingMaterial.mss_original_filename || editingMaterial.mss_file_path}
-                    </a>
+                    </button>
                     <button
                       type="button"
                       onClick={() => handlePendingDelete('mss')}
@@ -848,14 +857,13 @@ export function Materials() {
                 <label className="block text-sm font-medium text-gray-700">SDS (Safety Data Sheet)</label>
                 {editingMaterial && editingMaterial.sds_file_path && !pendingSdsDelete && (
                   <div className="mt-1 mb-2 flex items-center space-x-2">
-                    <a
-                      href={`/api/v1/materials/${editingMaterial.id}/download/sds`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => handleDownload(editingMaterial, 'sds')}
                       className="text-indigo-600 hover:text-indigo-900 text-sm"
                     >
                       Current file: {editingMaterial.sds_original_filename || editingMaterial.sds_file_path}
-                    </a>
+                    </button>
                     <button
                       type="button"
                       onClick={() => handlePendingDelete('sds')}
@@ -1020,26 +1028,26 @@ export function Materials() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   <div className="space-x-2">
                     {material.mss_file_path && (
-                      <a
-                        href={`/api/v1/materials/${material.id}/download/mss`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownload(material, 'mss');
+                        }}
                         className="text-indigo-600 hover:text-indigo-900"
-                        onClick={(e) => e.stopPropagation()}
                       >
                         MSS
-                      </a>
+                      </button>
                     )}
                     {material.sds_file_path && (
-                      <a
-                        href={`/api/v1/materials/${material.id}/download/sds`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownload(material, 'sds');
+                        }}
                         className="text-indigo-600 hover:text-indigo-900"
-                        onClick={(e) => e.stopPropagation()}
                       >
                         SDS
-                      </a>
+                      </button>
                     )}
                     {!material.mss_file_path && !material.sds_file_path && '-'}
                   </div>
@@ -1158,7 +1166,7 @@ export function Materials() {
       {showDetailsModal && selectedMaterial && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={handleCloseDetailsModal} />
-          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 p-6 max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-5xl mx-4 p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Material Details</h3>
               <button
@@ -1214,10 +1222,14 @@ export function Materials() {
               {shouldShowElongationFields(selectedMaterial.material_class) && (
                 <div className="mt-4 pt-4 border-t">
                   <h5 className="text-xs font-medium text-gray-600 mb-2">Elongation & Force Measurements</h5>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-xs">
                     <div>
                       <span className="text-gray-500">Longitudinal Force:</span>
                       <span className="ml-1">{selectedMaterial.force_longitudinal_newtons ? `${selectedMaterial.force_longitudinal_newtons} N` : '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Longitudinal Force/cm:</span>
+                      <span className="ml-1">{calculateForcePerCm(selectedMaterial.force_longitudinal_newtons, selectedMaterial.stretch_test_length) ? `${calculateForcePerCm(selectedMaterial.force_longitudinal_newtons, selectedMaterial.stretch_test_length)!.toFixed(2)} N/cm` : '-'}</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Longitudinal Force Error:</span>
@@ -1236,6 +1248,10 @@ export function Materials() {
                       <span className="ml-1">{selectedMaterial.force_transverse_newtons ? `${selectedMaterial.force_transverse_newtons} N` : '-'}</span>
                     </div>
                     <div>
+                      <span className="text-gray-500">Transverse Force/cm:</span>
+                      <span className="ml-1">{calculateForcePerCm(selectedMaterial.force_transverse_newtons, selectedMaterial.stretch_test_length) ? `${calculateForcePerCm(selectedMaterial.force_transverse_newtons, selectedMaterial.stretch_test_length)!.toFixed(2)} N/cm` : '-'}</span>
+                    </div>
+                    <div>
                       <span className="text-gray-500">Transverse Force Error:</span>
                       <span className="ml-1">{selectedMaterial.force_transverse_error_percent ? `${selectedMaterial.force_transverse_error_percent}%` : '-'}</span>
                     </div>
@@ -1251,6 +1267,31 @@ export function Materials() {
                 </div>
               )}
             </div>
+            
+            {/* Documents */}
+            {(selectedMaterial.mss_file_path || selectedMaterial.sds_file_path) && (
+              <div className="mb-6">
+                <h4 className="text-sm font-medium text-gray-700 mb-3">Documents</h4>
+                <div className="flex gap-3">
+                  {selectedMaterial.mss_file_path && (
+                    <button
+                      onClick={() => materialsApi.downloadFile(selectedMaterial.id, 'mss', selectedMaterial.mss_original_filename)}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                    >
+                      Download MSS
+                    </button>
+                  )}
+                  {selectedMaterial.sds_file_path && (
+                    <button
+                      onClick={() => materialsApi.downloadFile(selectedMaterial.id, 'sds', selectedMaterial.sds_original_filename)}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                    >
+                      Download SDS
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             
             {/* Vest Usage */}
             <div>
