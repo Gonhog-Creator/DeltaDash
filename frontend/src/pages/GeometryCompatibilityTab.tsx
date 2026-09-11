@@ -3,6 +3,7 @@ import { useGeometries } from '../hooks/useGeometries';
 import { useVestModels, useUploadDocument, useDeleteDocument } from '../hooks/useVestModels';
 import { API_BASE_URL } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
+import { LoadingOverlay } from '../components/LoadingOverlay';
 import { exportGeometryPdf } from '../utils/geometryPdfExport';
 
 const MEASUREMENT_KEYS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'];
@@ -30,7 +31,7 @@ function imageUrl(url: string | null): string {
 
 export function GeometryCompatibilityTab() {
   const { data: geometries, isLoading, error } = useGeometries();
-  const { data: vestModels } = useVestModels();
+  const { data: vestModels, isLoading: modelsLoading } = useVestModels();
   const uploadDocMutation = useUploadDocument();
   const deleteDocMutation = useDeleteDocument();
   const { role } = useAuth();
@@ -190,6 +191,9 @@ export function GeometryCompatibilityTab() {
 
   return (
     <>
+      {modelsLoading && (
+        <LoadingOverlay message="Loading vest models..." submessage="Fetching available models from the server" />
+      )}
       <div className="flex items-center gap-4 mb-6">
         <div className="bg-white shadow rounded-lg px-4 py-3">
           <div className="text-xs font-medium text-gray-500">Geometrales</div>

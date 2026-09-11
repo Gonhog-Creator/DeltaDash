@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { LoadingOverlay } from '../components/LoadingOverlay';
 import { AnchorPointsTab } from '../components/AnchorPointsTab';
 import { TestPlannerTab } from '../components/TestPlannerTab';
 import Plot from 'react-plotly.js';
@@ -28,6 +29,7 @@ export function ModelTraining() {
   const [healthStatus, setHealthStatus] = useState<any>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [modelVersions, setModelVersions] = useState<any[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(true);
   const [modelName, setModelName] = useState<string>('');
   const [trainingWarnings, setTrainingWarnings] = useState<string[]>([]);
   const [deleteVersion, setDeleteVersion] = useState<string | null>(null);
@@ -324,11 +326,14 @@ export function ModelTraining() {
   };
 
   const handleListVersions = async () => {
+    setVersionsLoading(true);
     try {
       const result = await apiClient.get<any>('/api/v1/ballistic/versions-with-metrics');
       setModelVersions(result.versions || []);
     } catch (err: any) {
       setError(err.detail || 'Failed to fetch versions');
+    } finally {
+      setVersionsLoading(false);
     }
   };
 
@@ -1766,6 +1771,9 @@ export function ModelTraining() {
 
   return (
     <div className="p-6">
+      {versionsLoading && (
+        <LoadingOverlay message="Loading model versions..." submessage="Fetching available models from the server" />
+      )}
       <h1 className="text-3xl font-bold mb-6">Model Training</h1>
 
       {/* Tabs */}

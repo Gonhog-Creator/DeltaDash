@@ -4,6 +4,7 @@ import { useMaterials } from '../hooks/useMaterials';
 import { useProtocols } from '../hooks/useProtocols';
 import { useVests } from '../hooks/useVests';
 import { Material } from '../api/materials';
+import { LoadingOverlay } from '../components/LoadingOverlay';
 import Plot from 'react-plotly.js';
 
 interface BallisticInput {
@@ -85,6 +86,7 @@ export function BallisticTesting() {
     return saved || '';
   });
   const [modelVersions, setModelVersions] = useState<any[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -176,6 +178,7 @@ export function BallisticTesting() {
   // Fetch model versions on mount
   useEffect(() => {
     const fetchModelVersions = async () => {
+      setModelsLoading(true);
       try {
         const result = await apiClient.get<any>('/api/v1/ballistic/versions');
         const versions = result.versions || [];
@@ -185,6 +188,8 @@ export function BallisticTesting() {
         }
       } catch (err) {
         console.error('Failed to fetch model versions:', err);
+      } finally {
+        setModelsLoading(false);
       }
     };
     fetchModelVersions();
@@ -295,6 +300,9 @@ export function BallisticTesting() {
 
   return (
     <div className="p-6">
+      {modelsLoading && (
+        <LoadingOverlay message="Loading model versions..." submessage="Fetching available models from the server" />
+      )}
       <h1 className="text-3xl font-bold mb-6">Ballistic Testing Prediction</h1>
 
       <div className="space-y-6">
