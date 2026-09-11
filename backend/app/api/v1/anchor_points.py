@@ -8,6 +8,7 @@ import uuid
 from app.db.session import get_db
 from app.db.models import AnchorPoint, AnchorPointLayer, Material, Ammunition, User
 from app.api.v1.auth import get_current_active_user, require_write_access
+from app.services.audit import log_action, serialize_model
 
 
 router = APIRouter(prefix="/anchor-points", tags=["anchor-points"])
@@ -387,6 +388,10 @@ def create_anchor_points_batch(
     
     db.commit()
     
+    for db_anchor_point in created_anchors:
+        log_action(db, current_user, "create", "anchor_point", db_anchor_point.id, after=serialize_model(db_anchor_point))
+    db.commit()
+    
     # Return all created anchor points
     result = []
     for db_anchor_point in created_anchors:
@@ -467,6 +472,8 @@ def create_anchor_point(
     
     db.commit()
     db.refresh(db_anchor_point)
+    log_action(db, current_user, "create", "anchor_point", db_anchor_point.id, after=serialize_model(db_anchor_point))
+    db.commit()
     
     return get_anchor_point(str(db_anchor_point.id), db, current_user)
 
@@ -483,6 +490,7 @@ def update_anchor_point(
     if not db_anchor_point:
         raise HTTPException(status_code=404, detail="Anchor point not found")
     
+    before = serialize_model(db_anchor_point)
     update_data = anchor_point.model_dump(exclude_unset=True)
     
     # Handle layers separately
@@ -540,6 +548,8 @@ def update_anchor_point(
     
     db.commit()
     db.refresh(db_anchor_point)
+    log_action(db, current_user, "update", "anchor_point", db_anchor_point.id, before=before, after=serialize_model(db_anchor_point))
+    db.commit()
     
     return get_anchor_point(str(db_anchor_point.id), db, current_user)
 
@@ -555,6 +565,7 @@ def delete_anchor_point(
     if not db_anchor_point:
         raise HTTPException(status_code=404, detail="Anchor point not found")
 
+    log_action(db, current_user, "delete", "anchor_point", db_anchor_point.id, before=serialize_model(db_anchor_point))
     # Layers will be cascade deleted
     db.delete(db_anchor_point)
     db.commit()
@@ -574,8 +585,9 @@ def delete_anchor_points_by_name(
     if not anchor_points:
         raise HTTPException(status_code=404, detail="No anchor points found matching pattern")
 
-    # Delete anchor points (layers will be cascade deleted)
     for ap in anchor_points:
+        log_action(db, current_user, "delete", "anchor_point", ap.id, before=serialize_model(ap))
+        # Layers will be cascade deleted
         db.delete(ap)
 
     db.commit()

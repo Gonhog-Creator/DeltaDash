@@ -253,6 +253,7 @@ def update_session_vest(
     if not session:
         raise HTTPException(status_code=404, detail="Test session not found")
     
+    before = serialize_model(session)
     session.vest_id = vest_id
     
     # Cascade to children if requested
@@ -263,6 +264,8 @@ def update_session_vest(
     
     db.commit()
     db.refresh(session)
+    log_action(db, current_user, "update_vest", "test_session", session.id, before=before, after=serialize_model(session))
+    db.commit()
     
     # Return updated session with vest code
     vest = db.query(VestModel).filter(VestModel.id == vest_id).first()
@@ -565,6 +568,8 @@ def upload_excel_to_test_session(
     
     db.commit()
     db.refresh(test_session)
+    log_action(db, current_user, "upload_excel", "test_session", test_session.id, after={"excel_file_path": test_session.excel_file_path, "shot_count": len(shot_data)})
+    db.commit()
     return test_session
 
 
@@ -809,6 +814,8 @@ def upload_session_pdf(
 
     db.commit()
     db.refresh(session)
+    log_action(db, current_user, "upload_pdf", "test_session", session.id, after={"filename": pdf_file.filename})
+    db.commit()
     return _session_to_dict(session)
 
 
@@ -865,6 +872,8 @@ def delete_session_pdf(
     flag_modified(session, 'pdf_documents')
     db.commit()
     db.refresh(session)
+    log_action(db, current_user, "delete_pdf", "test_session", session.id, before={"filename": entry.get('original_name')})
+    db.commit()
 
     return _session_to_dict(session)
 
@@ -918,6 +927,8 @@ def upload_session_image(
 
     db.commit()
     db.refresh(session)
+    log_action(db, current_user, "upload_image", "test_session", session.id, after={"side": side, "filename": image_file.filename})
+    db.commit()
     return _session_to_dict(session)
 
 
@@ -991,5 +1002,7 @@ def delete_session_image(
         flag_modified(session, field_name)
         db.commit()
         db.refresh(session)
+        log_action(db, current_user, "delete_image", "test_session", session.id, before={"side": side, "filename": entry.get('original_name')})
+        db.commit()
 
     return _session_to_dict(session)

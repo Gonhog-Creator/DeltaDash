@@ -18,7 +18,11 @@ def log_action(
     after: Optional[dict] = None,
     source: Optional[str] = None,
 ):
-    """Create an audit log entry. Call before db.commit() so it's in the same transaction."""
+    """Create an audit log entry. Call before db.commit() so it's in the same transaction.
+    Skips logging for update actions where before and after are identical (no changes)."""
+    if before is not None and after is not None and before == after:
+        return None
+
     entry = AuditLog(
         user_id=user.id if user else None,
         username=user.username if user else None,

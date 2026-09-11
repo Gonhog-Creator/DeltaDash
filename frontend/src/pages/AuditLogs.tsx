@@ -65,7 +65,7 @@ function JsonDiff({ before, after }: { before: Record<string, any> | null; after
         );
       })}
       {Array.from(allKeys).every(key => before?.[key] === after?.[key]) && (
-        <span className="text-gray-400">No changes detected</span>
+        <span className="text-gray-400 italic">No data changes</span>
       )}
     </div>
   );

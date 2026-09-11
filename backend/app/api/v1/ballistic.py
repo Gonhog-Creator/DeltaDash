@@ -20,6 +20,7 @@ from app.services.ml.ballistic_ml import train_from_database, predict, load_meta
 from app.db.models.model_run import ModelRun
 from app.api.v1.auth import get_current_active_user
 from app.db.models.user import User
+from app.services.audit import log_action, serialize_model
 
 
 router = APIRouter(prefix="/ballistic", tags=["ballistic"])
@@ -1015,7 +1016,7 @@ def optimize_hyperparameters(db: Session = Depends(get_db), request: Optional[Tr
 
 
 @router.post("/train")
-def train(db: Session = Depends(get_db), request: Optional[TrainRequest] = None):
+def train(db: Session = Depends(get_db), request: Optional[TrainRequest] = None, current_user: User = Depends(get_current_active_user)):
     """
     Train ML model using data from database.
     Fetches shots, vests, materials, ammunition, and test sessions from DB.
@@ -1048,6 +1049,17 @@ def train(db: Session = Depends(get_db), request: Optional[TrainRequest] = None)
                 "training_avg_error": model_run.training_avg_error,
                 "health_check_passed": model_run.training_avg_error is not None
             }
+        log_action(
+            db,
+            current_user,
+            action="train",
+            entity_type="model_run",
+            entity_id=model_run.id if model_run else None,
+            before=None,
+            after={"version": metadata["version"], "model_name": metadata.get("model_name"), "training_row_count": model_run.training_row_count if model_run else None},
+        )
+        db.commit()
+
         return {
             "status": "success",
             "message": "Model trained successfully",
@@ -1423,6 +1435,15 @@ def upload_model(
                 )
                 db.add(model_run)
             
+            log_action(
+                db,
+                current_user,
+                action="upload",
+                entity_type="model_run",
+                entity_id=model_run.id if model_run else None,
+                before=None,
+                after={"version": version, "model_name": model_run.model_name if model_run else version},
+            )
             db.commit()
         
         return {
@@ -1441,10 +1462,28 @@ def upload_model(
 
 
 @router.delete("/versions/{version}")
-def delete_version(version: str, db: Session = Depends(get_db)):
+def delete_version(version: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Delete a specific model version."""
     try:
+        model_run = db.query(ModelRun).filter(
+            ModelRun.version == version,
+            ModelRun.model_type == "ballistic"
+        ).first()
+        before_data = serialize_model(model_run) if model_run else None
+
         result = delete_model_version(version, db)
+
+        log_action(
+            db,
+            current_user,
+            action="delete",
+            entity_type="model_run",
+            entity_id=model_run.id if model_run else None,
+            before=before_data,
+            after=None,
+        )
+        db.commit()
+
         return {
             "status": "success",
             "message": f"Model version {result['model_name']} deleted successfully",
@@ -1457,10 +1496,28 @@ def delete_version(version: str, db: Session = Depends(get_db)):
 
 
 @router.put("/versions/{version}/name")
-def update_name(version: str, new_name: str = Query(..., description="New model name"), db: Session = Depends(get_db)):
+def update_name(version: str, new_name: str = Query(..., description="New model name"), db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Update the display name of a model version."""
     try:
+        model_run = db.query(ModelRun).filter(
+            ModelRun.version == version,
+            ModelRun.model_type == "ballistic"
+        ).first()
+        before_data = serialize_model(model_run) if model_run else None
+
         result = update_model_name(version, new_name, db_session=db)
+
+        log_action(
+            db,
+            current_user,
+            action="update_name",
+            entity_type="model_run",
+            entity_id=model_run.id if model_run else None,
+            before=before_data,
+            after={"old_name": result["old_name"], "new_name": result["new_name"]},
+        )
+        db.commit()
+
         return {
             "status": "success",
             "message": f"Model name updated from '{result['old_name']}' to '{result['new_name']}'",

@@ -300,6 +300,8 @@ def upload_cover_pdf(
 
     db.commit()
     db.refresh(cover)
+    log_action(db, current_user, "upload_pdf", "cover", cover.id, after={"filename": pdf_file.filename})
+    db.commit()
 
     geometry_name = None
     if cover.geometry_id:
@@ -350,6 +352,8 @@ def delete_cover_pdf(
         flag_modified(cover, 'pdf_document')
         db.commit()
         db.refresh(cover)
+        log_action(db, current_user, "delete_pdf", "cover", cover.id, before={"filename": entry.get('original_name')})
+        db.commit()
 
     geometry_name = None
     if cover.geometry_id:
@@ -435,6 +439,8 @@ def upload_cover_image(
 
     db.commit()
     db.refresh(cover)
+    log_action(db, current_user, "upload_image", "cover", cover.id, after={"side": side, "filename": image_file.filename})
+    db.commit()
     return CoverResponse.from_orm(cover, _cover_geometry_name(db, cover))
 
 
@@ -502,4 +508,6 @@ def delete_cover_image(
 
     db.commit()
     db.refresh(cover)
+    log_action(db, current_user, "delete_image", "cover", cover.id, before={"side": side})
+    db.commit()
     return CoverResponse.from_orm(cover, _cover_geometry_name(db, cover))

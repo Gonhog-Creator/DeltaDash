@@ -7,6 +7,7 @@ from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.shot_data import ShotData, ShotDataUpdate
 from app.schemas.shot import Shot
 from app.db.models.user import User as UserModel
+from app.services.audit import log_action, serialize_model
 import uuid
 
 
@@ -71,11 +72,14 @@ def update_shot_data(
         )
     
     # Update fields if provided
+    before = serialize_model(shot_data)
     update_data = shot_data_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(shot_data, field, value)
     
     db.commit()
     db.refresh(shot_data)
+    log_action(db, current_user, "update", "shot_data", shot_data.id, before=before, after=serialize_model(shot_data))
+    db.commit()
     
     return shot_data

@@ -6,6 +6,7 @@ from app.db.models import Shot as ShotModel
 from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.shot import ShotCreate, ShotUpdate, Shot
 from app.db.models.user import User as UserModel
+from app.services.audit import log_action, serialize_model
 
 
 
@@ -51,6 +52,8 @@ def create_shot(
     db.add(db_shot)
     db.commit()
     db.refresh(db_shot)
+    log_action(db, current_user, "create", "shot", db_shot.id, after=serialize_model(db_shot))
+    db.commit()
     return db_shot
 
 
@@ -77,12 +80,15 @@ def update_shot(
     if not shot:
         raise HTTPException(status_code=404, detail="Shot not found")
     
+    before = serialize_model(shot)
     update_data = shot_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(shot, field, value)
     
     db.commit()
     db.refresh(shot)
+    log_action(db, current_user, "update", "shot", shot.id, before=before, after=serialize_model(shot))
+    db.commit()
     return shot
 
 
@@ -96,5 +102,6 @@ def delete_shot(
     if not shot:
         raise HTTPException(status_code=404, detail="Shot not found")
     
+    log_action(db, current_user, "delete", "shot", shot.id, before=serialize_model(shot))
     db.delete(shot)
     db.commit()

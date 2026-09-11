@@ -9,6 +9,7 @@ from app.db.models.geometry_material_config import GeometryMaterialConfig
 from app.db.models.geometry import Geometry
 from app.db.models.material import Material
 from app.api.v1.auth import require_admin
+from app.services.audit import log_action, serialize_model
 
 router = APIRouter()
 
@@ -144,6 +145,8 @@ def create_geometry_material_config(
     db.add(new_config)
     db.commit()
     db.refresh(new_config)
+    log_action(db, current_user, "create", "geometry_material_config", new_config.id, after=serialize_model(new_config))
+    db.commit()
     
     return GeometryMaterialConfigResponse.from_orm(new_config, geometry.name)
 
@@ -187,6 +190,8 @@ def update_geometry_material_config(
     
     db.commit()
     db.refresh(config)
+    log_action(db, current_user, "update", "geometry_material_config", config.id, after=serialize_model(config))
+    db.commit()
     
     geometry = db.query(Geometry).filter(Geometry.id == config.geometry_id).first()
     geometry_name = geometry.name if geometry else "Unknown"
@@ -206,6 +211,7 @@ def delete_geometry_material_config(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
     
+    log_action(db, current_user, "delete", "geometry_material_config", config.id, before=serialize_model(config))
     db.delete(config)
     db.commit()
     

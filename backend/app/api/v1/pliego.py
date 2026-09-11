@@ -205,6 +205,8 @@ def retry_pliego_analysis(
     doc.error_message = None
     db.commit()
     db.refresh(doc)
+    log_action(db, current_user, "retry_analysis", "pliego_document", doc.id, after={"status": "pending"})
+    db.commit()
 
     try:
         from app.services.pliego_matcher import analyze_pliego

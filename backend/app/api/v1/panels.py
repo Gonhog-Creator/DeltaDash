@@ -6,6 +6,7 @@ from app.db.models import ArmorPanel as ArmorPanelModel, ArmorPanelLayer
 from app.api.v1.auth import get_current_active_user, require_write_access
 from app.schemas.armor_panel import ArmorPanelCreate, ArmorPanelUpdate, ArmorPanel, ArmorPanelListItem, ArmorPanelLayerCreate
 from app.db.models.user import User as UserModel
+from app.services.audit import log_action, serialize_model
 
 
 
@@ -51,6 +52,8 @@ def create_panel(
     
     db.commit()
     db.refresh(db_panel)
+    log_action(db, current_user, "create", "armor_panel", db_panel.id, after=serialize_model(db_panel))
+    db.commit()
     return db_panel
 
 
@@ -77,12 +80,15 @@ def update_panel(
     if not panel:
         raise HTTPException(status_code=404, detail="Panel not found")
     
+    before = serialize_model(panel)
     update_data = panel_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(panel, field, value)
     
     db.commit()
     db.refresh(panel)
+    log_action(db, current_user, "update", "armor_panel", panel.id, before=before, after=serialize_model(panel))
+    db.commit()
     return panel
 
 
@@ -96,6 +102,7 @@ def delete_panel(
     if not panel:
         raise HTTPException(status_code=404, detail="Panel not found")
     
+    log_action(db, current_user, "delete", "armor_panel", panel.id, before=serialize_model(panel))
     db.delete(panel)
     db.commit()
 
@@ -136,6 +143,8 @@ def update_panel_layers(
         )
         db.add(layer)
     
+    db.commit()
+    log_action(db, current_user, "update_layers", "armor_panel", panel_id, after={"layer_count": len(layers)})
     db.commit()
     
     return db.query(ArmorPanelLayer).filter(ArmorPanelLayer.panel_id == panel_id).order_by(ArmorPanelLayer.layer_index).all()

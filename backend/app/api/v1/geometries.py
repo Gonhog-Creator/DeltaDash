@@ -275,6 +275,8 @@ def upload_geometry_pdf(
 
     db.commit()
     db.refresh(geometry)
+    log_action(db, current_user, "upload_pdf", "geometry", geometry.id, after={"filename": pdf_file.filename})
+    db.commit()
     return GeometryResponse.from_orm(geometry)
 
 
@@ -323,6 +325,8 @@ def delete_geometry_pdf(
         flag_modified(geometry, 'pdf_document')
         db.commit()
         db.refresh(geometry)
+        log_action(db, current_user, "delete_pdf", "geometry", geometry.id, before={"filename": entry.get('original_name')})
+        db.commit()
 
     return GeometryResponse.from_orm(geometry)
 
@@ -377,6 +381,8 @@ def upload_geometry_image(
     geometry.image_url = f"/api/v1/geometries/{geometry_id}/image"
     db.commit()
     db.refresh(geometry)
+    log_action(db, current_user, "upload_image", "geometry", geometry.id, after={"filename": image_file.filename})
+    db.commit()
     return GeometryResponse.from_orm(geometry)
 
 
@@ -438,5 +444,7 @@ def delete_geometry_image(
     geometry.image_url = None
     db.commit()
     db.refresh(geometry)
+    log_action(db, current_user, "delete_image", "geometry", geometry.id)
+    db.commit()
 
     return GeometryResponse.from_orm(geometry)

@@ -249,6 +249,8 @@ def upload_material_file(
 
     db.commit()
     db.refresh(material)
+    log_action(db, current_user, "upload_file", "material", material.id, after={"mss_file": material.mss_file_path, "sds_file": material.sds_file_path})
+    db.commit()
     return material
 
 
@@ -370,6 +372,8 @@ def remove_material_file(
     else:
         raise HTTPException(status_code=400, detail="Invalid file type")
 
+    db.commit()
+    log_action(db, current_user, "delete_file", "material", material.id, before={"file_type": file_type})
     db.commit()
 
 
