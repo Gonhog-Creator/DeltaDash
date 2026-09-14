@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { X, Plus, Check, Wifi, WifiOff, Loader2, AlertCircle } from 'lucide-react';
 import { useVests } from '../hooks/useVests';
 import { useGeometries } from '../hooks/useGeometries';
@@ -8,6 +8,8 @@ import { useAmmunition } from '../hooks/useAmmunition';
 import { useAuth } from '../hooks/useAuth';
 import { useDraftSync } from '../hooks/useDraftSync';
 import { DraftShotRow } from '../db/draftDb';
+import { VestFormModal } from './VestFormModal';
+import { vestsApi, VestCreate } from '../api/vests';
 import { ShotGrid, ShotRowData } from './ShotGrid';
 import { manualEntryApi, ManualEntryRequest, ManualEntryVestTab } from '../api/manualEntry';
 import { ProtocolLevel } from '../api/protocols';
@@ -40,7 +42,10 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
   const { data: protocols } = useProtocols();
   const { data: ammunition } = useAmmunition({ limit: 500 });
 
-  const draftKey = propDraftKey || (user ? `user_${user.id}_new_${crypto.randomUUID()}` : null);
+  const draftKey = useMemo(
+    () => propDraftKey || (user ? `user_${user.id}_new_${crypto.randomUUID()}` : null),
+    [propDraftKey, user?.id] // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const draft = useDraftSync(draftKey);
 
   // Session-level metadata
@@ -76,6 +81,8 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [showDraftRestored, setShowDraftRestored] = useState(false);
+  const [pendingVest, setPendingVest] = useState<VestCreate | null>(null);
+  const [showVestForm, setShowVestForm] = useState(false);
 
   // Initialize active tab
   useEffect(() => {
@@ -105,6 +112,10 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
     setCertNumber(m.certificationNumber || '');
     setNotes(m.notes || '');
     setProtectionLevel((m as any).protectionLevel || '');
+    if ((m as any).pendingVest) {
+      setPendingVest((m as any).pendingVest as VestCreate);
+      setVestId('__new__');
+    }
 
     if (m.vestTabs?.length > 0) {
       const restoredTabs: VestTab[] = m.vestTabs.map((vt) => ({
@@ -166,6 +177,7 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
         certificationNumber: certNumber,
         notes,
         protectionLevel,
+        pendingVest: pendingVest || null,
         vestTabs: vestTabs.map((t) => ({
           id: t.id,
           vestNumber: t.vestNumber,
@@ -177,7 +189,7 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
       });
     }, 800);
     return () => clearTimeout(timer);
-  }, [sessionName, testDate, labName, protocol, clayTempC, ambientTempC, humidityPercent, vestId, geometryId, isOfficial, certNumber, notes, vestTabs]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionName, testDate, labName, protocol, clayTempC, ambientTempC, humidityPercent, vestId, geometryId, isOfficial, certNumber, notes, vestTabs, pendingVest]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save shot rows to IndexedDB when any tab's shots change (debounced)
   useEffect(() => {
@@ -289,6 +301,14 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
         };
         });
 
+      // Create pending vest first if user chose "Create New Vest"
+      let resolvedVestId = vestId || null;
+      if (vestId === '__new__' && pendingVest) {
+        const newVest = await vestsApi.create(pendingVest);
+        resolvedVestId = newVest.id;
+        queryClient.invalidateQueries({ queryKey: ['vests'] });
+      }
+
       const payload: ManualEntryRequest = {
         name: sessionName,
         test_date: testDate || null,
@@ -297,7 +317,7 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
         clay_temperature_c: clayTempC,
         ambient_temperature_c: ambientTempC,
         humidity_percent: humidityPercent,
-        vest_id: vestId || null,
+        vest_id: resolvedVestId,
         geometry_id: geometryId,
         is_official: isOfficial,
         certification_number: certNumber || null,
@@ -447,14 +467,29 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
               <label className="block text-xs font-medium text-gray-500 mb-1">Vest</label>
               <select
                 value={vestId}
-                onChange={(e) => setVestId(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === '__new__') {
+                    setShowVestForm(true);
+                  } else {
+                    setVestId(e.target.value);
+                    setPendingVest(null);
+                  }
+                }}
                 className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none"
               >
+                <option value="__new__" style={{ fontWeight: 'bold' }}>+ Create New Vest</option>
                 <option value="">—</option>
-                {vests?.map((v) => (
-                  <option key={v.id} value={v.id}>{v.vest_code}</option>
-                ))}
+                {[...(vests || [])]
+                  .sort((a, b) => (a.vest_code || '').localeCompare(b.vest_code || ''))
+                  .map((v) => (
+                    <option key={v.id} value={v.id}>{v.vest_code}</option>
+                  ))}
               </select>
+              {vestId === '__new__' && pendingVest && (
+                <p className="text-xs text-green-700 mt-1">
+                  New vest: {pendingVest.vest_code} (will be created on submit)
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Geometry *</label>
@@ -683,6 +718,21 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
           </button>
         </div>
       </div>
+
+      {/* Nested vest creation modal */}
+      {showVestForm && (
+        <VestFormModal
+          onSave={(vest) => {
+            setPendingVest(vest);
+            setVestId('__new__');
+            setShowVestForm(false);
+          }}
+          onCancel={() => {
+            setShowVestForm(false);
+            if (!pendingVest) setVestId('');
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -30,6 +30,7 @@ export interface DraftMeta {
   certificationNumber: string | null;
   notes: string | null;
   protectionLevel: string | null;
+  pendingVest?: unknown | null;
   vestTabs: VestTabDraft[];
   updatedAt: number;
 }
