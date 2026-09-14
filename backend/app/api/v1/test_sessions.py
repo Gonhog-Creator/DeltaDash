@@ -14,10 +14,12 @@ from app.db.models import TestSession as TestSessionModel, ShotData as ShotDataM
 from app.api.v1.auth import get_current_active_user, require_write_access, require_admin
 from app.schemas.test_session import TestSessionCreate, TestSessionUpdate, TestSession
 from app.schemas.shot_data import ShotDataCreate
+from app.schemas.manual_entry import ManualEntryRequest, ManualEntryResponse
 from app.db.models.user import User as UserModel
 from app.services.excel_parser import ExcelParser, ExcelParseError
 from app.services.test_session_service import create_sessions_from_excel_data
 from app.core.config import settings
+from openpyxl import Workbook
 from app.services.audit import log_action, serialize_model
 
 
@@ -745,6 +747,230 @@ def update_all_child_protocols(
     return {
         "message": f"Updated {updated_count} child sessions, skipped {skipped_count}"
     }
+
+
+def _generate_manual_entry_excel(entry: ManualEntryRequest, filename: str) -> str:
+    """Generate an Excel file from manual entry data and save it to material_docs_dir.
+    Returns the filename (not full path) of the saved file."""
+    os.makedirs(settings.material_docs_dir, exist_ok=True)
+    file_path = os.path.join(settings.material_docs_dir, filename)
+
+    wb = Workbook()
+
+    if len(entry.vest_tabs) == 1:
+        ws = wb.active
+        ws.title = "Sheet1"
+        _write_shots_to_ws(ws, entry.vest_tabs[0], entry)
+    else:
+        for i, tab in enumerate(entry.vest_tabs):
+            if i == 0:
+                ws = wb.active
+            else:
+                ws = wb.create_sheet()
+            sheet_name = f"Vest {tab.vest_number or i + 1}"
+            if tab.size:
+                sheet_name += f" {tab.size}"
+            if tab.conditioning:
+                cond = tab.conditioning.capitalize() if tab.conditioning != 'ballistic_limit' else 'BL'
+                sheet_name += f" {cond}"
+            ws.title = sheet_name[:31]
+            _write_shots_to_ws(ws, tab, entry)
+
+    wb.save(file_path)
+    return filename
+
+
+def _write_shots_to_ws(ws, tab, entry: ManualEntryRequest):
+    """Write shot data from a vest tab to a worksheet."""
+    # Header rows with session metadata
+    ws['A1'] = entry.name or ''
+    ws['A2'] = f"Lab: {entry.lab_name or ''}"
+    ws['A3'] = f"Protocol: {entry.protocol or ''}"
+    ws['A4'] = f"Date: {entry.test_date or ''}"
+    ws['A5'] = f"Clay Temp: {entry.clay_temperature_c or ''}"
+    ws['A6'] = f"Ambient Temp: {entry.ambient_temperature_c or ''}"
+    ws['A7'] = f"Humidity: {entry.humidity_percent or ''}"
+    ws['A8'] = f"Protection Level: {entry.protection_level or ''}"
+
+    # Column headers
+    headers = ['Shot #', 'Side', 'Angle (°)', 'Caliber', 'Velocity (m/s)', 'Trauma (mm)', 'Result']
+    header_row = 10
+    for col, h in enumerate(headers, 1):
+        ws.cell(row=header_row, column=col, value=h)
+
+    # Shot data
+    for row_idx, shot in enumerate(tab.shots, header_row + 1):
+        ws.cell(row=row_idx, column=1, value=shot.shot_number)
+        ws.cell(row=row_idx, column=2, value=shot.side or '')
+        ws.cell(row=row_idx, column=3, value=float(shot.angle_degrees) if shot.angle_degrees is not None else '')
+        ws.cell(row=row_idx, column=4, value=shot.caliber or '')
+        ws.cell(row=row_idx, column=5, value=float(shot.velocity_m_s) if shot.velocity_m_s is not None else '')
+        ws.cell(row=row_idx, column=6, value=float(shot.trauma_mm) if shot.trauma_mm is not None else '')
+        ws.cell(row=row_idx, column=7, value=shot.trauma_qualitative or '')
+
+
+@router.post("/manual-entry", response_model=ManualEntryResponse, status_code=status.HTTP_201_CREATED)
+def create_manual_entry(
+    entry: ManualEntryRequest,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access)
+):
+    """Create a test session (or parent + child sessions) with shot data entered manually,
+    replacing the Excel-making + Excel-upload pipeline with a single submit."""
+    from app.services.test_session_service import get_standardized_caliber
+
+    # Validate geometry exists
+    geometry = db.query(GeometryModel).filter(GeometryModel.id == entry.geometry_id).first()
+    if not geometry:
+        raise HTTPException(status_code=400, detail="Geometry not found")
+
+    # Validate that every shot has side, velocity, and trauma
+    missing_fields_shots = []
+    for tab_idx, tab in enumerate(entry.vest_tabs):
+        vest_label = f"Vest {tab.vest_number or tab_idx + 1}"
+        for shot in tab.shots:
+            missing = []
+            if not shot.side:
+                missing.append('Side')
+            if shot.velocity_m_s is None:
+                missing.append('Velocity')
+            if shot.trauma_mm is None:
+                missing.append('Trauma')
+            if missing:
+                missing_fields_shots.append(
+                    f"{vest_label} – Shot {shot.shot_number}: missing {', '.join(missing)}"
+                )
+    if missing_fields_shots:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "missing_required_fields",
+                "message": "Please fill in the required fields for every shot:\n" + "\n".join(missing_fields_shots),
+                "missing_shots": missing_fields_shots,
+            }
+        )
+
+    # Validate calibers exist in ammunition DB
+    all_calibers = set()
+    for tab in entry.vest_tabs:
+        for shot in tab.shots:
+            if shot.caliber:
+                all_calibers.add(str(shot.caliber).strip())
+
+    from app.services.test_session_service import validate_calibers_exist
+    missing_calibers = validate_calibers_exist(db, all_calibers)
+    if missing_calibers:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "missing_ammunition",
+                "message": f"The following calibers are not in the ammunition database: {', '.join(missing_calibers)}",
+                "missing_calibers": list(missing_calibers)
+            }
+        )
+
+    # Generate Excel file from the manual entry data
+    safe_name = entry.name.replace(' ', '_').replace('/', '-').replace('\\', '-')
+    excel_filename = f"{safe_name}_manual.xlsx"
+    _generate_manual_entry_excel(entry, excel_filename)
+
+    # Always create a parent session + one child session per vest tab
+    # (matches the Excel upload flow)
+    parent_session = TestSessionModel(
+        name=entry.name,
+        test_date=entry.test_date,
+        lab_name=entry.lab_name,
+        protocol=entry.protocol,
+        clay_temperature_c=entry.clay_temperature_c,
+        ambient_temperature_c=entry.ambient_temperature_c,
+        humidity_percent=entry.humidity_percent,
+        vest_id=entry.vest_id,
+        geometry_id=entry.geometry_id,
+        is_official=entry.is_official,
+        certification_number=entry.certification_number,
+        notes=entry.notes,
+        excel_file_path=excel_filename,
+    )
+    db.add(parent_session)
+    db.commit()
+    db.refresh(parent_session)
+
+    child_ids = []
+    total_shots = 0
+
+    for tab in entry.vest_tabs:
+        # Skip empty tabs
+        if not tab.shots:
+            continue
+
+        # Build child name
+        name_parts = []
+        if tab.vest_number:
+            name_parts.append(f"Vest {tab.vest_number}")
+        if tab.size:
+            name_parts.append(tab.size)
+        conditioning_display = None
+        if tab.conditioning:
+            conditioning_display = tab.conditioning.capitalize() if tab.conditioning != 'ballistic_limit' else 'Ballistic Limit'
+            name_parts.append(conditioning_display)
+        child_name = ' - '.join(name_parts) if name_parts else f"Tab {len(child_ids) + 1}"
+
+        child_session = TestSessionModel(
+            name=child_name,
+            test_date=entry.test_date,
+            lab_name=entry.lab_name,
+            protocol=entry.protocol,
+            clay_temperature_c=entry.clay_temperature_c,
+            ambient_temperature_c=entry.ambient_temperature_c,
+            humidity_percent=entry.humidity_percent,
+            conditioning=tab.conditioning,
+            size=tab.size,
+            ballistic_limit=tab.ballistic_limit or False,
+            parent_test_group_id=parent_session.id,
+            vest_id=entry.vest_id,
+            geometry_id=entry.geometry_id,
+            is_official=entry.is_official,
+            certification_number=entry.certification_number,
+            notes=entry.notes,
+            excel_file_path=excel_filename,
+        )
+        db.add(child_session)
+        db.commit()
+        db.refresh(child_session)
+        child_ids.append(str(child_session.id))
+
+        for shot in tab.shots:
+            caliber_val = None
+            if shot.caliber:
+                caliber_val = get_standardized_caliber(db, str(shot.caliber).strip())
+            shot_data_db = ShotDataModel(
+                test_session_id=child_session.id,
+                shot_number=shot.shot_number,
+                side=shot.side,
+                vest_number=tab.vest_number,
+                angle_degrees=shot.angle_degrees,
+                caliber=caliber_val,
+                velocity_m_s=shot.velocity_m_s,
+                trauma_mm=shot.trauma_mm,
+                trauma_qualitative=shot.trauma_qualitative,
+                protection_level=entry.protection_level,
+                temperature_c=entry.ambient_temperature_c,
+                humidity_percent=entry.humidity_percent,
+            )
+            db.add(shot_data_db)
+            total_shots += 1
+
+        db.commit()
+
+    log_action(db, current_user, "manual_entry", "test_session", parent_session.id,
+               after={"parent": parent_session.name, "child_count": len(child_ids), "shot_count": total_shots})
+    db.commit()
+
+    return ManualEntryResponse(
+        parent_session_id=str(parent_session.id),
+        child_session_ids=child_ids,
+        total_shots=total_shots,
+    )
 
 
 # --- PDF and image endpoints for test sessions ---

@@ -11,6 +11,8 @@ import { apiClient, API_BASE_URL } from '../api/client';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { LocationManagementModal } from '../components/LocationManagementModal';
 import { ProtocolManagementModal } from '../components/ProtocolManagementModal';
+import { LiveEntryModal } from '../components/LiveEntryModal';
+import { DraftPickerModal } from '../components/DraftPickerModal';
 
 export function TestSessions() {
   const navigate = useNavigate();
@@ -19,7 +21,7 @@ export function TestSessions() {
   const { data: protocols } = useProtocols();
   const { data: vests } = useVests();
   const { data: geometries } = useGeometries();
-  const { isAdmin, role } = useAuth();
+  const { isAdmin, role, user } = useAuth();
   const createLocationMutation = useCreateLocation();
   const deleteLocationMutation = useDeleteLocation();
   const updateLocationMutation = useUpdateLocation();
@@ -76,6 +78,9 @@ export function TestSessions() {
   const [showDateFormatModal, setShowDateFormatModal] = useState(false);
   const [dateInfo, setDateInfo] = useState<any>(null);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [showLiveEntry, setShowLiveEntry] = useState(false);
+  const [showDraftPicker, setShowDraftPicker] = useState(false);
+  const [activeDraftKey, setActiveDraftKey] = useState<string | undefined>(undefined);
   const [bulkFiles, setBulkFiles] = useState<File[]>([]);
   const [selectedBulkGeometryId, setSelectedBulkGeometryId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -351,6 +356,14 @@ export function TestSessions() {
           )}
           {role !== 'viewer' && (
             <button
+              onClick={() => setShowDraftPicker(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            >
+              Live Data Entry
+            </button>
+          )}
+          {role !== 'viewer' && (
+            <button
               onClick={() => setShowCreateFromExcel(true)}
               className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
             >
@@ -464,6 +477,15 @@ export function TestSessions() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              navigate(`/test-sessions/${parent.id}`);
+                            }}
+                            className="text-indigo-600 hover:text-indigo-900 mr-3"
+                          >
+                            View
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
                               setEditTarget(parent);
                             }}
                             className="text-indigo-600 hover:text-indigo-900 mr-3"
@@ -481,7 +503,17 @@ export function TestSessions() {
                           </button>
                         </>
                       )}
-                      {role === 'viewer' && '-'}
+                      {role === 'viewer' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/test-sessions/${parent.id}`);
+                          }}
+                          className="text-indigo-600 hover:text-indigo-900"
+                        >
+                          View
+                        </button>
+                      )}
                     </td>
                   </tr>
                   {isExpanded && hasChildren && sortedChildren.map((child) => (
@@ -1262,6 +1294,34 @@ export function TestSessions() {
             setShowBulkUpload(false);
             setBulkFiles([]);
             setSelectedBulkGeometryId('');
+          }}
+        />
+      )}
+
+      {showDraftPicker && user && (
+        <DraftPickerModal
+          userId={user.id}
+          onContinue={(key) => {
+            setActiveDraftKey(key);
+            setShowDraftPicker(false);
+            setShowLiveEntry(true);
+          }}
+          onStartNew={() => {
+            setActiveDraftKey(undefined);
+            setShowDraftPicker(false);
+            setShowLiveEntry(true);
+          }}
+          onClose={() => setShowDraftPicker(false)}
+        />
+      )}
+
+      {showLiveEntry && (
+        <LiveEntryModal
+          draftKey={activeDraftKey}
+          onClose={() => setShowLiveEntry(false)}
+          onSubmitted={(sessionId) => {
+            setShowLiveEntry(false);
+            navigate(`/test-sessions/${sessionId}`);
           }}
         />
       )}

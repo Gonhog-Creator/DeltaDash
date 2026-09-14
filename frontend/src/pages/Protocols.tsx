@@ -1,21 +1,9 @@
 import { useState } from 'react';
 import { useProtocols, useCreateProtocol, useUpdateProtocol, useDeleteProtocol } from '../hooks/useProtocols';
 import { useAmmunition } from '../hooks/useAmmunition';
-import { Protocol } from '../api/protocols';
+import { Protocol, ProtocolLevel, AmmunitionConfig } from '../api/protocols';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useAuth } from '../hooks/useAuth';
-
-interface AmmunitionConfig {
-  ammunition_id: string;
-  reference_velocity_m_s: number;
-  velocity_window_m_s: number;
-  shots_per_panel: number;
-}
-
-interface ProtocolLevel {
-  level_name: string;
-  ammunition_config: AmmunitionConfig[];
-}
 
 export function Protocols() {
   const { data: protocols, isLoading, error, refetch } = useProtocols();
@@ -269,7 +257,7 @@ export function Protocols() {
                             <input
                               type="number"
                               step="0.1"
-                              value={ammo.velocity_window_m_s}
+                              value={ammo.velocity_window_m_s ?? ''}
                               onChange={(e) => updateAmmunitionInLevel(levelIndex, ammoIndex, 'velocity_window_m_s', parseFloat(e.target.value))}
                               className="w-full border rounded p-2 text-xs"
                             />
