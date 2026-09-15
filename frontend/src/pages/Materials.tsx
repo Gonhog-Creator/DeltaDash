@@ -70,7 +70,6 @@ export function Materials() {
     force_transverse_error_percent: null,
     stretch_test_length: '5cm',
     fabric_composition_ids: null,
-    price_per_m2: null,
   });
 
   if (isLoading) return <div>Loading...</div>;
@@ -84,7 +83,7 @@ export function Materials() {
       if (sdsFile) files.sds = sdsFile;
       await createMutation.mutateAsync({ material: formData, files });
       setShowCreateForm(false);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null, price_per_m2: null, created_by_username: '' });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null, created_by_username: '' });
       setErrorInputValues({});
       setMssFile(null);
       setSdsFile(null);
@@ -126,7 +125,7 @@ export function Materials() {
       refetch();
 
       setEditingMaterial(null);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null, price_per_m2: null });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null });
       setErrorInputValues({});
       setMssFile(null);
       setSdsFile(null);
@@ -232,7 +231,6 @@ export function Materials() {
       force_transverse_error_percent: material.force_transverse_error_percent,
       stretch_test_length: material.stretch_test_length || '5cm',
       fabric_composition_ids: material.fabric_composition_ids,
-      price_per_m2: material.price_per_m2,
       created_by_username: material.created_by_username,
     });
     setErrorInputValues({
@@ -245,7 +243,7 @@ export function Materials() {
 
   const cancelEdit = () => {
     setEditingMaterial(null);
-    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null, price_per_m2: null });
+    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null });
     setErrorInputValues({});
     setMssFile(null);
     setSdsFile(null);
@@ -558,17 +556,6 @@ export function Materials() {
                     className="mt-1 w-20 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                   />
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Price per m²</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.price_per_m2 ?? ''}
-                  onChange={(e) => setFormData({ ...formData, price_per_m2: e.target.value ? parseFloat(e.target.value) : null })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                  placeholder="Optional - for cost calculations"
-                />
               </div>
               {(formData.material_class === 'fabric' || formData.material_class === 'aramid' || formData.material_class === 'UHMWPE' || formData.material_class === 'foam') && (
                 <div>

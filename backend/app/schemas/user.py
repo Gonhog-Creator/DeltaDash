@@ -21,6 +21,7 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     is_active: Optional[bool] = None
     is_admin: Optional[bool] = None
+    password: Optional[str] = None  # plaintext; re-hashed server-side when provided
 
 
 class UserInDB(UserBase):

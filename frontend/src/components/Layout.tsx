@@ -39,7 +39,7 @@ export function Layout({ children }: LayoutProps) {
     { path: '/analytics', label: 'Analytics' },
     { path: '/comparison', label: 'Comparison' },
     { path: '/predictions', label: 'Predictions' },
-    ...(isAdmin ? [{ path: '/protocols', label: 'Protocols', isAdmin: true }, { path: '/model-training', label: 'Model Training', isAdmin: true }, { path: '/audit-logs', label: 'Audit Trail', isAdmin: true }] : []),
+    ...(isAdmin ? [{ path: '/protocols', label: 'Protocols', isAdmin: true }, { path: '/model-training', label: 'Model Training', isAdmin: true }, { path: '/audit-logs', label: 'Audit Trail', isAdmin: true }, { path: '/user-management', label: 'User Management', isAdmin: true }] : []),
   ];
 
   const isActive = (path: string) => location.pathname === path;

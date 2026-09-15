@@ -309,7 +309,7 @@ def calculate_fabric_requirements(
         total_fabric_area_m2=round(total_fabric_area_m2, 4),
         total_weight_kg=round(total_weight_kg, 4),
         total_cost=round(total_cost, 2) if total_cost else None,
-        efficiency_factor=request.efficiency_factor,
+        efficiency_factor=efficiency_factor,
         quantity=request.quantity,
         size=request.size,
         geometry_name=geometry.name,

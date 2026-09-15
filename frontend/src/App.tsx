@@ -20,6 +20,7 @@ import { Geometries } from './pages/Geometries'
 import { Covers } from './pages/Covers'
 import { PliegoMatcher } from './pages/PliegoMatcher'
 import { AuditLogs } from './pages/AuditLogs'
+import { UserManagement } from './pages/UserManagement'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -60,6 +61,7 @@ function App() {
                       <Route path="/model-training" element={<ModelTraining />} />
                       <Route path="/fabric-estimation" element={<FabricEstimation />} />
                       <Route path="/audit-logs" element={<AuditLogs />} />
+                      <Route path="/user-management" element={<UserManagement />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </Layout>

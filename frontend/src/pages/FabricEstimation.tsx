@@ -406,10 +406,6 @@ export function FabricEstimation() {
                   <span className="text-gray-600">Total Weight:</span>
                   <span className="ml-2 font-medium">{calculation.total_weight_kg.toFixed(4)} kg</span>
                 </div>
-                <div>
-                  <span className="text-gray-600">Total Cost:</span>
-                  <span className="ml-2 font-medium">{calculation.total_cost ? `$${calculation.total_cost.toFixed(2)}` : 'N/A'}</span>
-                </div>
               </div>
             </div>
 
@@ -424,7 +420,6 @@ export function FabricEstimation() {
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Area (m²)</th>
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Rolls</th>
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Weight (kg)</th>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Cost</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -434,7 +429,6 @@ export function FabricEstimation() {
                         <td className="px-4 py-2 text-sm text-gray-500">{Math.ceil(req.area_m2)}</td>
                         <td className="px-4 py-2 text-sm text-gray-500">{req.roll_count !== null ? req.roll_count : 'N/A'}</td>
                         <td className="px-4 py-2 text-sm text-gray-500">{Math.ceil(req.weight_kg)}</td>
-                        <td className="px-4 py-2 text-sm text-gray-500">{req.cost ? `$${req.cost.toFixed(2)}` : 'N/A'}</td>
                       </tr>
                     ))}
                   </tbody>
