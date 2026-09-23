@@ -226,7 +226,7 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
             'bullet_mass_g': float(ammunition.projectile_mass_grams) if ammunition and ammunition.projectile_mass_grams else None,
             'temperature_c': float(shot_data_record.temperature_c) if shot_data_record.temperature_c else None,
             'humidity_pct': float(shot_data_record.humidity_percent) if shot_data_record.humidity_percent else None,
-            'condition': test_session.conditioning if test_session else None,
+            'condition': shot_data_record.conditioning or (test_session.conditioning if test_session else None),
             'panel_side': shot_data_record.side,
             'backface_deformation_mm': float(shot_data_record.trauma_mm) if shot_data_record.trauma_mm is not None else None,
             'perforated': perforated,

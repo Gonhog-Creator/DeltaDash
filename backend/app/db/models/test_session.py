@@ -18,6 +18,7 @@ class TestSession(Base):
     humidity_percent = Column(Numeric(5, 2))
     conditioning = Column(String)
     size = Column(String)
+    serial_number = Column(String)
     ballistic_limit = Column(Boolean, default=False)
     parent_test_group_id = Column(UUID(as_uuid=True), ForeignKey('test_sessions.id'), nullable=True)
     vest_id = Column(UUID(as_uuid=True), ForeignKey('vests.id'), nullable=True)

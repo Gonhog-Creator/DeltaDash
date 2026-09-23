@@ -18,14 +18,12 @@ import { useQueryClient } from '@tanstack/react-query';
 interface VestTab {
   id: string;
   vestNumber: string;
+  serialNumber: string;
   size: string;
-  conditioning: string;
   ballisticLimit: boolean;
   ammunitionId: string;
   shots: ShotRowData[];
 }
-
-const CONDITIONING_OPTIONS = ['ambient', 'wet', 'tumbled', 'ballistic_limit'];
 
 interface LiveEntryModalProps {
   onClose: () => void;
@@ -68,8 +66,8 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
     {
       id: crypto.randomUUID(),
       vestNumber: '1',
+      serialNumber: '',
       size: '',
-      conditioning: 'ambient',
       ballisticLimit: false,
       ammunitionId: '',
       shots: [],
@@ -121,8 +119,8 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
       const restoredTabs: VestTab[] = m.vestTabs.map((vt) => ({
         id: vt.id,
         vestNumber: vt.vestNumber || '',
+        serialNumber: vt.serialNumber || '',
         size: vt.size || '',
-        conditioning: vt.conditioning || 'ambient',
         ballisticLimit: vt.ballisticLimit || false,
         ammunitionId: (vt as any).ammunitionId || '',
         shots: [],
@@ -138,6 +136,7 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
             id: crypto.randomUUID(),
             shot_number: r.shot_number,
             side: r.side,
+            conditioning: r.conditioning ?? null,
             angle_degrees: r.angle_degrees,
             velocity_m_s: r.velocity_m_s,
             trauma_mm: r.trauma_mm,
@@ -181,8 +180,8 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
         vestTabs: vestTabs.map((t) => ({
           id: t.id,
           vestNumber: t.vestNumber,
+          serialNumber: t.serialNumber,
           size: t.size,
-          conditioning: t.conditioning,
           ballisticLimit: t.ballisticLimit,
           ammunitionId: t.ammunitionId,
         })),
@@ -202,6 +201,7 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
             vestTabId: tab.id,
             shot_number: s.shot_number,
             side: s.side,
+            conditioning: s.conditioning,
             vest_number: tab.vestNumber,
             angle_degrees: s.angle_degrees,
             velocity_m_s: s.velocity_m_s,
@@ -237,8 +237,8 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
     const newTab: VestTab = {
       id: crypto.randomUUID(),
       vestNumber: String(vestTabs.length + 1),
+      serialNumber: '',
       size: '',
-      conditioning: 'ambient',
       ballisticLimit: false,
       ammunitionId: '',
       shots: [],
@@ -282,12 +282,13 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
           const vestNum = String(idx + 1);
           return {
           vest_number: vestNum,
+          serial_number: t.serialNumber || null,
           size: t.size || null,
-          conditioning: t.conditioning || null,
           ballistic_limit: t.ballisticLimit || false,
           shots: t.shots.map((s) => ({
             shot_number: s.shot_number,
             side: s.side,
+            conditioning: s.conditioning || null,
             vest_number: vestNum,
             angle_degrees: s.angle_degrees,
             caliber: selectedAmmo?.caliber || null,
@@ -616,6 +617,16 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
               </span>
             </div>
             <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-500">Serial #</label>
+              <input
+                type="text"
+                value={activeTab.serialNumber}
+                onChange={(e) => updateTab(activeTab.id, { serialNumber: e.target.value })}
+                placeholder="e.g. SN-00123"
+                className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-400 outline-none w-32"
+              />
+            </div>
+            <div className="flex items-center gap-2">
               <label className="text-xs font-medium text-gray-500">Size</label>
               <select
                 value={activeTab.size}
@@ -625,20 +636,6 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
                 <option value="">—</option>
                 {availableSizes.map((s) => (
                   <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-medium text-gray-500">Conditioning</label>
-              <select
-                value={activeTab.conditioning}
-                onChange={(e) => updateTab(activeTab.id, { conditioning: e.target.value })}
-                className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-400 outline-none"
-              >
-                {CONDITIONING_OPTIONS.map((c) => (
-                  <option key={c} value={c}>
-                    {c === 'ballistic_limit' ? 'Ballistic Limit' : c.charAt(0).toUpperCase() + c.slice(1)}
-                  </option>
                 ))}
               </select>
             </div>

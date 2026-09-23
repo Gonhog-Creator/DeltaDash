@@ -8,6 +8,7 @@ from decimal import Decimal
 class ManualEntryShot(BaseModel):
     shot_number: str
     side: Optional[str] = None
+    conditioning: Optional[str] = None
     vest_number: Optional[str] = None
     angle_degrees: Optional[Decimal] = None
     caliber: Optional[str] = None
@@ -21,6 +22,7 @@ class ManualEntryShot(BaseModel):
 
 class ManualEntryVestTab(BaseModel):
     vest_number: Optional[str] = None
+    serial_number: Optional[str] = None
     size: Optional[str] = None
     conditioning: Optional[str] = None
     ballistic_limit: Optional[bool] = False

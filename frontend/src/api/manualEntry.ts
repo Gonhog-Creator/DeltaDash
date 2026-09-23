@@ -3,6 +3,7 @@ import { apiClient } from './client';
 export interface ManualEntryShot {
   shot_number: string;
   side?: string | null;
+  conditioning?: string | null;
   vest_number?: string | null;
   angle_degrees?: number | null;
   caliber?: string | null;
@@ -16,6 +17,7 @@ export interface ManualEntryShot {
 
 export interface ManualEntryVestTab {
   vest_number?: string | null;
+  serial_number?: string | null;
   size?: string | null;
   conditioning?: string | null;
   ballistic_limit?: boolean | false;

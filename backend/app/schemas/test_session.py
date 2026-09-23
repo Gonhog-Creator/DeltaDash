@@ -15,6 +15,7 @@ class TestSessionBase(BaseModel):
     humidity_percent: Optional[Decimal] = None
     conditioning: Optional[str] = None
     size: Optional[str] = None
+    serial_number: Optional[str] = None
     ballistic_limit: Optional[bool] = None
     parent_test_group_id: Optional[UUID] = None
     vest_id: Optional[UUID] = None
@@ -42,6 +43,7 @@ class TestSessionUpdate(BaseModel):
     humidity_percent: Optional[Decimal] = None
     conditioning: Optional[str] = None
     size: Optional[str] = None
+    serial_number: Optional[str] = None
     ballistic_limit: Optional[bool] = None
     parent_test_group_id: Optional[UUID] = None
     vest_id: Optional[UUID] = None

@@ -9,6 +9,7 @@ class ShotDataBase(BaseModel):
     test_session_id: UUID
     vest_number: Optional[str] = None
     side: Optional[str] = None
+    conditioning: Optional[str] = None
     angle_degrees: Optional[Decimal] = None
     shot_number: str
     protection_level: Optional[str] = None
@@ -39,6 +40,7 @@ class ShotData(ShotDataInDB):
 class ShotDataUpdate(BaseModel):
     vest_number: Optional[str] = None
     side: Optional[str] = None
+    conditioning: Optional[str] = None
     angle_degrees: Optional[Decimal] = None
     shot_number: Optional[str] = None
     protection_level: Optional[str] = None

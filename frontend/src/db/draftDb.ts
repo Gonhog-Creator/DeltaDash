@@ -7,6 +7,7 @@ export interface DraftShotRow {
   vestTabId: string;
   shot_number: string;
   side: string | null;
+  conditioning?: string | null;
   vest_number: string | null;
   angle_degrees: number | null;
   velocity_m_s: number | null;
@@ -38,8 +39,10 @@ export interface DraftMeta {
 export interface VestTabDraft {
   id: string;
   vestNumber: string | null;
+  serialNumber?: string | null;
   size: string | null;
-  conditioning: string | null;
+  /** @deprecated conditioning is now per-shot; kept for restoring old drafts */
+  conditioning?: string | null;
   ballisticLimit: boolean;
   ammunitionId: string | null;
 }

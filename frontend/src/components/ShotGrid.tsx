@@ -11,6 +11,7 @@ export interface ShotRowData {
   id: string;
   shot_number: string;
   side: string | null;
+  conditioning: string | null;
   angle_degrees: number | null;
   velocity_m_s: number | null;
   trauma_mm: number | null;
@@ -18,7 +19,11 @@ export interface ShotRowData {
 }
 
 const SIDE_OPTIONS = ['Front', 'Back'];
+const CONDITIONING_OPTIONS = ['ambient', 'wet', 'tumbled', 'ballistic_limit'];
 const TRAUMA_OPTIONS = ['OK', 'Punctured', 'PERFORO', 'Partial', 'None'];
+
+const formatConditioningLabel = (v: string) =>
+  v === 'ballistic_limit' ? 'Ballistic Limit' : v.charAt(0).toUpperCase() + v.slice(1);
 
 interface EditableCellProps {
   value: string | number | null;
@@ -28,9 +33,10 @@ interface EditableCellProps {
   type?: 'text' | 'number' | 'select';
   options?: string[];
   align?: 'left' | 'center' | 'right';
+  formatLabel?: (value: string) => string;
 }
 
-function EditableCell({ value, onChange, onEnter, onTab, type = 'text', options, align = 'left' }: EditableCellProps) {
+function EditableCell({ value, onChange, onEnter, onTab, type = 'text', options, align = 'left', formatLabel }: EditableCellProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [localValue, setLocalValue] = useState(value?.toString() ?? '');
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement>(null);
@@ -86,7 +92,7 @@ function EditableCell({ value, onChange, onEnter, onTab, type = 'text', options,
         >
           <option value="">—</option>
           {options.map((opt) => (
-            <option key={opt} value={opt}>{opt}</option>
+            <option key={opt} value={opt}>{formatLabel ? formatLabel(opt) : opt}</option>
           ))}
         </select>
       );
@@ -111,7 +117,7 @@ function EditableCell({ value, onChange, onEnter, onTab, type = 'text', options,
         value === null || value === '' ? 'text-gray-300' : 'text-gray-800'
       }`}
     >
-      {value ?? '—'}
+      {formatLabel && value !== null && value !== '' ? formatLabel(String(value)) : (value ?? '—')}
     </div>
   );
 }
@@ -141,11 +147,13 @@ export function ShotGrid({ data, onChange, ballisticLimit }: ShotGridProps) {
 
   const addRow = useCallback(() => {
     const nextShotNum = String(data.length + 1);
+    const prev = data[data.length - 1];
     const newRow: ShotRowData = {
       id: crypto.randomUUID(),
       shot_number: nextShotNum,
-      side: null,
-      angle_degrees: 0,
+      side: prev?.side ?? null,
+      conditioning: prev?.conditioning ?? null,
+      angle_degrees: prev?.angle_degrees ?? 0,
       velocity_m_s: null,
       trauma_mm: null,
       trauma_qualitative: null,
@@ -197,6 +205,22 @@ export function ShotGrid({ data, onChange, ballisticLimit }: ShotGridProps) {
         />
       ),
       size: 90,
+    },
+    {
+      id: 'conditioning',
+      header: 'Conditioning',
+      cell: ({ row }) => (
+        <EditableCell
+          value={row.original.conditioning}
+          type="select"
+          options={CONDITIONING_OPTIONS}
+          formatLabel={formatConditioningLabel}
+          onChange={(v) => updateCell(row.index, 'conditioning', v)}
+          onEnter={navigateDown}
+          onTab={navigateCell}
+        />
+      ),
+      size: 110,
     },
     {
       id: 'angle_degrees',

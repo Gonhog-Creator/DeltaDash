@@ -499,6 +499,7 @@ def _create_sessions_from_multi_sheet(
             # Add shot data for this series
             for shot in shot_data:
                 shot_copy = {k: v for k, v in shot.items() if k != 'row'}
+                shot_copy['conditioning'] = conditioning
                 # Standardize caliber to match database value
                 if shot_copy.get('caliber'):
                     shot_copy['caliber'] = get_standardized_caliber(db, shot_copy['caliber'])

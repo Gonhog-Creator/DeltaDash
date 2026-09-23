@@ -5,6 +5,7 @@ export interface ShotData {
   test_session_id: string;
   vest_number: string | null;
   side: string | null;
+  conditioning: string | null;
   shot_number: string | number;
   protection_level: string | null;
   caliber: string | null;
@@ -20,6 +21,7 @@ export interface ShotData {
 export interface ShotDataUpdate {
   vest_number?: string | null;
   side?: string | null;
+  conditioning?: string | null;
   angle_degrees?: number | null;
   shot_number?: string | null;
   protection_level?: string | null;

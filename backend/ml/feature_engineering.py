@@ -188,8 +188,8 @@ class FeatureEngineer:
             # Humidity
             features['humidity_pct'] = float(session.humidity_percent) if session.humidity_percent else 50.0
             
-            # Conditioning state
-            features['condition'] = session.conditioning if session.conditioning else 'dry'
+            # Conditioning state (per-shot takes precedence over session-level)
+            features['condition'] = shot.conditioning or session.conditioning or 'dry'
             
             # Vest size
             features['vest_size'] = session.size if session.size else 'medium'

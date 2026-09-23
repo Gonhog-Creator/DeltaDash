@@ -791,9 +791,10 @@ def _write_shots_to_ws(ws, tab, entry: ManualEntryRequest):
     ws['A6'] = f"Ambient Temp: {entry.ambient_temperature_c or ''}"
     ws['A7'] = f"Humidity: {entry.humidity_percent or ''}"
     ws['A8'] = f"Protection Level: {entry.protection_level or ''}"
+    ws['A9'] = f"Serial Number: {tab.serial_number or ''}"
 
     # Column headers
-    headers = ['Shot #', 'Side', 'Angle (°)', 'Caliber', 'Velocity (m/s)', 'Trauma (mm)', 'Result']
+    headers = ['Shot #', 'Side', 'Conditioning', 'Angle (°)', 'Caliber', 'Velocity (m/s)', 'Trauma (mm)', 'Result']
     header_row = 10
     for col, h in enumerate(headers, 1):
         ws.cell(row=header_row, column=col, value=h)
@@ -802,11 +803,12 @@ def _write_shots_to_ws(ws, tab, entry: ManualEntryRequest):
     for row_idx, shot in enumerate(tab.shots, header_row + 1):
         ws.cell(row=row_idx, column=1, value=shot.shot_number)
         ws.cell(row=row_idx, column=2, value=shot.side or '')
-        ws.cell(row=row_idx, column=3, value=float(shot.angle_degrees) if shot.angle_degrees is not None else '')
-        ws.cell(row=row_idx, column=4, value=shot.caliber or '')
-        ws.cell(row=row_idx, column=5, value=float(shot.velocity_m_s) if shot.velocity_m_s is not None else '')
-        ws.cell(row=row_idx, column=6, value=float(shot.trauma_mm) if shot.trauma_mm is not None else '')
-        ws.cell(row=row_idx, column=7, value=shot.trauma_qualitative or '')
+        ws.cell(row=row_idx, column=3, value=shot.conditioning or '')
+        ws.cell(row=row_idx, column=4, value=float(shot.angle_degrees) if shot.angle_degrees is not None else '')
+        ws.cell(row=row_idx, column=5, value=shot.caliber or '')
+        ws.cell(row=row_idx, column=6, value=float(shot.velocity_m_s) if shot.velocity_m_s is not None else '')
+        ws.cell(row=row_idx, column=7, value=float(shot.trauma_mm) if shot.trauma_mm is not None else '')
+        ws.cell(row=row_idx, column=8, value=shot.trauma_qualitative or '')
 
 
 @router.post("/manual-entry", response_model=ManualEntryResponse, status_code=status.HTTP_201_CREATED)
@@ -903,15 +905,21 @@ def create_manual_entry(
         if not tab.shots:
             continue
 
+        # Derive session-level conditioning: uniform if all shots agree, else None (mixed)
+        shot_conditionings = {s.conditioning for s in tab.shots if s.conditioning}
+        session_conditioning = (
+            next(iter(shot_conditionings)) if len(shot_conditionings) == 1
+            else (tab.conditioning if not shot_conditionings else None)
+        )
+
         # Build child name
         name_parts = []
         if tab.vest_number:
             name_parts.append(f"Vest {tab.vest_number}")
         if tab.size:
             name_parts.append(tab.size)
-        conditioning_display = None
-        if tab.conditioning:
-            conditioning_display = tab.conditioning.capitalize() if tab.conditioning != 'ballistic_limit' else 'Ballistic Limit'
+        if session_conditioning:
+            conditioning_display = session_conditioning.capitalize() if session_conditioning != 'ballistic_limit' else 'Ballistic Limit'
             name_parts.append(conditioning_display)
         child_name = ' - '.join(name_parts) if name_parts else f"Tab {len(child_ids) + 1}"
 
@@ -923,8 +931,9 @@ def create_manual_entry(
             clay_temperature_c=entry.clay_temperature_c,
             ambient_temperature_c=entry.ambient_temperature_c,
             humidity_percent=entry.humidity_percent,
-            conditioning=tab.conditioning,
+            conditioning=session_conditioning,
             size=tab.size,
+            serial_number=tab.serial_number,
             ballistic_limit=tab.ballistic_limit or False,
             parent_test_group_id=parent_session.id,
             vest_id=entry.vest_id,
@@ -947,6 +956,7 @@ def create_manual_entry(
                 test_session_id=child_session.id,
                 shot_number=shot.shot_number,
                 side=shot.side,
+                conditioning=shot.conditioning or tab.conditioning,
                 vest_number=tab.vest_number,
                 angle_degrees=shot.angle_degrees,
                 caliber=caliber_val,

@@ -13,6 +13,7 @@ class ShotData(Base):
     
     vest_number = Column(String)
     side = Column(String)
+    conditioning = Column(String)
     angle_degrees = Column(Numeric(5, 2))
     shot_number = Column(String)
     protection_level = Column(String)
