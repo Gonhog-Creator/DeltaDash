@@ -546,23 +546,26 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
                 Official
               </label>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Cert #</label>
-              <input
-                type="text"
-                value={certNumber}
-                onChange={(e) => setCertNumber(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none"
-              />
-            </div>
+            {isOfficial && (
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Cert #</label>
+                <input
+                  type="text"
+                  value={certNumber}
+                  onChange={(e) => setCertNumber(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none"
+                />
+              </div>
+            )}
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Protection Level</label>
               <select
                 value={protectionLevel}
                 onChange={(e) => setProtectionLevel(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none"
+                disabled={!protocol}
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none disabled:bg-gray-50 disabled:text-gray-400"
               >
-                <option value="">—</option>
+                <option value="">{protocol ? '—' : 'Select protocol first'}</option>
                 {protectionLevelOptions.map((lvl) => (
                   <option key={lvl} value={lvl}>{lvl}</option>
                 ))}
@@ -631,9 +634,10 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
               <select
                 value={activeTab.size}
                 onChange={(e) => updateTab(activeTab.id, { size: e.target.value })}
-                className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-400 outline-none"
+                disabled={!geometryId}
+                className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-400 outline-none disabled:bg-gray-50 disabled:text-gray-400"
               >
-                <option value="">—</option>
+                <option value="">{geometryId ? '—' : 'Select geometry first'}</option>
                 {availableSizes.map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
@@ -653,9 +657,12 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
               <select
                 value={activeTab.ammunitionId}
                 onChange={(e) => updateTab(activeTab.id, { ammunitionId: e.target.value })}
-                className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-400 outline-none min-w-[180px]"
+                disabled={!protectionLevel}
+                className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-400 outline-none min-w-[180px] disabled:bg-gray-50 disabled:text-gray-400"
               >
-                <option value="">—</option>
+                <option value="">
+                  {!protocol ? 'Select protocol first' : !protectionLevel ? 'Select protection level first' : '—'}
+                </option>
                 {availableAmmo.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.caliber} — {a.name}

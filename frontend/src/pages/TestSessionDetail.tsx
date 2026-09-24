@@ -6,6 +6,16 @@ import { useGeometries } from '../hooks/useGeometries';
 import { TestSessionUpdate } from '../api/test_session';
 import { ShotDataUpdate } from '../api/shot_data';
 import { ConfirmModal } from '../components/ConfirmModal';
+import {
+  CONDITIONING_OPTIONS,
+  formatConditioning,
+  isFrontSide,
+  isBackSide,
+  sideConditioning,
+  sessionConditioningFromSides,
+  conditioningShotUpdates,
+  withConditioningInName,
+} from '../utils/conditioning';
 
 export function TestSessionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -23,6 +33,8 @@ export function TestSessionDetail() {
   
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<TestSessionUpdate>({});
+  const [frontConditioning, setFrontConditioning] = useState('');
+  const [backConditioning, setBackConditioning] = useState('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [editingShot, setEditingShot] = useState<any>(null);
   const [shotFormData, setShotFormData] = useState<ShotDataUpdate>({});
@@ -34,7 +46,24 @@ export function TestSessionDetail() {
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await updateMutation.mutateAsync({ id: testSession.id, testSession: formData });
+      const shots = shotData ?? [];
+      const front = frontConditioning || null;
+      const back = backConditioning || null;
+      const payload: TestSessionUpdate = { ...formData };
+      if (shots.length > 0) {
+        const combined = sessionConditioningFromSides(shots, front, back);
+        payload.conditioning = combined;
+        payload.name = withConditioningInName(
+          formData.name ?? testSession.name,
+          combined ? formatConditioning(combined) : ''
+        );
+      }
+      await updateMutation.mutateAsync({ id: testSession.id, testSession: payload });
+      await Promise.all(
+        conditioningShotUpdates(shots, front, back).map((u) =>
+          updateShotMutation.mutateAsync({ id: u.id, shotData: { conditioning: u.conditioning } })
+        )
+      );
       setIsEditing(false);
       setFormData({});
     } catch (err) {
@@ -90,28 +119,18 @@ export function TestSessionDetail() {
       clay_temperature_c: testSession.clay_temperature_c,
       ambient_temperature_c: testSession.ambient_temperature_c,
       humidity_percent: testSession.humidity_percent,
-      conditioning: testSession.conditioning || '',
       vest_id: testSession.vest_id || undefined,
       geometry_id: testSession.geometry_id || undefined,
       notes: testSession.notes || '',
     });
+    setFrontConditioning(sideConditioning(shotData ?? [], 'front') ?? '');
+    setBackConditioning(sideConditioning(shotData ?? [], 'back') ?? '');
     setIsEditing(true);
   };
 
   const cancelEdit = () => {
     setIsEditing(false);
     setFormData({});
-  };
-
-  const formatConditioning = (value: string | null | undefined) => {
-    if (!value) return '-';
-    if (value === 'ballistic_limit') return 'Ballistic Limit';
-    // Replace underscores with spaces and capitalize each word
-    return value
-      .replace(/_/g, ' ')
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
   };
 
   return (
@@ -186,19 +205,36 @@ export function TestSessionDetail() {
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Conditioning</label>
-                <select
-                  value={formData.conditioning || ''}
-                  onChange={(e) => setFormData({ ...formData, conditioning: e.target.value })}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
-                >
-                  <option value="">Select conditioning...</option>
-                  <option value="ambient">Ambient</option>
-                  <option value="wet">Wet</option>
-                  <option value="tumbled">Tumbled</option>
-                </select>
-              </div>
+              {(shotData || []).some((s) => isFrontSide(s.side)) && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Front Conditioning</label>
+                  <select
+                    value={frontConditioning}
+                    onChange={(e) => setFrontConditioning(e.target.value)}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  >
+                    <option value="">Select conditioning...</option>
+                    {CONDITIONING_OPTIONS.map((o) => (
+                      <option key={o} value={o}>{formatConditioning(o)}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {(shotData || []).some((s) => isBackSide(s.side)) && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Back Conditioning</label>
+                  <select
+                    value={backConditioning}
+                    onChange={(e) => setBackConditioning(e.target.value)}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                  >
+                    <option value="">Select conditioning...</option>
+                    {CONDITIONING_OPTIONS.map((o) => (
+                      <option key={o} value={o}>{formatConditioning(o)}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Geometry</label>
                 <select
@@ -288,10 +324,6 @@ export function TestSessionDetail() {
                 <span className="ml-2 text-sm text-gray-900">{testSession.geometry?.name || testSession.geometry_name || '-'}</span>
               </div>
               <div>
-                <span className="text-sm font-medium text-gray-500">Characteristic:</span>
-                <span className="ml-2 text-sm text-gray-900">{formatConditioning(testSession.conditioning)}</span>
-              </div>
-              <div>
                 <span className="text-sm font-medium text-gray-500">Temperature:</span>
                 <span className="ml-2 text-sm text-gray-900">{testSession.ambient_temperature_c ?? '-'}°C</span>
               </div>
@@ -314,8 +346,23 @@ export function TestSessionDetail() {
         const sortedShots = shotData.sort((a, b) => parseFloat(a.shot_number) - parseFloat(b.shot_number));
         const frontShots = sortedShots.filter(shot => shot.side && (shot.side.toLowerCase() === 'frente' || shot.side.toLowerCase() === 'front'));
         const backShots = sortedShots.filter(shot => shot.side && (shot.side.toLowerCase() === 'espalda' || shot.side.toLowerCase() === 'back'));
+
+        // A side only gets a table if it has at least one shot with data
+        const hasPoints = (shots: typeof shotData) =>
+          shots.some(s => s.velocity_m_s || s.measured_velocity_m_s || s.trauma_mm || s.bfd_mm || s.trauma_qualitative);
         
-        const renderShotTable = (shots: typeof shotData, title: string) => {
+        const renderShotTable = (shots: typeof shotData, title: string, side: 'front' | 'back') => {
+          let sideConditionings = [...new Set(shots.map(s => s.conditioning).filter((c): c is string => !!c))];
+          if (sideConditionings.length === 0 && testSession.conditioning) {
+            // Legacy data without per-shot conditioning: fall back to the
+            // session-level value. Combined values are stored as 'front/back'.
+            const parts = testSession.conditioning.split('/');
+            const fallback = parts.length === 2 ? parts[side === 'front' ? 0 : 1] : parts[0];
+            if (fallback) sideConditionings = [fallback];
+          }
+          const conditioningSuffix = sideConditionings.length > 0
+            ? ` - ${sideConditionings.map(formatConditioning).join(' / ')}`
+            : '';
           const firstThreeShots = shots.slice(0, 3);
           const avgVelocity = firstThreeShots.reduce((sum, shot) => {
             const vel = shot.velocity_m_s || shot.measured_velocity_m_s;
@@ -333,7 +380,7 @@ export function TestSessionDetail() {
           
           return (
             <div className="bg-white shadow rounded-lg p-6 mb-4">
-              <h3 className="text-md font-semibold text-gray-900 mb-4">{title}</h3>
+              <h3 className="text-md font-semibold text-gray-900 mb-4">{title}{conditioningSuffix}</h3>
               <div className="overflow-x-auto">
                 <table className="min-w-full table-fixed divide-y divide-gray-200">
                   <thead className="bg-gray-50">
@@ -401,8 +448,8 @@ export function TestSessionDetail() {
         return (
           <div>
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Shot Data</h2>
-            {frontShots.length > 0 && renderShotTable(frontShots, 'Front')}
-            {backShots.length > 0 && renderShotTable(backShots, 'Back')}
+            {hasPoints(frontShots) && renderShotTable(frontShots, 'Front', 'front')}
+            {hasPoints(backShots) && renderShotTable(backShots, 'Back', 'back')}
           </div>
         );
       })()}

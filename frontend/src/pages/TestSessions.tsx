@@ -13,6 +13,15 @@ import { LocationManagementModal } from '../components/LocationManagementModal';
 import { ProtocolManagementModal } from '../components/ProtocolManagementModal';
 import { LiveEntryModal } from '../components/LiveEntryModal';
 import { DraftPickerModal } from '../components/DraftPickerModal';
+import { useShotDataByTestSession, useUpdateShotData } from '../hooks/useShotData';
+import {
+  CONDITIONING_OPTIONS,
+  formatConditioning,
+  sideConditioning,
+  sessionConditioningFromSides,
+  conditioningShotUpdates,
+  withConditioningInName,
+} from '../utils/conditioning';
 
 export function TestSessions() {
   const navigate = useNavigate();
@@ -32,17 +41,6 @@ export function TestSessions() {
   const updateMutation = useUpdateTestSession();
   const uploadExcelMutation = useUploadExcel();
   const createFromExcelMutation = useCreateFromExcel();
-
-  const formatConditioning = (value: string | null | undefined) => {
-    if (!value) return '-';
-    if (value === 'ballistic_limit') return 'Ballistic Limit';
-    // Replace underscores with spaces and capitalize each word
-    return value
-      .replace(/_/g, ' ')
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-  };
 
   const [deleteTarget, setDeleteTarget] = useState<TestSession | null>(null);
   const [uploadTarget, setUploadTarget] = useState<TestSession | null>(null);
@@ -84,11 +82,25 @@ export function TestSessions() {
   const [bulkFiles, setBulkFiles] = useState<File[]>([]);
   const [selectedBulkGeometryId, setSelectedBulkGeometryId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const updateShotMutation = useUpdateShotData();
+  const [editFrontConditioning, setEditFrontConditioning] = useState('');
+  const [editBackConditioning, setEditBackConditioning] = useState('');
+  const { data: editTargetShots } = useShotDataByTestSession(
+    editTarget?.parent_test_group_id ? editTarget.id : null
+  );
   useEffect(() => {
     if (defaultGeometryId && !selectedBulkGeometryId && showBulkUpload) {
       setSelectedBulkGeometryId(defaultGeometryId);
     }
   }, [defaultGeometryId, selectedBulkGeometryId, showBulkUpload]);
+
+  // Initialize front/back conditioning from the child session's shots
+  useEffect(() => {
+    if (!editTarget) return;
+    setEditFrontConditioning(sideConditioning(editTargetShots ?? [], 'front') ?? editTarget.conditioning ?? '');
+    setEditBackConditioning(sideConditioning(editTargetShots ?? [], 'back') ?? editTarget.conditioning ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editTarget?.id, editTargetShots]);
 
   // Group test sessions by parent_test_group_id
   const groupedTests = testSessions?.reduce((acc, session) => {
@@ -1149,19 +1161,33 @@ export function TestSessions() {
                 </select>
               </div>
               {editTarget.parent_test_group_id && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Conditioning</label>
-                  <select
-                    value={editTarget.conditioning || ''}
-                    onChange={(e) => setEditTarget({ ...editTarget, conditioning: e.target.value || null })}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
-                  >
-                    <option value="">Select conditioning...</option>
-                    <option value="ambient">Ambient</option>
-                    <option value="wet">Wet</option>
-                    <option value="tumbled">Tumbled</option>
-                    <option value="ballistic_limit">Ballistic Limit</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Front Conditioning</label>
+                    <select
+                      value={editFrontConditioning}
+                      onChange={(e) => setEditFrontConditioning(e.target.value)}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                    >
+                      <option value="">Select conditioning...</option>
+                      {CONDITIONING_OPTIONS.map((o) => (
+                        <option key={o} value={o}>{formatConditioning(o)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Back Conditioning</label>
+                    <select
+                      value={editBackConditioning}
+                      onChange={(e) => setEditBackConditioning(e.target.value)}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                    >
+                      <option value="">Select conditioning...</option>
+                      {CONDITIONING_OPTIONS.map((o) => (
+                        <option key={o} value={o}>{formatConditioning(o)}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               )}
               {editTarget.is_official && (
@@ -1214,16 +1240,26 @@ export function TestSessions() {
           variant="default"
           onConfirm={async () => {
             try {
+              const isChild = !!editTarget.parent_test_group_id;
+              const shots = editTargetShots ?? [];
+              const front = editFrontConditioning || null;
+              const back = editBackConditioning || null;
+              const combined = isChild && editTargetShots
+                ? sessionConditioningFromSides(shots, front, back)
+                : editTarget.conditioning;
+              const name = isChild
+                ? withConditioningInName(editTarget.name, combined ? formatConditioning(combined) : '')
+                : editTarget.name;
               await updateMutation.mutateAsync({
                 id: editTarget.id,
                 testSession: {
-                  name: editTarget.name,
+                  name,
                   test_date: editTarget.test_date,
                   lab_name: editTarget.lab_name,
                   protocol: editTarget.protocol,
                   vest_id: editTarget.vest_id,
                   geometry_id: editTarget.geometry_id,
-                  conditioning: editTarget.conditioning,
+                  conditioning: combined,
                   ambient_temperature_c: editTarget.ambient_temperature_c,
                   humidity_percent: editTarget.humidity_percent,
                   notes: editTarget.notes,
@@ -1231,6 +1267,13 @@ export function TestSessions() {
                 },
                 cascade: !editTarget.parent_test_group_id,
               });
+              if (isChild && editTargetShots) {
+                await Promise.all(
+                  conditioningShotUpdates(shots, front, back).map((u) =>
+                    updateShotMutation.mutateAsync({ id: u.id, shotData: { conditioning: u.conditioning } })
+                  )
+                );
+              }
               setEditTarget(null);
             } catch (err) {
               console.error('Failed to update test session:', err);

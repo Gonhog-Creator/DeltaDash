@@ -13,6 +13,15 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { LocationManagementModal } from '../components/LocationManagementModal';
 import { ProtocolManagementModal } from '../components/ProtocolManagementModal';
+import { useShotDataByTestSession, useUpdateShotData } from '../hooks/useShotData';
+import {
+  CONDITIONING_OPTIONS,
+  formatConditioning,
+  sideConditioning,
+  sessionConditioningFromSides,
+  conditioningShotUpdates,
+  withConditioningInName,
+} from '../utils/conditioning';
 
 export function OfficialCertifications() {
   const navigate = useNavigate();
@@ -32,17 +41,6 @@ export function OfficialCertifications() {
   const updateMutation = useUpdateTestSession();
   const uploadExcelMutation = useUploadExcel();
   const createFromExcelMutation = useCreateFromExcel();
-
-  const formatConditioning = (value: string | null | undefined) => {
-    if (!value) return '-';
-    if (value === 'ballistic_limit') return 'Ballistic Limit';
-    // Replace underscores with spaces and capitalize each word
-    return value
-      .replace(/_/g, ' ')
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-  };
 
   const [deleteTarget, setDeleteTarget] = useState<TestSession | null>(null);
   const [uploadTarget, setUploadTarget] = useState<TestSession | null>(null);
@@ -92,6 +90,21 @@ export function OfficialCertifications() {
     queryFn: () => testSessionsApi.getChildStats(selectedSession!.id),
     enabled: !!selectedSession,
   });
+
+  const updateShotMutation = useUpdateShotData();
+  const [editFrontConditioning, setEditFrontConditioning] = useState('');
+  const [editBackConditioning, setEditBackConditioning] = useState('');
+  const { data: editTargetShots } = useShotDataByTestSession(
+    editTarget?.parent_test_group_id ? editTarget.id : null
+  );
+
+  // Initialize front/back conditioning from the child session's shots
+  useEffect(() => {
+    if (!editTarget) return;
+    setEditFrontConditioning(sideConditioning(editTargetShots ?? [], 'front') ?? editTarget.conditioning ?? '');
+    setEditBackConditioning(sideConditioning(editTargetShots ?? [], 'back') ?? editTarget.conditioning ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editTarget?.id, editTargetShots]);
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -1220,19 +1233,33 @@ export function OfficialCertifications() {
                 </div>
               </div>
               {editTarget.parent_test_group_id && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Conditioning</label>
-                  <select
-                    value={editTarget.conditioning || ''}
-                    onChange={(e) => setEditTarget({ ...editTarget, conditioning: e.target.value || null })}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
-                  >
-                    <option value="">Select conditioning...</option>
-                    <option value="ambient">Ambient</option>
-                    <option value="wet">Wet</option>
-                    <option value="tumbled">Tumbled</option>
-                    <option value="ballistic_limit">Ballistic Limit</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Front Conditioning</label>
+                    <select
+                      value={editFrontConditioning}
+                      onChange={(e) => setEditFrontConditioning(e.target.value)}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                    >
+                      <option value="">Select conditioning...</option>
+                      {CONDITIONING_OPTIONS.map((o) => (
+                        <option key={o} value={o}>{formatConditioning(o)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Back Conditioning</label>
+                    <select
+                      value={editBackConditioning}
+                      onChange={(e) => setEditBackConditioning(e.target.value)}
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                    >
+                      <option value="">Select conditioning...</option>
+                      {CONDITIONING_OPTIONS.map((o) => (
+                        <option key={o} value={o}>{formatConditioning(o)}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               )}
               <div>
@@ -1283,16 +1310,26 @@ export function OfficialCertifications() {
           variant="default"
           onConfirm={async () => {
             try {
+              const isChild = !!editTarget.parent_test_group_id;
+              const shots = editTargetShots ?? [];
+              const front = editFrontConditioning || null;
+              const back = editBackConditioning || null;
+              const combined = isChild && editTargetShots
+                ? sessionConditioningFromSides(shots, front, back)
+                : editTarget.conditioning;
+              const name = isChild
+                ? withConditioningInName(editTarget.name, combined ? formatConditioning(combined) : '')
+                : editTarget.name;
               await updateMutation.mutateAsync({
                 id: editTarget.id,
                 testSession: {
-                  name: editTarget.name,
+                  name,
                   test_date: editTarget.test_date,
                   lab_name: editTarget.lab_name,
                   protocol: editTarget.protocol,
                   vest_id: editTarget.vest_id,
                   geometry_id: editTarget.geometry_id,
-                  conditioning: editTarget.conditioning,
+                  conditioning: combined,
                   ambient_temperature_c: editTarget.ambient_temperature_c,
                   humidity_percent: editTarget.humidity_percent,
                   notes: editTarget.notes,
@@ -1300,6 +1337,13 @@ export function OfficialCertifications() {
                 },
                 cascade: !editTarget.parent_test_group_id,
               });
+              if (isChild && editTargetShots) {
+                await Promise.all(
+                  conditioningShotUpdates(shots, front, back).map((u) =>
+                    updateShotMutation.mutateAsync({ id: u.id, shotData: { conditioning: u.conditioning } })
+                  )
+                );
+              }
               setEditTarget(null);
             } catch (err) {
               console.error('Failed to update test session:', err);
@@ -1387,7 +1431,6 @@ export function OfficialCertifications() {
               <div><span className="text-gray-500">Protocol:</span> <span className="ml-2 font-medium">{selectedSession.protocol || '-'}</span></div>
               <div><span className="text-gray-500">Geometry:</span> <span className="ml-2 font-medium">{selectedSession.geometry_name || '-'}</span></div>
               <div><span className="text-gray-500">Shots:</span> <span className="ml-2 font-medium">{(() => { const children = groupedTests[selectedSession.id] || []; const total = children.reduce((sum, child) => sum + (child.shot_count || 0), 0); return children.length > 0 ? total : (selectedSession.shot_count ?? '-'); })()}</span></div>
-              <div><span className="text-gray-500">Conditioning:</span> <span className="ml-2 font-medium">{formatConditioning(selectedSession.conditioning)}</span></div>
               <div><span className="text-gray-500">Sizes:</span> <span className="ml-2 font-medium">{(() => { const children = groupedTests[selectedSession.id] || []; const sizes = [...new Set(children.map(c => c.size).filter(Boolean))]; return sizes.length > 0 ? sizes.join(', ') : (selectedSession.size || '-'); })()}</span></div>
               <div><span className="text-gray-500">Ambient Temp:</span> <span className="ml-2 font-medium">{selectedSession.ambient_temperature_c ? `${selectedSession.ambient_temperature_c} C` : '-'}</span></div>
               <div><span className="text-gray-500">Humidity:</span> <span className="ml-2 font-medium">{selectedSession.humidity_percent ? `${selectedSession.humidity_percent}%` : '-'}</span></div>

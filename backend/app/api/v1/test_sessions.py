@@ -780,6 +780,27 @@ def _generate_manual_entry_excel(entry: ManualEntryRequest, filename: str) -> st
     return filename
 
 
+_FRONT_SIDES = {'front', 'frente'}
+_BACK_SIDES = {'back', 'espalda'}
+
+
+def _side_conditioning(shots, sides: set) -> Optional[str]:
+    """Unique conditioning value among shots on one side ('/'-joined if mixed)."""
+    values = {
+        s.conditioning for s in shots
+        if s.conditioning and s.side and s.side.lower() in sides
+    }
+    return '/'.join(sorted(values)) if values else None
+
+
+def _format_conditioning_display(value: str) -> str:
+    """'ambient/wet' -> 'Ambient/Wet', 'ballistic_limit' -> 'Ballistic Limit'."""
+    return '/'.join(
+        'Ballistic Limit' if part == 'ballistic_limit' else part.replace('_', ' ').title()
+        for part in value.split('/')
+    )
+
+
 def _write_shots_to_ws(ws, tab, entry: ManualEntryRequest):
     """Write shot data from a vest tab to a worksheet."""
     # Header rows with session metadata
@@ -905,12 +926,26 @@ def create_manual_entry(
         if not tab.shots:
             continue
 
-        # Derive session-level conditioning: uniform if all shots agree, else None (mixed)
-        shot_conditionings = {s.conditioning for s in tab.shots if s.conditioning}
-        session_conditioning = (
-            next(iter(shot_conditionings)) if len(shot_conditionings) == 1
-            else (tab.conditioning if not shot_conditionings else None)
-        )
+        # Derive session-level conditioning per side: all shots on one side share
+        # a conditioning, but front and back may differ. Same on both sides ->
+        # single value ('ambient'); different -> 'front/back' ('ambient/wet').
+        front_conditioning = _side_conditioning(tab.shots, _FRONT_SIDES)
+        back_conditioning = _side_conditioning(tab.shots, _BACK_SIDES)
+        if front_conditioning and back_conditioning:
+            session_conditioning = (
+                front_conditioning
+                if front_conditioning == back_conditioning
+                else f"{front_conditioning}/{back_conditioning}"
+            )
+        elif front_conditioning or back_conditioning:
+            session_conditioning = front_conditioning or back_conditioning
+        else:
+            # No per-side info: uniform if all shots agree, else tab-level fallback
+            shot_conditionings = {s.conditioning for s in tab.shots if s.conditioning}
+            session_conditioning = (
+                next(iter(shot_conditionings)) if len(shot_conditionings) == 1
+                else tab.conditioning
+            )
 
         # Build child name
         name_parts = []
@@ -919,8 +954,7 @@ def create_manual_entry(
         if tab.size:
             name_parts.append(tab.size)
         if session_conditioning:
-            conditioning_display = session_conditioning.capitalize() if session_conditioning != 'ballistic_limit' else 'Ballistic Limit'
-            name_parts.append(conditioning_display)
+            name_parts.append(_format_conditioning_display(session_conditioning))
         child_name = ' - '.join(name_parts) if name_parts else f"Tab {len(child_ids) + 1}"
 
         child_session = TestSessionModel(
