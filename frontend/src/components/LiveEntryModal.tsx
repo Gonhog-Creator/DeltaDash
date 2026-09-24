@@ -9,6 +9,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useDraftSync } from '../hooks/useDraftSync';
 import { DraftShotRow } from '../db/draftDb';
 import { VestFormModal } from './VestFormModal';
+import { EasyEntryWizard } from './EasyEntryWizard';
 import { vestsApi, VestCreate } from '../api/vests';
 import { ShotGrid, ShotRowData } from './ShotGrid';
 import { manualEntryApi, ManualEntryRequest, ManualEntryVestTab } from '../api/manualEntry';
@@ -81,6 +82,7 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
   const [showDraftRestored, setShowDraftRestored] = useState(false);
   const [pendingVest, setPendingVest] = useState<VestCreate | null>(null);
   const [showVestForm, setShowVestForm] = useState(false);
+  const [showEasyEntry, setShowEasyEntry] = useState(false);
 
   // Initialize active tab
   useEffect(() => {
@@ -397,6 +399,12 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
           {syncStatusBadge()}
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowEasyEntry(true)}
+            className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+          >
+            Easy Enter
+          </button>
           <button
             onClick={onClose}
             className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
@@ -722,6 +730,33 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
           </button>
         </div>
       </div>
+
+      {/* Easy Enter wizard */}
+      {showEasyEntry && (
+        <EasyEntryWizard
+          sessionName={sessionName}
+          labName={labName}
+          protocol={protocol}
+          geometryId={geometryId}
+          protectionLevel={protectionLevel}
+          isOfficial={isOfficial}
+          locations={locations}
+          protocols={protocols}
+          geometries={geometries}
+          protectionLevelOptions={protectionLevelOptions}
+          onSelect={(field, value) => {
+            if (field === 'sessionName') setSessionName(value);
+            else if (field === 'labName') setLabName(value);
+            else if (field === 'protocol') {
+              setProtocol(value);
+              setProtectionLevel('');
+            } else if (field === 'geometryId') setGeometryId(value);
+            else if (field === 'protectionLevel') setProtectionLevel(value);
+            else if (field === 'isOfficial') setIsOfficial(value === 'true');
+          }}
+          onClose={() => setShowEasyEntry(false)}
+        />
+      )}
 
       {/* Nested vest creation modal */}
       {showVestForm && (
