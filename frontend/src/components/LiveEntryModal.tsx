@@ -78,7 +78,7 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
 
   // Submit state
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<{ message: string; details?: string[] } | null>(null);
   const [showDraftRestored, setShowDraftRestored] = useState(false);
   const [pendingVest, setPendingVest] = useState<VestCreate | null>(null);
   const [showVestForm, setShowVestForm] = useState(false);
@@ -343,13 +343,19 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
         onClose();
       }
     } catch (err: any) {
-      const detail = err?.detail;
+      const detail = err?.data || (typeof err?.detail === 'object' ? err.detail : null);
       if (typeof detail === 'object' && detail?.missing_calibers) {
-        setSubmitError(`Missing calibers in ammunition DB: ${detail.missing_calibers.join(', ')}`);
+        setSubmitError({
+          message: 'Some calibers aren\'t in the ammunition database yet.',
+          details: detail.missing_calibers.map((c: string) => `Missing: ${c}`),
+        });
       } else if (typeof detail === 'object' && detail?.missing_shots) {
-        setSubmitError(detail.message || detail.missing_shots.join('\n'));
+        setSubmitError({
+          message: 'A few shots are missing required fields.',
+          details: detail.missing_shots,
+        });
       } else {
-        setSubmitError(err?.message || 'Failed to submit. Your data is saved locally.');
+        setSubmitError({ message: err?.message || 'Failed to submit. Your data is saved locally.' });
       }
     } finally {
       setIsSubmitting(false);
@@ -693,18 +699,38 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
         </div>
       </div>
 
+      {/* Submit error banner */}
+      {submitError && (
+        <div className="px-6 py-3 bg-red-50 border-t border-red-200 flex items-start gap-3">
+          <AlertCircle size={18} className="text-red-500 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-red-800">{submitError.message}</p>
+            {submitError.details && submitError.details.length > 0 && (
+              <ul className="mt-1.5 space-y-0.5 max-h-32 overflow-y-auto">
+                {submitError.details.map((d, i) => (
+                  <li key={i} className="text-sm text-red-700 flex items-start gap-1.5">
+                    <span className="text-red-400 mt-1.5 h-1 w-1 rounded-full bg-red-400 shrink-0" />
+                    {d}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <button
+            onClick={() => setSubmitError(null)}
+            className="p-1 text-red-400 hover:text-red-600 hover:bg-red-100 rounded transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Footer / Submit bar */}
       <div className="px-6 py-3 bg-white border-t border-gray-200 flex items-center justify-between">
         <div className="text-sm text-gray-500">
           {vestTabs.reduce((sum, t) => sum + t.shots.length, 0)} total shot{vestTabs.reduce((sum, t) => sum + t.shots.length, 0) !== 1 ? 's' : ''} across {vestTabs.length} vest{vestTabs.length !== 1 ? 's' : ''}
         </div>
         <div className="flex items-center gap-3">
-          {submitError && (
-            <div className="flex items-center gap-1.5 text-sm text-red-600">
-              <AlertCircle size={14} />
-              {submitError}
-            </div>
-          )}
           <button
             onClick={onClose}
             className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
@@ -761,6 +787,19 @@ export function LiveEntryModal({ onClose, onSubmitted, draftKey: propDraftKey }:
       {/* Nested vest creation modal */}
       {showVestForm && (
         <VestFormModal
+          initialValues={{
+            // Prefill from the session's protocol/protection level and geometry.
+            // Threat level options are protocol-prefixed: "Protocol - Level".
+            threat_level:
+              protocol && protectionLevel
+                ? `${protocol} - ${protectionLevel}`
+                : protectionLevel || null,
+            vest_type:
+              ['Soft', 'Hard', 'IWC'].find(
+                (t) => t.toLowerCase() === selectedGeometry?.vest_type?.toLowerCase()
+              ) || null,
+            compatible_geometry_ids: geometryId ? [geometryId] : [],
+          }}
           onSave={(vest) => {
             setPendingVest(vest);
             setVestId('__new__');

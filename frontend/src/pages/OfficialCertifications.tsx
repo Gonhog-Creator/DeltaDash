@@ -316,8 +316,9 @@ export function OfficialCertifications() {
     } catch (err: any) {
       console.error('Failed to upload Excel:', err);
       // Check if error is due to missing ammunition
-      if (err?.message?.includes('missing_ammunition') || err?.detail?.error === 'missing_ammunition') {
-        const missingCalibers = err.detail?.missing_calibers || [];
+      const errorData = err?.data || (typeof err?.detail === 'object' ? err.detail : null);
+      if (errorData?.error === 'missing_ammunition') {
+        const missingCalibers = errorData.missing_calibers || [];
         setMissingCalibers(missingCalibers);
         setShowAmmoModal(true);
       }
@@ -403,8 +404,9 @@ export function OfficialCertifications() {
     } catch (err: any) {
       console.error('Failed to create test session from Excel:', err);
       // Check if error is due to missing ammunition
-      if (err?.message?.includes('missing_ammunition') || err?.detail?.error === 'missing_ammunition') {
-        const missingCalibers = err.detail?.missing_calibers || [];
+      const errorData = err?.data || (typeof err?.detail === 'object' ? err.detail : null);
+      if (errorData?.error === 'missing_ammunition') {
+        const missingCalibers = errorData.missing_calibers || [];
         setMissingCalibers(missingCalibers);
         setShowAmmoModal(true);
       }
@@ -591,7 +593,7 @@ export function OfficialCertifications() {
               return (
                 <tr
                   key={parent.id}
-                  className="hover:bg-gray-50 cursor-pointer"
+                  className={`${!parent.vest_id ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'} cursor-pointer`}
                   onClick={() => setSelectedSession(parent)}
                 >
                   <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 max-w-xs truncate" title={parent.name}>

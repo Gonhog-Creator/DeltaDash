@@ -861,14 +861,14 @@ def create_manual_entry(
                 missing.append('Trauma')
             if missing:
                 missing_fields_shots.append(
-                    f"{vest_label} – Shot {shot.shot_number}: missing {', '.join(missing)}"
+                    f"{vest_label} · Shot {shot.shot_number} — needs {', '.join(missing)}"
                 )
     if missing_fields_shots:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
                 "error": "missing_required_fields",
-                "message": "Please fill in the required fields for every shot:\n" + "\n".join(missing_fields_shots),
+                "message": "Some shots are missing required fields.",
                 "missing_shots": missing_fields_shots,
             }
         )

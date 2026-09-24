@@ -14,6 +14,7 @@ interface ProtocolThreatLevel {
 interface VestFormModalProps {
   onSave: (vest: VestCreate) => void;
   onCancel: () => void;
+  initialValues?: Partial<VestCreate>;
 }
 
 const emptyForm: VestCreate = {
@@ -34,10 +35,10 @@ const emptyForm: VestCreate = {
   layers: [],
 };
 
-export function VestFormModal({ onSave, onCancel }: VestFormModalProps) {
+export function VestFormModal({ onSave, onCancel, initialValues }: VestFormModalProps) {
   const { data: materials } = useMaterials();
   const { data: geometries } = useGeometries();
-  const [formData, setFormData] = useState<VestCreate>({ ...emptyForm });
+  const [formData, setFormData] = useState<VestCreate>({ ...emptyForm, ...initialValues });
   const [layers, setLayers] = useState<VestLayerCreate[]>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [protocolThreatLevels, setProtocolThreatLevels] = useState<ProtocolThreatLevel[]>([]);

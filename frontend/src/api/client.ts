@@ -134,13 +134,15 @@ class ApiClient {
           .map((e: any) => e.msg || JSON.stringify(e))
           .join('; ');
       } else if (typeof error.detail === 'object' && error.detail !== null) {
-        // Handle single validation error object
-        errorMessage = error.detail.msg || JSON.stringify(error.detail);
+        // Structured error objects (e.g. {error, message, missing_shots})
+        errorMessage = error.detail.message || error.detail.msg || JSON.stringify(error.detail);
       }
-      
+
       // Create an error object that preserves the detail
       const errorObj = new Error(errorMessage) as any;
       errorObj.detail = errorMessage;
+      // Raw structured detail for callers that need fields like missing_shots
+      errorObj.data = error.detail;
       throw errorObj;
     }
 

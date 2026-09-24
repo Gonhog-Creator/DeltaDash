@@ -168,8 +168,9 @@ export function TestSessions() {
     } catch (err: any) {
       console.error('Failed to upload Excel:', err);
       // Check if error is due to missing ammunition
-      if (err?.message?.includes('missing_ammunition') || err?.detail?.error === 'missing_ammunition') {
-        const missingCalibers = err.detail?.missing_calibers || [];
+      const errorData = err?.data || (typeof err?.detail === 'object' ? err.detail : null);
+      if (errorData?.error === 'missing_ammunition') {
+        const missingCalibers = errorData.missing_calibers || [];
         setMissingCalibers(missingCalibers);
         setShowAmmoModal(true);
       }
@@ -253,8 +254,9 @@ export function TestSessions() {
     } catch (err: any) {
       console.error('Failed to create test session from Excel:', err);
       // Check if error is due to missing ammunition
-      if (err?.message?.includes('missing_ammunition') || err?.detail?.error === 'missing_ammunition') {
-        const missingCalibers = err.detail?.missing_calibers || [];
+      const errorData = err?.data || (typeof err?.detail === 'object' ? err.detail : null);
+      if (errorData?.error === 'missing_ammunition') {
+        const missingCalibers = errorData.missing_calibers || [];
         setMissingCalibers(missingCalibers);
         setShowAmmoModal(true);
       }
@@ -440,7 +442,7 @@ export function TestSessions() {
               return (
                 <Fragment key={parent.id}>
                   <tr
-                    className={`${isExpanded ? 'bg-indigo-50' : 'hover:bg-gray-50'} cursor-pointer`}
+                    className={`${!parent.vest_id ? 'bg-red-50 hover:bg-red-100' : isExpanded ? 'bg-indigo-50' : 'hover:bg-gray-50'} cursor-pointer`}
                     onClick={() => hasChildren && toggleGroup(parent.id)}
                   >
                     <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 max-w-xs truncate" title={parent.name}>
@@ -455,7 +457,7 @@ export function TestSessions() {
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 max-w-24 truncate" title={parent.lab_name || ''}>{parent.lab_name || '-'}</td>
                     <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate" title={parent.protocol || ''}>{parent.protocol || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={parent.vest_code || ''}>
-                      {parent.vest_code ? (parent.vest_code.length > 15 ? parent.vest_code.substring(0, 15) + '...' : parent.vest_code) : '-'}
+                      {parent.vest_code ? (parent.vest_code.length > 15 ? parent.vest_code.substring(0, 15) + '...' : parent.vest_code) : <span className="text-red-600 font-medium">Not linked</span>}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500" title={parent.geometry_name || ''}>
                       {parent.geometry_name ? (parent.geometry_name.length > 15 ? parent.geometry_name.substring(0, 15) + '...' : parent.geometry_name) : '-'}
