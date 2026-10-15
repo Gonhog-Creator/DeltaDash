@@ -31,6 +31,18 @@ from app.db.models import (  # noqa: F401, F403
     GeometryMaterialConfig,
     Cover,
     PliegoDocument,
+    MaterialLot,
+    MaterialRoll,
+    MaterialPropertyMeasurement,
+    MaterialPropertySpec,
+    MaterialPropertyDistribution,
+    PanelLayerMaterialAssignment,
+    AsTestedPropertySnapshot,
+    ProtocolRevision,
+    RiskScenario,
+    RiskSimulationRun,
+    ModelValidationRun,
+    EvaluationManifest,
 )
 
 # this is the Alembic Config object, which provides

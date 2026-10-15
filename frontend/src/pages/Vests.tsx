@@ -376,6 +376,18 @@ export function Vests() {
     }
   };
 
+  const canViewComplete = role === 'admin' || role === 'editor';
+
+  const isVestComplete = (vest: Vest) => {
+    const hasGeometry = !!vest.compatible_geometry_ids && vest.compatible_geometry_ids.length > 0;
+    const hasLayers = (vest.total_layers ?? 0) > 0 || (vest.layers?.length ?? 0) > 0;
+    const fieldsFilled = [vest.vest_type, vest.threat_level, vest.weight_g, vest.is_female]
+      .every(f => f !== null && f !== undefined && f !== '');
+    const isSoft = vest.vest_type?.toLowerCase() === 'soft';
+    const sewnFilled = !isSoft || (vest.is_panel_sewn !== null && vest.is_panel_sewn !== undefined);
+    return hasGeometry && hasLayers && fieldsFilled && sewnFilled;
+  };
+
   const getFilteredAndSortedVests = (vests: any[] | undefined) => {
     if (!vests) return vests;
     
@@ -961,6 +973,12 @@ export function Vests() {
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Flexibility</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stitched</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Linked</th>
+              {canViewComplete && (
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    title="Complete = layers + type + threat level + weight + sex + compatible geometry (and stitched flag for soft vests)">
+                  Complete
+                </th>
+              )}
               <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
@@ -1010,6 +1028,15 @@ export function Vests() {
                       <span className="text-red-500 text-lg">✗</span>
                     )}
                   </td>
+                  {canViewComplete && (
+                    <td className="px-3 py-1.5 whitespace-nowrap text-sm text-gray-500">
+                      {isVestComplete(vest) ? (
+                        <span className="text-green-500 text-lg">✓</span>
+                      ) : (
+                        <span className="text-red-500 text-lg">✗</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-3 py-1.5 whitespace-nowrap text-right text-sm font-medium">
                   {role !== 'viewer' && (
                     <>
@@ -1034,7 +1061,7 @@ export function Vests() {
             })}
             {vests?.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={canViewComplete ? 12 : 11} className="px-6 py-4 text-center text-sm text-gray-500">
                   No vests found. Click "Add Vest" to create one.
                 </td>
               </tr>

@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/DeltaTest.iml" filepath="$PROJECT_DIR$/.idea/DeltaTest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/ballistic-analytics-backend.iml" filepath="$PROJECT_DIR$/.idea/ballistic-analytics-backend.iml" />
     </modules>
   </component>
 </project>

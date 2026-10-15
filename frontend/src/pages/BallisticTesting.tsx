@@ -5,6 +5,7 @@ import { useProtocols } from '../hooks/useProtocols';
 import { useVests } from '../hooks/useVests';
 import { Material } from '../api/materials';
 import { LoadingOverlay } from '../components/LoadingOverlay';
+import LotRiskTab from '../components/LotRiskTab';
 import Plot from 'react-plotly.js';
 
 interface BallisticInput {
@@ -87,6 +88,8 @@ export function BallisticTesting() {
   });
   const [modelVersions, setModelVersions] = useState<any[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'single' | 'lot'>('single');
+  const [modelHealth, setModelHealth] = useState<any>(null);
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -194,6 +197,16 @@ export function BallisticTesting() {
     };
     fetchModelVersions();
   }, [selectedVersion]);
+
+  // Holdout metrics for the selected version — shown as accuracy context
+  useEffect(() => {
+    if (!selectedVersion) return;
+    apiClient.get<any>(`/api/v1/ballistic/health/version/${selectedVersion}`)
+      .then(setModelHealth)
+      .catch(() => setModelHealth(null));
+  }, [selectedVersion]);
+
+  const bfdHoldout = modelHealth?.holdout_metrics?.backface_deformation_mm;
 
   // Reset level selection when protocol changes
   const handleProtocolChange = (protocolId: string) => {
@@ -303,8 +316,30 @@ export function BallisticTesting() {
       {modelsLoading && (
         <LoadingOverlay message="Loading model versions..." submessage="Fetching available models from the server" />
       )}
-      <h1 className="text-3xl font-bold mb-6">Ballistic Testing Prediction</h1>
+      <h1 className="text-3xl font-bold mb-4">Predictions</h1>
 
+      <div className="flex space-x-4 border-b border-gray-200 mb-6">
+        {([
+          ['single', 'Single Prediction'],
+          ['lot', 'Lot Risk — 1000-Vest Monte Carlo'],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`py-2 px-1 text-sm font-medium border-b-2 -mb-px ${
+              activeTab === key
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'lot' && <LotRiskTab />}
+
+      {activeTab === 'single' && (
       <div className="space-y-6">
         {/* Input Form */}
         <div className="bg-white rounded-lg shadow p-6">
@@ -325,6 +360,19 @@ export function BallisticTesting() {
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {/* Model accuracy context — how far off predictions can be */}
+          {bfdHoldout && (
+            <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded text-xs text-gray-600">
+              <span className="font-semibold text-gray-800">How accurate is this model?</span>{' '}
+              On vests it has never seen before, the average prediction error is ≈{' '}
+              <b>{bfdHoldout.mae?.toFixed(1)} mm</b> on BFD
+              {bfdHoldout.mean_residual != null && (
+                <>, systematically {bfdHoldout.mean_residual >= 0 ? 'over' : 'under'}-predicting by {Math.abs(bfdHoldout.mean_residual).toFixed(1)} mm</>
+              )}.
+              Use the <b>Lot Risk</b> tab to see the full spread of outcomes for this vest under material tolerances.
             </div>
           )}
 
@@ -800,6 +848,7 @@ export function BallisticTesting() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

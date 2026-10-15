@@ -6,11 +6,18 @@ from app.db.base import Base
 
 
 class ArmorPanel(Base):
+    """A unique physical test specimen (a manufactured panel). Distinct from
+    Vest, which is a design/catalog identity: many panels of one design exist."""
+
     __tablename__ = "armor_panels"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     test_session_id = Column(UUID(as_uuid=True), ForeignKey("test_sessions.id"), nullable=True)
     panel_code = Column(String, nullable=False, index=True)
+    vest_id = Column(UUID(as_uuid=True), ForeignKey("vests.id"), nullable=True)
+    serial_number = Column(String, index=True)
+    manufactured_unit_id = Column(String, index=True)
+    production_lot_code = Column(String)
     vest_type = Column(String)
     panel_shape = Column(String)
     panel_width_mm = Column(Numeric(10, 2))

@@ -6,6 +6,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { LoadingOverlay } from '../components/LoadingOverlay';
 import { AnchorPointsTab } from '../components/AnchorPointsTab';
 import { TestPlannerTab } from '../components/TestPlannerTab';
+import { MetricsGuideTab } from '../components/MetricsGuideTab';
 import Plot from 'react-plotly.js';
 
 const API_BASE_URL = import.meta.env.DEV
@@ -44,7 +45,7 @@ export function ModelTraining() {
   // Model Health state - initialize from URL query param
   const searchParams = new URLSearchParams(location.search);
   const tabParam = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState<'training' | 'health' | 'anchor' | 'planner'>(tabParam === 'health' ? 'health' : tabParam === 'anchor' ? 'anchor' : tabParam === 'planner' ? 'planner' : 'training');
+  const [activeTab, setActiveTab] = useState<'training' | 'health' | 'anchor' | 'planner' | 'guide'>(tabParam === 'health' ? 'health' : tabParam === 'anchor' ? 'anchor' : tabParam === 'planner' ? 'planner' : tabParam === 'guide' ? 'guide' : 'training');
   const [selectedModelVersion, setSelectedModelVersion] = useState<string>('');
   const [selectedProtocol, setSelectedProtocol] = useState<string>('all');
   const [selectedVests, setSelectedVests] = useState<string[]>([]);
@@ -550,6 +551,8 @@ export function ModelTraining() {
       params.set('tab', 'anchor');
     } else if (activeTab === 'planner') {
       params.set('tab', 'planner');
+    } else if (activeTab === 'guide') {
+      params.set('tab', 'guide');
     } else {
       params.delete('tab');
     }
@@ -1259,8 +1262,33 @@ export function ModelTraining() {
               <div><strong>Model Name:</strong> {healthData.model_name}</div>
               <div><strong>Total Test Points:</strong> {healthData.total_points}</div>
               <div><strong>Vests Evaluated:</strong> {healthData.vest_averages?.length || 0}</div>
-              <div><strong>Overall Average Error:</strong> {healthData.overall_average_error}%</div>
+              <div><strong>Overall Average Error:</strong> {healthData.overall_average_error}% {healthData.evaluation === 'in_sample' && <span className="text-xs text-amber-600">(in-sample — see Metrics Guide)</span>}</div>
             </div>
+            {healthData.holdout_metrics && Object.keys(healthData.holdout_metrics).length > 0 && (
+              <div className="mt-4 border-t pt-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Held-Out Vest Metrics (unseen vests — the honest number)</h3>
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAE</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAPE</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Brier</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {Object.entries(healthData.holdout_metrics).map(([target, m]: [string, any]) => (
+                      <tr key={target}>
+                        <td className="px-4 py-2 text-sm text-gray-900">{target.replace(/_regression$|_classification$/, '')}</td>
+                        <td className="px-4 py-2 text-sm text-gray-900">{m?.mae != null ? `${Number(m.mae).toFixed(2)} mm` : '—'}</td>
+                        <td className="px-4 py-2 text-sm text-gray-900">{m?.mape != null ? `${Number(m.mape).toFixed(1)}%` : '—'}</td>
+                        <td className="px-4 py-2 text-sm text-gray-900">{m?.brier_score != null ? Number(m.brier_score).toFixed(3) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Vest Averages Table */}
@@ -1820,12 +1848,22 @@ export function ModelTraining() {
             >
               Test Planner
             </button>
+            <button
+              onClick={() => setActiveTab('guide')}
+              className={`${
+                activeTab === 'guide'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              Metrics Guide
+            </button>
           </nav>
         </div>
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'training' ? renderTrainingTab() : activeTab === 'health' ? renderHealthTab(showAnchorPointDetails, setShowAnchorPointDetails) : activeTab === 'planner' ? <TestPlannerTab selectedModelVersion={selectedModelVersion} modelVersions={modelVersions} onError={setError} /> : <AnchorPointsTab onError={setError} />}
+      {activeTab === 'training' ? renderTrainingTab() : activeTab === 'health' ? renderHealthTab(showAnchorPointDetails, setShowAnchorPointDetails) : activeTab === 'guide' ? <MetricsGuideTab /> : activeTab === 'planner' ? <TestPlannerTab selectedModelVersion={selectedModelVersion} modelVersions={modelVersions} onError={setError} /> : <AnchorPointsTab onError={setError} />}
 
       {/* Success Modal */}
       {showSuccessModal && (

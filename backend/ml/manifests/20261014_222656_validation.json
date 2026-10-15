@@ -1,0 +1,45 @@
+{
+  "evaluated_at": "2026-10-14T22:26:57.011333",
+  "manifest": {
+    "holdout_frac": 0.2,
+    "seed": 13,
+    "group_column": "vest_code",
+    "n_train_rows": 3819,
+    "n_val_rows": 564,
+    "n_val_groups": 2,
+    "val_groups": [
+      "MDS LIGHT II",
+      "STOP FORCE HG2"
+    ]
+  },
+  "bfd_holdout": {
+    "n": 420,
+    "mae_mm": 5.658528897997844,
+    "mape": 0.9025246587612031,
+    "bias_mm": 3.9285316379771156,
+    "residual_sigma_mm": 5.696714031844728,
+    "r": 0.7705014314659163
+  },
+  "bfd_per_vest": [
+    {
+      "group": "MDS LIGHT II",
+      "n": 192,
+      "mae_mm": 3.2557485465992726,
+      "bias_mm": 2.9710694388958205
+    },
+    {
+      "group": "STOP FORCE HG2",
+      "n": 228,
+      "mae_mm": 7.681922878122957,
+      "bias_mm": 4.734815595098206
+    }
+  ],
+  "perforation_holdout": {
+    "n": 0,
+    "n_pos": 0,
+    "n_neg": 0,
+    "auc": null,
+    "brier": null,
+    "note": "insufficient positives/negatives in holdout for AUC"
+  }
+}

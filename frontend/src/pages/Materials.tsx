@@ -258,6 +258,7 @@ export function Materials() {
     const requiredFields = [
       material.areal_density_g_m2,
       material.thickness_mm,
+      material.thickness_tolerance_mm,  // sim uses this as spec window; missing -> assumed ±5%
     ];
     
     if (hasElongationFields) {

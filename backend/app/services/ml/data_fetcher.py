@@ -1,6 +1,7 @@
 """
 Data fetcher for ML training - pulls training data from database.
 """
+import re
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
@@ -115,8 +116,17 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
     geometry_ids = [ts.geometry_id for _, ts, _ in query if ts and ts.geometry_id]
     all_geometries = {g.id: g for g in db.query(Geometry).filter(Geometry.id.in_(geometry_ids)).all()} if geometry_ids else {}
 
-    calibers = list(set(sd.caliber for sd, _, _ in query if sd.caliber))
-    all_ammunition = {a.caliber: a for a in db.query(Ammunition).filter(Ammunition.caliber.in_(calibers)).all()} if calibers else {}
+    # shot_data.caliber may contain an ammunition NAME rather than a caliber;
+    # key the lookup by both, and prefer the canonical ammunition_id FK.
+    all_ammo_rows = db.query(Ammunition).all()
+    all_ammunition = {}
+    all_ammunition_by_id = {}
+    for a in all_ammo_rows:
+        all_ammunition_by_id[a.id] = a
+        if a.caliber:
+            all_ammunition.setdefault(a.caliber, a)
+        if a.name:
+            all_ammunition.setdefault(a.name, a)
 
     # Build DataFrame
     rows = []
@@ -196,21 +206,41 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
                     back_area = float(size_areas.get('back', 0))
                     panel_surface_area_m2 = front_area + back_area
         
-        # Get ammunition info
+        # Get ammunition info (canonical FK first, then name/caliber fallback)
         caliber = shot_data_record.caliber
-        ammunition = all_ammunition.get(caliber)
-        
+        ammunition = None
+        if getattr(shot_data_record, 'ammunition_id', None):
+            ammunition = all_ammunition_by_id.get(shot_data_record.ammunition_id)
+        if ammunition is None:
+            ammunition = all_ammunition.get(caliber)
+
         # Map trauma_qualitative to perforated
         # Use None (missing) when trauma_qualitative is not recorded, so the
         # classifier training excludes unknown shots rather than treating them as negatives.
+        # Negated labels are checked BEFORE positive substrings so
+        # "no perforado"/"sin perforación" cannot match 'perfor'.
         perforated = None
         if shot_data_record.trauma_qualitative:
             trauma_lower = shot_data_record.trauma_qualitative.lower()
-            if 'punct' in trauma_lower or 'perfor' in trauma_lower or 'penetr' in trauma_lower:
-                perforated = 1
-            elif 'no punct' in trauma_lower or 'no perfor' in trauma_lower or 'no penetr' in trauma_lower or 'sin perfor' in trauma_lower or 'no paso' in trauma_lower:
+            if 'no punct' in trauma_lower or 'no perfor' in trauma_lower or 'no penetr' in trauma_lower or 'sin perfor' in trauma_lower or 'no paso' in trauma_lower:
                 perforated = 0
-        
+            elif 'punct' in trauma_lower or 'perfor' in trauma_lower or 'penetr' in trauma_lower:
+                perforated = 1
+        # Fallback: a recorded BFD means the bullet was stopped behind the
+        # panel -> the shot did not perforate. Shots with no BFD and no
+        # qualitative note stay None (excluded from classifier training).
+        if perforated is None and shot_data_record.trauma_mm is not None:
+            perforated = 0
+
+        # Derived pass/fail: perforation or BFD over the NIJ 44mm backface
+        # limit means fail; a recorded stop under the limit means pass.
+        pass_fail = None
+        if perforated == 1 or (shot_data_record.trauma_mm is not None
+                               and float(shot_data_record.trauma_mm) > 44.0):
+            pass_fail = 'fail'
+        elif perforated == 0 or shot_data_record.trauma_mm is not None:
+            pass_fail = 'pass'
+
         row = {
             'vest_code': vest.vest_code if vest else None,
             'protocol': test_session.protocol if test_session else None,
@@ -230,7 +260,7 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
             'panel_side': shot_data_record.side,
             'backface_deformation_mm': float(shot_data_record.trauma_mm) if shot_data_record.trauma_mm is not None else None,
             'perforated': perforated,
-            'pass_fail': None,  # Not available in ShotData
+            'pass_fail': pass_fail,  # Derived: perforated or BFD > 44mm -> fail
             'material_type': material_type_str,
             'caliber_diameter_mm': float(ammunition.caliber_diameter_mm) if ammunition and ammunition.caliber_diameter_mm else None,
             'caliber_length_mm': float(ammunition.caliber_length_mm) if ammunition and ammunition.caliber_length_mm else None,
@@ -265,6 +295,9 @@ def fetch_training_data(db: Session, verbose: bool = True, ignore_anchor_points:
 
     if not ignore_anchor_points:
         anchor_df, anchor_metadata = fetch_anchor_points_as_training_data(db)
+        physics_df = generate_physics_anchor_rows(db)
+        if not physics_df.empty:
+            anchor_df = pd.concat([anchor_df, physics_df], ignore_index=True)
         if not anchor_df.empty:
             if verbose:
                 warnings_list.append(f"Added {len(anchor_df)} anchor points to training data")
@@ -400,6 +433,118 @@ def fetch_anchor_points_as_training_data(db: Session) -> tuple[pd.DataFrame, dic
     return pd.DataFrame(rows), metadata
 
 
+def generate_physics_anchor_rows(db: Session) -> pd.DataFrame:
+    """
+    Physics-generated anchor rows that fill the layer-count gap between the
+    hand-authored anchors (1-5 layers perforate / 200 layers stops).
+
+    Crude membrane model, deliberately conservative:
+      per-ply capacity  E_ply ~ F_break[N/cm] x engaged_width[cm] x delta_break[m]
+      stack capacity    E_cap  = N x E_ply
+      bullet energy     KE     = 0.5 x m x v^2
+
+    This underpredicts real ballistic resistance (ignores stress-wave load
+    spreading, yarn pull-out, friction), so anchors are only emitted in the
+    certain regimes:
+      perforated=1  when  E_cap <  KE / MARGIN
+      perforated=0  when  E_cap >  KE * MARGIN
+    The transition band between them gets no anchor — real data interpolates.
+
+    Rows mirror fetch_anchor_points_as_training_data output columns.
+    """
+    MARGIN = 3.0
+    GAUGE_M = 0.05  # strip-test gauge length, 5 cm
+    MAX_LAYERS = 250
+
+    material_properties = fetch_material_properties(db)
+    ammunitions = db.query(Ammunition).all()
+
+    rows = []
+    for mat_name, props in material_properties.items():
+        force_n_per_cm = props.get('force_longitudinal_n_per_cm')
+        elong_pct = props.get('elongation_percent')
+        thickness = props.get('thickness_mm')
+        areal = props.get('areal_density_g_m2')
+        if not force_n_per_cm or not elong_pct or not thickness:
+            continue
+        delta_break_m = (elong_pct / 100.0) * GAUGE_M
+        mat_class = props.get('material_class')
+
+        for ammo in ammunitions:
+            # grams/fps are the populated fields; fall back through units
+            mass_g = ammo.projectile_mass_grams
+            if not mass_g and ammo.projectile_mass_grains:
+                mass_g = float(ammo.projectile_mass_grains) * 0.0647989
+            velocity = ammo.nominal_velocity_m_s
+            if not velocity and ammo.nominal_velocity_fps:
+                velocity = float(ammo.nominal_velocity_fps) * 0.3048
+            diameter_mm = ammo.caliber_diameter_mm
+            if not diameter_mm and ammo.caliber:
+                m = re.match(r'^\s*\.(\d+)', ammo.caliber)       # '.38 Special' -> inches
+                if m:
+                    diameter_mm = float(f'0.{m.group(1)}') * 25.4
+                else:
+                    m = re.match(r'^\s*(\d+(?:\.\d+)?)', ammo.caliber)  # '5.56x45mm', '9mm'
+                    if m and float(m.group(1)) < 30:
+                        diameter_mm = float(m.group(1))
+            if not mass_g or not diameter_mm or not velocity:
+                continue
+            engaged_width_cm = float(diameter_mm) / 10.0
+            e_ply_j = force_n_per_cm * engaged_width_cm * delta_break_m
+            if e_ply_j <= 0:
+                continue
+            ke_j = 0.5 * (float(mass_g) / 1000.0) * float(velocity) ** 2
+
+            n_certain_perf = int((ke_j / MARGIN) / e_ply_j)       # max N still certain-perforate
+            n_certain_stop = int((ke_j * MARGIN) / e_ply_j) + 1   # min N certain-stop
+
+            candidate_ns = []
+            for n in {n_certain_perf, int(n_certain_perf * 0.6)}:
+                if 6 <= n <= MAX_LAYERS:          # below 6 the authored anchors already cover it
+                    candidate_ns.append((n, 1))
+            for n in {n_certain_stop, int(n_certain_stop * 1.3)}:
+                if n <= MAX_LAYERS:
+                    candidate_ns.append((n, 0))
+
+            for n_layers, label in candidate_ns:
+                rows.append({
+                    'vest_composition': f"{n_layers} {mat_name}",
+                    'material_thickness_mm': n_layers * thickness,
+                    'material_weight_g_m2': n_layers * areal if areal else None,
+                    'number_of_layers': n_layers,
+                    'ammunition_used': ammo.name,
+                    'threat_level': None,
+                    'shot_number': 1,
+                    'impact_velocity_mps': float(velocity),
+                    'impact_angle_deg': 0.0,
+                    'bullet_mass_g': float(mass_g),
+                    'temperature_c': 22.0,
+                    'humidity_pct': 50.0,
+                    'condition': None,
+                    'panel_side': None,
+                    'backface_deformation_mm': None,
+                    'perforated': label,
+                    'pass_fail': 'fail' if label else 'pass',
+                    'material_type': mat_class,
+                    'caliber_diameter_mm': float(diameter_mm),
+                    'caliber_length_mm': float(ammo.caliber_length_mm) if ammo.caliber_length_mm else None,
+                    'vest_type': 'soft',
+                    'is_female': False,
+                    'ply_orientations': None,
+                    'flexibility_rating': 0,
+                    'is_panel_sewn': 0,
+                    'weight_g': None,
+                    'panel_surface_area_m2': None,
+                    'geometry_name': None,
+                    'total_tensile_strength_mpa': None,
+                    'total_modulus_gpa': None,
+                    'primary_weave_type': None,
+                    'has_coating': 0,
+                })
+
+    return pd.DataFrame(rows)
+
+
 def fetch_material_properties(db: Session) -> Dict[str, Dict[str, float]]:
     """
     Fetch all material properties from database for dynamic feature engineering.
@@ -463,9 +608,32 @@ def fetch_material_properties(db: Session) -> Dict[str, Dict[str, float]]:
         # Keep elongation_percent for backward compatibility (use longitudinal as primary)
         if material.elongation_longitudinal_percent:
             props['elongation_percent'] = float(material.elongation_longitudinal_percent)
+            props['elongation_longitudinal_percent'] = float(material.elongation_longitudinal_percent)
         elif material.elongation_transverse_percent:
             props['elongation_percent'] = float(material.elongation_transverse_percent)
-        
+        if material.elongation_transverse_percent:
+            props['elongation_transverse_percent'] = float(material.elongation_transverse_percent)
+
+        # Derive apparent fabric-level strength from strip-test force when
+        # tensile_strength_mpa / modulus_gpa were never recorded directly.
+        # Strip test: F per cm width -> sigma[MPa] = F/(10mm x thickness mm) = N/mm2
+        # Apparent chord modulus: E[GPa] = sigma[MPa]/1000 / epsilon_break
+        if ('tensile_strength_mpa' not in props
+                and 'force_longitudinal_n_per_cm' in props
+                and props.get('thickness_mm')):
+            props['tensile_strength_mpa'] = (
+                props['force_longitudinal_n_per_cm'] / (10.0 * props['thickness_mm'])
+            )
+            props['tensile_strength_derived'] = True
+        if ('modulus_gpa' not in props
+                and 'tensile_strength_mpa' in props
+                and props.get('elongation_percent')):
+            props['modulus_gpa'] = (
+                (props['tensile_strength_mpa'] / 1000.0)
+                / (props['elongation_percent'] / 100.0)
+            )
+            props['modulus_derived'] = True
+
         if material.material_class:
             props['material_class'] = material.material_class
         if material.ply_count:

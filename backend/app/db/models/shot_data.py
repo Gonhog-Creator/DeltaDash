@@ -24,5 +24,19 @@ class ShotData(Base):
     
     temperature_c = Column(Numeric(5, 2))
     humidity_percent = Column(Numeric(5, 2))
-    
+
+    # Enrichment columns (additive; raw import columns above are untouched)
+    outcome = Column(String)  # complete_penetration | partial_penetration | stopped | unknown
+    outcome_source = Column(String)  # explicit_label | bfd_implied | unresolved
+    shot_validity = Column(String)  # valid | invalid | unassessed
+    validity_reason = Column(String)
+    ammunition_id = Column(UUID(as_uuid=True), ForeignKey('ammunition.id'), nullable=True)
+    ammunition_match_status = Column(String)  # exact_name | caliber | alias | ambiguous | unmatched
+    specimen_id = Column(UUID(as_uuid=True), ForeignKey('armor_panels.id'), nullable=True)
+    normalized_side = Column(String)
+    normalized_conditioning = Column(String)
+    normalized_protection_level = Column(String)
+    duplicate_group_id = Column(UUID(as_uuid=True), index=True)
+    is_superseded = Column(String)  # NULL | 'superseded' | 'canonical'
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

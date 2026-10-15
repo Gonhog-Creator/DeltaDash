@@ -22,6 +22,17 @@ from app.db.models.geometry_material_config import GeometryMaterialConfig
 from app.db.models.cover import Cover
 from app.db.models.vest_model import ModelDocument
 from app.db.models.pliego_document import PliegoDocument
+from app.db.models.material_lot import MaterialLot, MaterialRoll
+from app.db.models.material_property_measurement import MaterialPropertyMeasurement
+from app.db.models.material_property_spec import MaterialPropertySpec
+from app.db.models.material_property_distribution import MaterialPropertyDistribution
+from app.db.models.panel_layer_material_assignment import PanelLayerMaterialAssignment
+from app.db.models.as_tested_property_snapshot import AsTestedPropertySnapshot
+from app.db.models.protocol_revision import ProtocolRevision
+from app.db.models.risk_scenario import RiskScenario
+from app.db.models.risk_simulation_run import RiskSimulationRun
+from app.db.models.model_validation_run import ModelValidationRun
+from app.db.models.evaluation_manifest import EvaluationManifest
 
 __all__ = [
     "User",
@@ -49,4 +60,16 @@ __all__ = [
     "Cover",
     "ModelDocument",
     "PliegoDocument",
+    "MaterialLot",
+    "MaterialRoll",
+    "MaterialPropertyMeasurement",
+    "MaterialPropertySpec",
+    "MaterialPropertyDistribution",
+    "PanelLayerMaterialAssignment",
+    "AsTestedPropertySnapshot",
+    "ProtocolRevision",
+    "RiskScenario",
+    "RiskSimulationRun",
+    "ModelValidationRun",
+    "EvaluationManifest",
 ]

@@ -215,6 +215,7 @@ class HealthResponse(BaseModel):
     anchor_point_count: Optional[int] = None
     data_health: Optional[dict] = None
     hyperparameters: Optional[dict] = None
+    holdout_metrics: Optional[dict] = None  # grouped-vest holdout from training, per target
 
 
 # =============================================================================
@@ -1204,7 +1205,13 @@ def health_version(version: str, db: Session = Depends(get_db)):
     
     with open(version_metadata_path, "r") as f:
         metadata = json.load(f)
-    
+
+    metrics_meta = metadata.get("metrics") or {}
+    holdout_metrics = {
+        k: v.get("holdout") for k, v in metrics_meta.items()
+        if isinstance(v, dict) and v.get("holdout")
+    }
+
     return HealthResponse(
         status="trained",
         model_name=metadata.get("model_name"),
@@ -1220,6 +1227,7 @@ def health_version(version: str, db: Session = Depends(get_db)):
         vest_layer_count=vest_layer_count,
         data_health=metadata.get("data_health"),
         hyperparameters=metadata.get("hyperparameters"),
+        holdout_metrics=holdout_metrics or None,
     )
 
 

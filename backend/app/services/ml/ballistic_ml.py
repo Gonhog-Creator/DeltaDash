@@ -55,6 +55,11 @@ CLASSIFICATION_TARGETS = [
     "pass_fail",
 ]
 
+# Minimum real (non-anchor) positive examples required to fit a classifier.
+# Below this the positive class is too sparse to generalize — the model is
+# skipped rather than emitting confidently wrong probabilities.
+MIN_CLASS_POSITIVES = 30
+
 
 # =============================================================================
 # Dynamic Material Properties (loaded from database)
@@ -638,13 +643,33 @@ def build_preprocessing_pipeline(numeric_cols: List[str], categorical_cols: List
     )
 
 
+def _grouped_train_eval_split(df: pd.DataFrame, row_index, test_frac: float = 0.15,
+                              seed: int = 13):
+    """Position-based (train_pos, eval_pos) split holding out whole vests.
+    Rows without a vest_code (anchors/synthetics) always stay in train.
+    Returns (all_pos, None) when a grouped split isn't viable."""
+    if 'vest_code' not in df.columns:
+        return np.arange(len(row_index)), None
+    groups = df.loc[row_index, 'vest_code']
+    is_real = groups.notna().values
+    real_groups = groups[is_real]
+    if is_real.sum() < 20 or real_groups.nunique() < 5:
+        return np.arange(len(row_index)), None
+    from sklearn.model_selection import GroupShuffleSplit
+    real_pos = np.flatnonzero(is_real)
+    splitter = GroupShuffleSplit(n_splits=1, test_size=test_frac, random_state=seed)
+    tr_sub, ev_sub = next(splitter.split(np.zeros(int(is_real.sum())), groups=real_groups.values))
+    train_pos = np.concatenate([real_pos[tr_sub], np.flatnonzero(~is_real)])
+    return train_pos, real_pos[ev_sub]
+
+
 def build_regressor(
     n_estimators: int = 800,
-    max_depth: int = 6,
+    max_depth: int = 5,
     learning_rate: float = 0.05,
-    subsample: float = 0.9,
-    colsample_bytree: float = 0.9,
-    min_child_weight: int = 2,
+    subsample: float = 0.8,
+    colsample_bytree: float = 0.8,
+    min_child_weight: int = 5,
     reg_lambda: float = 1.0,
     reg_alpha: float = 0.1,
     gamma: float = 0,
@@ -779,22 +804,32 @@ def train_from_dataframe(
     hyperparameters: Optional[Dict[str, Any]] = None,
     feature_toggles: Optional[Dict[str, bool]] = None,
     skip_filesystem_save: bool = False,
+    contract_version: Optional[str] = None,
 ) -> Dict[str, Any]:
+    from app.services.ml.feature_contract import build_features, CONTRACT_V0, CONTRACT_V1
+
+    if contract_version is None:
+        contract_version = CONTRACT_V1
+
     # Capture default hyperparameters if none provided
     if hyperparameters is None:
         hyperparameters = {
             'n_estimators': 800,
-            'max_depth': 6,
+            'max_depth': 5,
             'learning_rate': 0.05,
-            'subsample': 0.9,
-            'colsample_bytree': 0.9,
-            'min_child_weight': 2,
+            'subsample': 0.8,
+            'colsample_bytree': 0.8,
+            'min_child_weight': 5,
             'reg_lambda': 1.0,
             'reg_alpha': 0.1,
             'gamma': 0,
         }
 
-    df = add_engineered_features(df, material_properties, feature_toggles=feature_toggles)
+    df = build_features(
+        df, material_properties,
+        feature_toggles=feature_toggles,
+        contract_version=contract_version,
+    )
 
     # Clean classification target labels if needed.
     for target in CLASSIFICATION_TARGETS:
@@ -816,6 +851,8 @@ def train_from_dataframe(
     df = df.dropna(subset=all_targets, how="all").copy()
 
     # Do not train on ID/source columns. They can accidentally cause memorization.
+    # vest_composition is also identity — it still feeds the composition feature
+    # builder upstream, but the raw string never reaches the model.
     columns_to_exclude_from_features = set(all_targets + [
         "source_file",
         "source_sheet",
@@ -827,9 +864,26 @@ def train_from_dataframe(
         "test_session_id",
         "vest_code",
         "protocol",
+        "vest_composition",
+        "composition_sequence",
+        "composition_first_material",
+        "composition_second_material",
+        "composition_penultimate_material",
+        "composition_last_material",
     ])
 
     feature_columns = [c for c in df.columns if c not in columns_to_exclude_from_features]
+
+    # Per-material-name composition columns (e.g. composition_ply_count_cs_302e)
+    # are vest fingerprints — exclude them so the model generalizes from physical
+    # properties instead of memorizing named materials.
+    from app.services.ml.feature_contract import material_prefix
+    _mat_prefixes = {material_prefix(m) for m in (material_properties or {})}
+    feature_columns = [
+        c for c in feature_columns
+        if not (c.startswith("composition_")
+                and any(c.endswith(f"_{p}") for p in _mat_prefixes))
+    ]
 
     X = df[feature_columns].copy()
     y_regression = df[available_regression_targets] if available_regression_targets else None
@@ -908,13 +962,32 @@ def train_from_dataframe(
                     # Normalize to mean of 1.0
                     sample_weights = weights * (len(weights) / weights.sum())
 
-            # Build model with custom or default hyperparameters
-            if hyperparameters:
-                model = build_regressor(**hyperparameters)
-            else:
-                model = build_regressor()
-            
-            # Disable early stopping — train on full dataset
+            hp = dict(hyperparameters) if hyperparameters else {}
+
+            # Pass 1: grouped holdout for early stopping — whole vests held out,
+            # anchors always train. Gives an honest holdout metric too.
+            train_pos, eval_pos = _grouped_train_eval_split(df, X_valid.index)
+            n_best, holdout_metrics = None, None
+            if eval_pos is not None:
+                es_model = build_regressor(**hp)
+                es_kwargs = {"sample_weight": sample_weights[train_pos]} if sample_weights is not None else {}
+                es_model.fit(
+                    X_processed_full[train_pos], y_train_full[train_pos],
+                    eval_set=[(X_processed_full[eval_pos], y_train_full[eval_pos])],
+                    verbose=False, **es_kwargs,
+                )
+                best_iter = getattr(es_model, "best_iteration", None)
+                n_best = max(int(best_iter) + 1, 30) if best_iter is not None else hp.get("n_estimators", 800)
+                es_pred = es_model.predict(X_processed_full[eval_pos])
+                if use_log_transform_bfd:
+                    es_pred = np.expm1(es_pred)
+                holdout_metrics = regression_error_summary(y_valid.iloc[eval_pos], es_pred)
+
+            # Pass 2: refit on all data with the discovered tree count
+            final_hp = dict(hp)
+            if n_best:
+                final_hp["n_estimators"] = n_best
+            model = build_regressor(**final_hp)
             model.set_params(early_stopping_rounds=None)
             model.fit(X_processed_full, y_train_full, sample_weight=sample_weights)
 
@@ -924,6 +997,8 @@ def train_from_dataframe(
                 y_pred = np.expm1(y_pred)
 
             metrics = regression_error_summary(y_valid, y_pred)
+            metrics["holdout"] = holdout_metrics
+            metrics["n_estimators_used"] = n_best
 
             # Store whether log transform was used
             regression_models[target] = {
@@ -937,9 +1012,16 @@ def train_from_dataframe(
     classification_metrics = {}
 
     if y_classification is not None:
+        # Synthetic anchor/physics rows carry labels from the conservative
+        # membrane model, not measurements — they would dominate the positive
+        # class and poison the classifier. Classifiers train on real rows only.
+        real_row_mask = df["vest_code"].notna() if "vest_code" in df.columns else None
+
         for target in available_classification_targets:
             y = y_classification[target]
             valid_idx = y.notna()
+            if real_row_mask is not None:
+                valid_idx &= real_row_mask
             X_valid = X[valid_idx]
             y_valid = y[valid_idx]
 
@@ -951,16 +1033,43 @@ def train_from_dataframe(
             if len(unique_classes) < 2:
                 continue
 
+            # Require a minimum number of real positive examples — a classifier
+            # trained on a handful of failures is worse than no classifier.
+            n_pos_check = int((y_valid == 1).sum())
+            if n_pos_check < MIN_CLASS_POSITIVES:
+                continue
+
             X_processed = preprocessor.transform(X_valid)
             # Compute class imbalance ratio for scale_pos_weight
             n_neg = int((y_valid == 0).sum())
             n_pos = int((y_valid == 1).sum())
             spw = n_neg / n_pos if n_pos > 0 else 1.0
+
+            # Same grouped early-stopping pass as regression
+            train_pos, eval_pos = _grouped_train_eval_split(df, X_valid.index)
+            n_best, holdout_metrics = None, None
+            if eval_pos is not None:
+                es_model = build_classifier(scale_pos_weight=spw)
+                es_model.set_params(early_stopping_rounds=50)
+                es_model.fit(
+                    X_processed[train_pos], y_valid.iloc[train_pos],
+                    eval_set=[(X_processed[eval_pos], y_valid.iloc[eval_pos])],
+                    verbose=False,
+                )
+                best_iter = getattr(es_model, "best_iteration", None)
+                n_best = max(int(best_iter) + 1, 30) if best_iter is not None else 400
+                es_proba = es_model.predict_proba(X_processed[eval_pos])[:, 1]
+                holdout_metrics = classification_error_summary(y_valid.iloc[eval_pos], es_proba)
+
             model = build_classifier(scale_pos_weight=spw)
+            if n_best:
+                model.set_params(n_estimators=n_best)
             model.fit(X_processed, y_valid)
 
             y_pred_proba = model.predict_proba(X_processed)[:, 1]
             metrics = classification_error_summary(y_valid, y_pred_proba)
+            metrics["holdout"] = holdout_metrics
+            metrics["n_estimators_used"] = n_best
 
             classification_models[target] = model
             classification_metrics[target] = metrics
@@ -1117,6 +1226,7 @@ def train_from_dataframe(
         "version": version,
         "app_version": settings.VERSION,
         "model_name": display_name,
+        "feature_contract_version": contract_version,
         "feature_columns": feature_columns,
         "numeric_columns": numeric_cols,
         "categorical_columns": categorical_cols,
@@ -1157,6 +1267,7 @@ def train_from_database(
     preloaded_df: Optional[pd.DataFrame] = None,
     preloaded_material_properties: Optional[Dict[str, Dict[str, float]]] = None,
     skip_filesystem_save: bool = False,
+    contract_version: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Train model using data from database."""
     from app.db.models import ShotData, Vest, Material, VestLayer, ModelRun
@@ -1224,6 +1335,7 @@ def train_from_database(
         hyperparameters=hyperparameters,
         feature_toggles=feature_toggles,
         skip_filesystem_save=skip_filesystem_save,
+        contract_version=contract_version,
     )
     
     # Save ModelRun record to database FIRST (before health evaluation)
@@ -1484,20 +1596,16 @@ def load_model_version(version: str, db_session=None) -> Dict[str, Any]:
 
 def predict_with_version(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float]], version: Optional[str] = None, db_session=None) -> Dict[str, Any]:
     """Make a prediction using a specific model version."""
-    if version:
-        # Load the specific version temporarily
-        metadata = load_model_version(version)
-
-    return predict(data, material_properties, db_session)
+    from app.services.ml.model_bundle import get_model_bundle
+    bundle = get_model_bundle(version, db_session=db_session) if version else None
+    return predict(data, material_properties, db_session, bundle=bundle)
 
 
 def predict_with_version_multi_shot(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float]], version: Optional[str] = None, db_session=None) -> Dict[str, Any]:
     """Make a multi-shot prediction using a specific model version."""
-    if version:
-        # Load the specific version temporarily
-        metadata = load_model_version(version)
-
-    return predict_multi_shot(data, material_properties, db_session=db_session)
+    from app.services.ml.model_bundle import get_model_bundle
+    bundle = get_model_bundle(version, db_session=db_session) if version else None
+    return predict_multi_shot(data, material_properties, db_session=db_session, bundle=bundle)
 
 
 def delete_model_version(version: str, db_session=None) -> Dict[str, Any]:
@@ -1859,55 +1967,45 @@ def generate_velocity_curves(
     validate: bool = False,
     num_points: int = 20,
     num_shots: int = 6,
+    bundle=None,
+    db_session=None,
 ) -> Dict[int, List[Dict[str, float]]]:
     """
     Generate BFD vs velocity curve predictions for each shot.
     Returns a dict mapping shot_number to list of (velocity, predicted_bfd) points.
     """
-    metadata = load_metadata()
-    if not metadata:
+    from app.services.ml.model_bundle import get_active_bundle
+    try:
+        bundle = bundle or get_active_bundle(db_session)
+    except ValueError:
+        return {}
+    if bundle.bfd_artifact is None:
         return {}
 
     base_velocity = data.get("impact_velocity_mps", 434.6)
     velocity_range = np.linspace(base_velocity * 0.8, base_velocity * 1.2, num_points)
 
-    curves = {}
-    preprocessor = load_preprocessor()
-    if preprocessor is None:
-        return {}
+    if "is_female" not in data:
+        data = {**data, "is_female": False}
 
-    bfd_model = load_model("backface_deformation_mm")
-    if bfd_model is None:
-        return {}
-
-    # Handle new dict structure with log transform flag
-    if isinstance(bfd_model, dict):
-        actual_model = bfd_model["model"]
-        use_log_transform = bfd_model.get("use_log_transform", False)
-    else:
-        actual_model = bfd_model
-        use_log_transform = False
-
+    # One batched frame for the whole velocity grid across all shots.
+    rows = []
     for shot_num in range(1, num_shots + 1):
-        curve_points = []
         for velocity in velocity_range:
-            curve_data = data.copy()
-            curve_data["impact_velocity_mps"] = velocity
+            curve_data = dict(data)
+            curve_data["impact_velocity_mps"] = float(velocity)
             curve_data["shot_number"] = shot_num
+            rows.append(curve_data)
 
-            X = prepare_single_input(curve_data, material_properties, validate=True)
-            X_processed = preprocessor.transform(X)
-            bfd_prediction = float(actual_model.predict(X_processed)[0])
-            # Apply inverse transform if log transform was used
-            if use_log_transform:
-                bfd_prediction = float(np.expm1(bfd_prediction))
+    frame = bundle.build_input_frame(rows, property_overrides=material_properties or None, validate=True)
+    preds = bundle.predict_frame(frame)
 
-            curve_points.append({
-                "velocity_mps": velocity,
-                "predicted_bfd_mm": bfd_prediction,
-            })
-        curves[shot_num] = curve_points
-
+    curves: Dict[int, List[Dict[str, float]]] = {s: [] for s in range(1, num_shots + 1)}
+    for i, row in enumerate(rows):
+        curves[row["shot_number"]].append({
+            "velocity_mps": row["impact_velocity_mps"],
+            "predicted_bfd_mm": float(preds[i]),
+        })
     return curves
 
 
@@ -1917,64 +2015,49 @@ def predict_multi_shot(
     validate: bool = False,
     num_shots: int = 6,
     db_session=None,
+    bundle=None,
 ) -> Dict[str, Any]:
     """
     Predict backface deformation for multiple shots (default 6).
     Returns predictions for each shot as a table.
     """
-    metadata = load_metadata()
-
-    if not metadata:
+    from app.services.ml.model_bundle import get_active_bundle
+    try:
+        bundle = bundle or get_active_bundle(db_session)
+    except ValueError:
         raise HTTPException(
             status_code=404,
             detail="No trained model found. Run training first.",
         )
+    metadata = bundle.metadata
+    metrics = metadata.get("metrics", {})
 
-    # Generate predictions for each shot
-    shot_predictions = []
+    if "is_female" not in data:
+        data = {**data, "is_female": False}
+
+    # Build one frame for all shots — a single transform keeps every shot's
+    # features independent of batch composition.
+    rows = []
     for shot_num in range(1, num_shots + 1):
-        shot_data = data.copy()
+        shot_data = dict(data)
         shot_data["shot_number"] = shot_num
+        rows.append(shot_data)
 
-        X = prepare_single_input(shot_data, material_properties, validate=True)
+    frame = bundle.build_input_frame(rows, property_overrides=material_properties or None, validate=True)
+    bfd_preds = bundle.predict_frame(frame)
+    classifier_scores = bundle.classifier_probabilities(frame)
+    perforation_probs = classifier_scores.get("perforated")
 
-        # Load and apply preprocessor
-        preprocessor = load_preprocessor(db_session)
-        if preprocessor is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Preprocessor not found. The model may have been trained with an older version. Please retrain the model.",
-            )
+    bfd_metric = metrics.get("backface_deformation_mm_regression", {})
+    bfd_mae = bfd_metric.get("mae") if isinstance(bfd_metric, dict) else None
+    bfd_p95 = bfd_metric.get("absolute_error_p95", bfd_mae) if isinstance(bfd_metric, dict) else bfd_mae
 
-        X_processed = preprocessor.transform(X)
-
-        metrics = metadata.get("metrics", {})
-
-        bfd_prediction = None
-        perforation_probability = None
-
-        bfd_model = load_model("backface_deformation_mm", db_session)
-        if bfd_model is not None:
-            # Handle new dict structure with log transform flag
-            if isinstance(bfd_model, dict):
-                actual_model = bfd_model["model"]
-                use_log_transform = bfd_model.get("use_log_transform", False)
-            else:
-                actual_model = bfd_model
-                use_log_transform = False
-            
-            bfd_prediction = float(actual_model.predict(X_processed)[0])
-            # Apply inverse transform if log transform was used
-            if use_log_transform:
-                bfd_prediction = float(np.expm1(bfd_prediction))
-
-        perforation_model = load_model("perforated", db_session)
-        if perforation_model is not None:
-            perforation_probability = float(perforation_model.predict_proba(X_processed)[0, 1])
-
-        bfd_metric = metrics.get("backface_deformation_mm_regression", {})
-        bfd_mae = bfd_metric.get("mae") if isinstance(bfd_metric, dict) else None
-        bfd_p95 = bfd_metric.get("absolute_error_p95", bfd_mae) if isinstance(bfd_metric, dict) else bfd_mae
+    shot_predictions = []
+    for i, shot_num in enumerate(range(1, num_shots + 1)):
+        bfd_prediction = float(bfd_preds[i]) if i < len(bfd_preds) else None
+        perforation_probability = (
+            float(perforation_probs[i]) if perforation_probs is not None else None
+        )
 
         # If perforation probability is very high (>90%), don't report BFD (it's meaningless)
         if perforation_probability is not None and perforation_probability > 0.9:
@@ -1994,7 +2077,7 @@ def predict_multi_shot(
         })
 
     # Calculate BFD vs velocity curves for all shots
-    velocity_curves = generate_velocity_curves(data, material_properties, validate)
+    velocity_curves = generate_velocity_curves(data, material_properties, validate, bundle=bundle)
 
     return {
         "shot_predictions": shot_predictions,
@@ -2003,44 +2086,34 @@ def predict_multi_shot(
     }
 
 
-def predict(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float]], db_session=None) -> Dict[str, Any]:
-    metadata = load_metadata()
-
-    if not metadata:
+def predict(data: Dict[str, Any], material_properties: Dict[str, Dict[str, float]], db_session=None, bundle=None) -> Dict[str, Any]:
+    from app.services.ml.model_bundle import get_active_bundle
+    try:
+        bundle = bundle or get_active_bundle(db_session)
+    except ValueError:
         raise HTTPException(
             status_code=404,
             detail="No trained model found. Run training first.",
         )
+    metadata = bundle.metadata
 
-    X = prepare_single_input(data, material_properties, validate=True)
+    if "is_female" not in data:
+        data = {**data, "is_female": False}
+    frame = bundle.build_input_frame(
+        [data], property_overrides=material_properties or None, validate=True
+    )
+    bfd_pred = bundle.predict_frame(frame)
+    bfd_prediction = float(bfd_pred[0]) if len(bfd_pred) else None
 
-    # Load and apply preprocessor
-    preprocessor = load_preprocessor(db_session)
-    if preprocessor is None:
-        raise HTTPException(
-            status_code=500,
-            detail="Preprocessor not found. The model may have been trained with an older version. Please retrain the model.",
-        )
-
-    X_processed = preprocessor.transform(X)
+    classifier_scores = bundle.classifier_probabilities(frame)
+    perforation_probability = (
+        float(classifier_scores["perforated"][0]) if "perforated" in classifier_scores else None
+    )
+    fail_probability = (
+        float(classifier_scores["pass_fail"][0]) if "pass_fail" in classifier_scores else None
+    )
 
     metrics = metadata.get("metrics", {})
-
-    bfd_prediction = None
-    perforation_probability = None
-    fail_probability = None
-
-    bfd_model = load_model("backface_deformation_mm", db_session)
-    if bfd_model is not None:
-        bfd_prediction = float(bfd_model.predict(X_processed)[0])
-
-    perforation_model = load_model("perforated", db_session)
-    if perforation_model is not None:
-        perforation_probability = float(perforation_model.predict_proba(X_processed)[0, 1])
-
-    fail_model = load_model("pass_fail", db_session)
-    if fail_model is not None:
-        fail_probability = float(fail_model.predict_proba(X_processed)[0, 1])
 
     bfd_metric = metrics.get("backface_deformation_mm_regression", {})
     bfd_mae = bfd_metric.get("mae") if isinstance(bfd_metric, dict) else None
@@ -2187,25 +2260,18 @@ def evaluate_model_on_test_sessions(
         Dictionary with vest-level averages and point-level data for graphing
     """
     from app.services.ml.data_fetcher import fetch_training_data, fetch_material_properties
-    
-    # Load the specified version if provided
-    if version:
-        load_model_version(version, db_session=db_session)
-    
-    # Load model metadata
-    metadata = load_metadata()
-    if not metadata:
-        raise ValueError("No trained model found. Run training first.")
-    
-    # Load preprocessor and model
-    preprocessor = load_preprocessor()
-    if preprocessor is None:
-        raise ValueError("Preprocessor not found. Please retrain the model.")
-    
-    bfd_model = load_model("backface_deformation_mm")
-    if bfd_model is None:
+    from app.services.ml.model_bundle import get_model_bundle, get_active_bundle
+
+    # Resolve the model as an immutable bundle — no shared-file mutation.
+    try:
+        bundle = get_model_bundle(version, db_session=db_session) if version else get_active_bundle(db_session)
+    except ValueError as e:
+        raise ValueError(str(e))
+    metadata = bundle.metadata
+
+    if bundle.bfd_artifact is None:
         raise ValueError("BFD model not found.")
-    
+
     # Fetch material properties
     material_properties = fetch_material_properties(db_session)
     
@@ -2244,59 +2310,9 @@ def evaluate_model_on_test_sessions(
             "message": "No test data found matching protocol filter"
         }
     
-    # Get feature_toggles from metadata (saved during training)
-    feature_toggles = metadata.get("feature_toggles", None)
-    
-    # Apply the same feature engineering as training
-    df_features = add_engineered_features(df, material_properties, validate=False, feature_toggles=feature_toggles)
-    
-    # Get feature columns from metadata
-    feature_columns = metadata.get("feature_columns", [])
-    
-    # Categorical feature names (same set as training)
-    categorical_feature_names = {
-        "vest_composition", "ammunition_used", "threat_level", "condition",
-        "panel_side", "weave_type", "material_type", "vest_type", "ply_orientations",
-        "geometry_name", "primary_weave_type",
-        "composition_sequence", "composition_first_material",
-        "composition_second_material", "composition_penultimate_material",
-        "composition_last_material",
-    }
-    for mat_name in material_properties:
-        prefix = mat_name.lower().replace(" ", "_").replace("-", "_")
-        categorical_feature_names.add(f"composition_material_class_{prefix}")
-    
-    # Select only the feature columns used during training
-    if feature_columns:
-        for col in feature_columns:
-            if col not in df_features.columns:
-                if col in categorical_feature_names:
-                    df_features[col] = "unknown"
-                else:
-                    df_features[col] = np.nan
-        df_features = df_features[feature_columns]
-    
-    # Fill categorical columns
-    for col in df_features.columns:
-        if col in categorical_feature_names:
-            df_features[col] = df_features[col].fillna("unknown").astype(str)
-    
-    # Fill missing values
-    df_features = fill_missing_features(df_features)
-    
-    # Handle model dict structure
-    if isinstance(bfd_model, dict):
-        actual_model = bfd_model["model"]
-        use_log_transform = bfd_model.get("use_log_transform", False)
-    else:
-        actual_model = bfd_model
-        use_log_transform = False
-    
-    # Batch predict
-    X_processed = preprocessor.transform(df_features)
-    predictions = actual_model.predict(X_processed)
-    if use_log_transform:
-        predictions = np.expm1(predictions)
+    # Contract-aligned, batch-invariant features (fitted imputer handles NaN)
+    df_features = bundle.build_input_frame(df, property_overrides=material_properties)
+    predictions = bundle.predict_frame(df_features)
     
     # Calculate errors per shot
     vest_errors = {}
@@ -2387,35 +2403,9 @@ def evaluate_model_on_test_sessions(
         
         anchor_df, anchor_metadata = fetch_anchor_points_as_training_data(db_session)
         if not anchor_df.empty:
-            # Batch predict all anchor points at once
-            anchor_input_df = anchor_df.copy()
-            anchor_input_df = add_engineered_features(anchor_input_df, material_properties, validate=False, feature_toggles=feature_toggles)
-
-            if feature_columns:
-                # Add missing columns with defaults
-                for col in feature_columns:
-                    if col not in anchor_input_df.columns:
-                        if col in categorical_feature_names:
-                            anchor_input_df[col] = "unknown"
-                        else:
-                            anchor_input_df[col] = np.nan
-                
-                # Only select columns that exist (defensive)
-                existing_cols = [col for col in feature_columns if col in anchor_input_df.columns]
-                missing_cols = set(feature_columns) - set(existing_cols)
-                if missing_cols:
-                    pass
-                anchor_input_df = anchor_input_df[existing_cols]
-
-            for col in anchor_input_df.columns:
-                if col in categorical_feature_names:
-                    anchor_input_df[col] = anchor_input_df[col].fillna("unknown").astype(str)
-
-            anchor_input_df = fill_missing_features(anchor_input_df)
-            X_anchor = preprocessor.transform(anchor_input_df)
-            anchor_predictions = actual_model.predict(X_anchor)
-            if use_log_transform:
-                anchor_predictions = np.expm1(anchor_predictions)
+            # Contract-aligned, batch-invariant features via the bundle
+            anchor_input_df = bundle.build_input_frame(anchor_df, property_overrides=material_properties)
+            anchor_predictions = bundle.predict_frame(anchor_input_df)
 
             for i, (_, row) in enumerate(anchor_df.iterrows()):
                 actual_bfd = row.get('backface_deformation_mm')
@@ -2462,12 +2452,20 @@ def evaluate_model_on_test_sessions(
         anchor_avg_error = 0
         anchor_point_material_averages = []
     
+    metrics_meta = metadata.get("metrics") or {}
+    holdout_metrics = {
+        k: v.get("holdout") for k, v in metrics_meta.items()
+        if isinstance(v, dict) and v.get("holdout")
+    }
+
     return {
         "vest_averages": vest_averages,
         "point_data": point_data,
         "total_points": len(point_data),
         "model_version": metadata.get("version"),
         "model_name": metadata.get("model_name"),
+        "evaluation": "in_sample",  # this eval predicts the same rows the model trained on
+        "holdout_metrics": holdout_metrics or None,  # grouped-vest holdout from training, the honest number
         "overall_average_error": overall_average_error,
         "anchor_point_average_error": anchor_avg_error,
         "anchor_point_count": len(anchor_point_errors),
