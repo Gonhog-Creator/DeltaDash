@@ -48,6 +48,24 @@ router = APIRouter()
 # Global dictionary to track restore progress
 restore_progress: Dict[str, dict] = {}
 
+
+def _all_storage_dirs() -> List[str]:
+    """Every file-storage directory the app uses — must be backed up and restored."""
+    return [
+        settings.material_docs_dir,
+        settings.upload_dir,
+        settings.geometry_docs_dir,
+        settings.geometry_images_dir,
+        settings.reports_dir,
+        settings.model_artifacts_dir,
+        settings.model_docs_dir,
+        settings.pliego_docs_dir,
+        settings.cover_docs_dir,
+        settings.cover_images_dir,
+        settings.test_session_docs_dir,
+        settings.test_session_images_dir,
+    ]
+
 # Pydantic models for sync confirmation
 class FieldChange(BaseModel):
     field: str
@@ -2207,12 +2225,7 @@ def create_backup(
                     raise HTTPException(status_code=500, detail=f"Database dump failed: {stderr}")
 
             # Add storage files to the zip
-            storage_dirs = [
-                settings.material_docs_dir,
-                settings.upload_dir,
-                settings.reports_dir,
-                settings.model_artifacts_dir
-            ]
+            storage_dirs = _all_storage_dirs()
             
             # Exclude backups directory from backup to prevent exponential growth
             backup_dir = os.path.join(settings.upload_dir, 'backups')
@@ -2551,12 +2564,7 @@ def perform_restore(task_id: str, backup_path: str, temp_dir: str):
                     return
         
         # Restore storage files
-        storage_dirs = [
-            settings.material_docs_dir,
-            settings.upload_dir,
-            settings.reports_dir,
-            settings.model_artifacts_dir
-        ]
+        storage_dirs = _all_storage_dirs()
         
         for i, storage_dir in enumerate(storage_dirs):
             os.makedirs(storage_dir, exist_ok=True)

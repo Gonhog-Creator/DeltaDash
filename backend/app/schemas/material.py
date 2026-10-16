@@ -18,6 +18,7 @@ class MaterialBase(BaseModel):
     ply_count: Optional[int] = None
     ply_orientations: Optional[List[Decimal]] = None
     areal_density_g_m2: Optional[Decimal] = Field(None, ge=0)
+    areal_density_tolerance: Optional[str] = None
     thickness_mm: Optional[Decimal] = Field(None, ge=0)
     thickness_tolerance_mm: Optional[str] = None
     density_g_cm3: Optional[Decimal] = Field(None, ge=0)
@@ -60,6 +61,7 @@ class MaterialUpdate(BaseModel):
     ply_count: Optional[int] = None
     ply_orientations: Optional[List[Decimal]] = None
     areal_density_g_m2: Optional[Decimal] = Field(None, ge=0)
+    areal_density_tolerance: Optional[str] = None
     thickness_mm: Optional[Decimal] = Field(None, ge=0)
     thickness_tolerance_mm: Optional[str] = None
     density_g_cm3: Optional[Decimal] = Field(None, ge=0)
@@ -98,6 +100,17 @@ class Material(MaterialInDB):
     pass
 
 
+class MaterialDocument(BaseModel):
+    id: UUID
+    material_id: Optional[UUID] = None
+    document_type: Optional[str] = None
+    original_filename: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class MaterialListItem(BaseModel):
     id: UUID
     name: str
@@ -106,7 +119,9 @@ class MaterialListItem(BaseModel):
     ply_count: Optional[int] = None
     ply_orientations: Optional[List[Decimal]] = None
     areal_density_g_m2: Optional[Decimal]
+    areal_density_tolerance: Optional[str] = None
     thickness_mm: Optional[Decimal]
+    thickness_tolerance_mm: Optional[str] = None
     elongation_longitudinal_percent: Optional[Decimal] = None
     elongation_longitudinal_error_percent: Optional[Decimal] = None
     force_longitudinal_newtons: Optional[Decimal] = None
@@ -120,6 +135,8 @@ class MaterialListItem(BaseModel):
     created_by_username: Optional[str]
     mss_file_path: Optional[str]
     sds_file_path: Optional[str]
+    mss_file_exists: Optional[bool] = None
+    sds_file_exists: Optional[bool] = None
     mss_original_filename: Optional[str] = None
     sds_original_filename: Optional[str] = None
     fabric_composition_ids: Optional[List[str]] = None

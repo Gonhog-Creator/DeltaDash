@@ -173,6 +173,28 @@ export function OfficialCertifications() {
       alert('Failed to download PDF. Please try again.');
     }
   };
+
+  const handleExcelDownload = async (sessionId: string, excelFilePath?: string | null) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(testSessionsApi.downloadExcel(sessionId), {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!response.ok) throw new Error('Failed to download excel file');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = excelFilePath ? excelFilePath.split('/').pop()! : 'data.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download excel file:', err);
+      alert('Failed to download excel file. Please try again.');
+    }
+  };
   useEffect(() => {
     if (defaultGeometryId && !selectedBulkGeometryId && showBulkUpload) {
       setSelectedBulkGeometryId(defaultGeometryId);
@@ -617,10 +639,35 @@ export function OfficialCertifications() {
                   <td className="px-2 py-2 whitespace-nowrap text-sm text-gray-500 max-w-32 truncate">{children.length > 0 ? totalShotCount : '-'}</td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{parent.certification_number || '-'}</td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
-                    {role !== 'viewer' && (
-                      parent.excel_file_path ? (
-                        <span className="text-green-600">Uploaded</span>
+                    {parent.excel_file_path ? (
+                      parent.excel_file_exists === false ? (
+                        <>
+                          <span className="text-red-600 mr-2" title={`File missing on server: ${parent.excel_file_path}`}>Missing</span>
+                          {role !== 'viewer' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setUploadTarget(parent);
+                              }}
+                              className="text-indigo-600 hover:text-indigo-900"
+                            >
+                              Upload
+                            </button>
+                          )}
+                        </>
                       ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExcelDownload(parent.id, parent.excel_file_path);
+                          }}
+                          className="text-indigo-600 hover:text-indigo-900"
+                        >
+                          Download
+                        </button>
+                      )
+                    ) : (
+                      role !== 'viewer' ? (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -630,11 +677,6 @@ export function OfficialCertifications() {
                         >
                           Upload
                         </button>
-                      )
-                    )}
-                    {role === 'viewer' && (
-                      parent.excel_file_path ? (
-                        <span className="text-green-600">Uploaded</span>
                       ) : '-'
                     )}
                   </td>

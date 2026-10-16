@@ -32,34 +32,33 @@ from app.db.models import (
 )
 
 
-_SYMMETRIC_TOL_RE = re.compile(r"^\s*[±+]?\s*(\d+(?:\.\d+)?)\s*(%|mm)?\s*$")
-_ASYMMETRIC_TOL_RE = re.compile(
-    r"^\s*\+?\s*(\d+(?:\.\d+)?)\s*(mm)?\s*/\s*-?\s*(\d+(?:\.\d+)?)\s*(%|mm)?\s*$"
-)
+def _tolerance_bounds(tol_raw: Any, nominal: Optional[float], unit: str) -> Optional[Tuple[float, float]]:
+    """Parse a free-text material tolerance into (lower, upper) bounds.
 
-
-def _tolerance_bounds(tol_raw: Any, nominal: Optional[float]) -> Optional[Tuple[float, float]]:
-    """Parse a free-text material thickness tolerance into (lower, upper) bounds.
-
-    Supported forms: '±0.02', '0.02', '0.02 mm' (absolute mm offset),
+    Supported forms: '±0.02', '0.02', '0.02 mm' (absolute offset in `unit`),
     '5%' / '±5%' (relative to nominal), and '+0.02/-0.03' (asymmetric).
     Returns None when the value is missing or unparseable.
     """
     if not tol_raw or nominal is None or nominal <= 0:
         return None
     s = str(tol_raw).strip()
+    unit_lit = re.escape(unit)
+    symmetric = re.compile(rf"^\s*[±+]?\s*(\d+(?:\.\d+)?)\s*(%|{unit_lit})?\s*$")
+    asymmetric = re.compile(
+        rf"^\s*\+?\s*(\d+(?:\.\d+)?)\s*/\s*-?\s*(\d+(?:\.\d+)?)\s*(%|{unit_lit})?\s*$"
+    )
 
     floor = nominal * 0.01  # keep bounds physically positive
 
-    m = _ASYMMETRIC_TOL_RE.match(s)
+    m = asymmetric.match(s)
     if m:
-        plus, _, minus, unit = float(m.group(1)), m.group(2), float(m.group(3)), m.group(4)
+        plus, minus, unit = float(m.group(1)), float(m.group(2)), m.group(3)
         if unit == "%":
             return (max(nominal * (1 - minus / 100.0), floor),
                     nominal * (1 + plus / 100.0))
         return (max(nominal - minus, floor), nominal + plus)
 
-    m = _SYMMETRIC_TOL_RE.match(s)
+    m = symmetric.match(s)
     if m:
         val, unit = float(m.group(1)), m.group(2)
         offset = nominal * val / 100.0 if unit == "%" else val
@@ -90,6 +89,12 @@ SIMULATED_PROPERTIES = [
     ("breaking_force_n_per_cm", "longitudinal", "N/cm"),
     ("breaking_force_n_per_cm", "transverse", "N/cm"),
 ]
+
+# material catalog column holding a free-text tolerance for a property
+CATALOG_TOLERANCE = {
+    "thickness_mm": "thickness_tolerance_mm",
+    "areal_density_g_m2": "areal_density_tolerance",
+}
 
 # catalog column used as nominal for each simulated property
 CATALOG_NOMINAL = {
@@ -183,6 +188,12 @@ def resolve_design_distributions(db: Session, vest: Vest) -> ResolutionResult:
             )
             dist_row = _latest_effective_distribution(db, mat.id, property_key, direction)
 
+            tol_field = CATALOG_TOLERANCE.get(property_key)
+            tol_bounds = (
+                _tolerance_bounds(getattr(mat, tol_field, None), nominal, unit)
+                if tol_field and nominal is not None else None
+            )
+
             var_key = f"{mat.name}|{property_key}|{direction}"
             trace_entry: Dict[str, Any] = {
                 "variable": var_key,
@@ -237,13 +248,12 @@ def resolve_design_distributions(db: Session, vest: Vest) -> ResolutionResult:
                                            "c": ref}}
                     provenance = "spec_window"
                     basis = "specification limits"
-                elif (property_key == "thickness_mm" and nominal is not None
-                      and _tolerance_bounds(mat.thickness_tolerance_mm, nominal) is not None):
-                    lo, hi = _tolerance_bounds(mat.thickness_tolerance_mm, nominal)
+                elif nominal is not None and tol_bounds is not None:
+                    lo, hi = tol_bounds
                     spec = {"family": "triangular",
                             "parameters": {"a": lo, "b": hi, "c": nominal}}
                     provenance = "spec_window"
-                    basis = "material thickness tolerance field"
+                    basis = f"material {tol_field} tolerance"
                 elif nominal is not None:
                     # missing tolerance -> labeled assumed default + warning
                     lo = nominal * (1 - DEFAULT_ASSUMED_REL_TOLERANCE)

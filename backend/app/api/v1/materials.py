@@ -11,7 +11,7 @@ from app.db.models import Material as MaterialModel
 from app.db.models.material_document import MaterialDocument as MaterialDocumentModel
 from app.db.models.user import User as UserModel
 from app.api.v1.auth import get_current_active_user, require_write_access
-from app.schemas.material import MaterialCreate, MaterialUpdate, Material as MaterialSchema, MaterialListItem
+from app.schemas.material import MaterialCreate, MaterialUpdate, Material as MaterialSchema, MaterialListItem, MaterialDocument as MaterialDocumentSchema
 from app.core.config import settings
 from app.services.audit import log_action, serialize_model
 
@@ -35,6 +35,11 @@ def list_materials(
         query = query.filter(MaterialModel.manufacturer.ilike(f"%{manufacturer}%"))
 
     materials = query.order_by(MaterialModel.name).offset(skip).limit(limit).all()
+    for m in materials:
+        m.mss_file_exists = bool(m.mss_file_path) and os.path.exists(
+            os.path.join(settings.material_docs_dir, m.mss_file_path))
+        m.sds_file_exists = bool(m.sds_file_path) and os.path.exists(
+            os.path.join(settings.material_docs_dir, m.sds_file_path))
     return materials
 
 
@@ -69,6 +74,7 @@ def create_material(
         'material_class': material_class,
         'manufacturer': manufacturer,
         'areal_density_g_m2': areal_density_g_m2,
+        'areal_density_tolerance': areal_density_tolerance,
         'thickness_mm': thickness_mm,
         'thickness_tolerance_mm': thickness_tolerance_mm,
         'material_function': material_function,
@@ -392,3 +398,77 @@ def download_material_document(
         raise HTTPException(status_code=404, detail="File not found on disk")
 
     return FileResponse(full_path, filename=doc.original_filename)
+
+
+@router.get("/{material_id}/documents", response_model=List[MaterialDocumentSchema])
+def list_material_documents(
+    material_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user)
+):
+    material = db.query(MaterialModel).filter(MaterialModel.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material not found")
+    return (
+        db.query(MaterialDocumentModel)
+        .filter(MaterialDocumentModel.material_id == material_id)
+        .order_by(MaterialDocumentModel.created_at.desc())
+        .all()
+    )
+
+
+@router.post("/{material_id}/documents", response_model=MaterialDocumentSchema, status_code=status.HTTP_201_CREATED)
+def upload_material_document(
+    material_id: str,
+    file: UploadFile = File(...),
+    document_type: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access)
+):
+    material = db.query(MaterialModel).filter(MaterialModel.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material not found")
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File must have a filename")
+
+    stored_filename = f"{uuid.uuid4().hex}_{file.filename}"
+    full_path = os.path.join(settings.material_docs_dir, stored_filename)
+    with open(full_path, 'wb') as f:
+        f.write(file.file.read())
+
+    doc = MaterialDocumentModel(
+        material_id=material_id,
+        document_type=document_type,
+        original_filename=file.filename,
+        stored_path=stored_filename,
+        uploaded_by=current_user.id,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    log_action(db, current_user, "upload", "material_document", doc.id,
+               after={"material_id": str(material_id), "filename": file.filename})
+    db.commit()
+    return doc
+
+
+@router.delete("/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_material_document(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(require_write_access)
+):
+    doc = db.query(MaterialDocumentModel).filter(MaterialDocumentModel.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    full_path = os.path.join(settings.material_docs_dir, doc.stored_path)
+    if os.path.exists(full_path):
+        os.remove(full_path)
+
+    before = serialize_model(doc)
+    db.delete(doc)
+    db.commit()
+    log_action(db, current_user, "delete", "material_document", doc.id, before=before)
+    db.commit()

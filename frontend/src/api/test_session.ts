@@ -24,6 +24,7 @@ export interface TestSession {
   geometry_id: string | null;
   geometry_name: string | null;
   excel_file_path: string | null;
+  excel_file_exists?: boolean | null;
   notes: string | null;
   is_official: boolean;
   certification_number: string | null;
@@ -129,6 +130,8 @@ export const testSessionsApi = {
   },
 
   downloadPdf: (id: string, index: number) => `${API_BASE_URL}/api/v1/test-sessions/${id}/download-pdf/${index}`,
+
+  downloadExcel: (id: string) => `${API_BASE_URL}/api/v1/test-sessions/${id}/download-excel`,
 
   deletePdf: (id: string, index: number) => apiClient.delete<TestSession>(`/api/v1/test-sessions/${id}/delete-pdf/${index}`),
 

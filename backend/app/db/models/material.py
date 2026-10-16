@@ -21,6 +21,7 @@ class Material(Base):
     ply_count = Column(Integer, nullable=True)  # Number of plies in this material
     ply_orientations = Column(JSONB, nullable=True)  # Array of orientations for each ply
     areal_density_g_m2 = Column(Numeric(10, 2))
+    areal_density_tolerance = Column(String)
     thickness_mm = Column(Numeric(10, 3))
     thickness_tolerance_mm = Column(String)
     density_g_cm3 = Column(Numeric(10, 3))

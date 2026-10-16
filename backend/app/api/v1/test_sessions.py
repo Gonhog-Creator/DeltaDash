@@ -78,6 +78,8 @@ def list_test_sessions(
             "geometry_id": session.geometry_id,
             "geometry_name": geometry.name if geometry else None,
             "excel_file_path": session.excel_file_path,
+            "excel_file_exists": bool(session.excel_file_path) and os.path.exists(
+                os.path.join(settings.material_docs_dir, os.path.basename(session.excel_file_path))),
             "notes": session.notes,
             "is_official": session.is_official,
             "certification_number": session.certification_number,
@@ -1087,6 +1089,26 @@ def upload_session_pdf(
     log_action(db, current_user, "upload_pdf", "test_session", session.id, after={"filename": pdf_file.filename})
     db.commit()
     return _session_to_dict(session)
+
+
+@router.get("/{session_id}/download-excel")
+def download_session_excel(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user)
+):
+    """Download the session's shot-data spreadsheet. Refs may be /app/ absolute
+    paths or bare filenames; resolve via basename in material_docs_dir."""
+    session = db.query(TestSessionModel).filter(TestSessionModel.id == uuid.UUID(session_id)).first()
+    if not session or not session.excel_file_path:
+        raise HTTPException(status_code=404, detail="No excel file on record")
+
+    fname = os.path.basename(session.excel_file_path)
+    full_path = os.path.join(settings.material_docs_dir, fname)
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    return FileResponse(full_path, filename=fname)
 
 
 @router.get("/{session_id}/download-pdf/{doc_index}")

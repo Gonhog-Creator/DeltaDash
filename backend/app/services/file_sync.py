@@ -276,16 +276,28 @@ def sync_pliego_document_files(remote_cursor, base_url: str, token: Optional[str
 
 
 def sync_test_session_files(remote_cursor, base_url: str, token: Optional[str] = None) -> dict:
-    stats = {"pdfs_downloaded": 0, "pdfs_skipped": 0, "images_downloaded": 0, "images_skipped": 0}
+    stats = {"pdfs_downloaded": 0, "pdfs_skipped": 0, "images_downloaded": 0, "images_skipped": 0,
+             "excel_downloaded": 0, "excel_skipped": 0}
 
     try:
-        remote_cursor.execute("SELECT id, pdf_documents, front_image, back_image FROM test_sessions")
+        remote_cursor.execute("SELECT id, pdf_documents, front_image, back_image, excel_file_path FROM test_sessions")
     except Exception:
         print("[file_sync] test_sessions table not found on remote — skipping")
         return stats
 
     for row in remote_cursor.fetchall():
         session_id = str(row[0])
+
+        # Sync the shot-data excel (requires download-excel endpoint on remote)
+        excel_path = row[4]
+        if excel_path:
+            dest = os.path.join(settings.material_docs_dir, os.path.basename(excel_path))
+            if os.path.exists(dest):
+                stats["excel_skipped"] += 1
+            else:
+                url = f"{base_url}/api/v1/test-sessions/{session_id}/download-excel"
+                if _download_to(url, dest, token):
+                    stats["excel_downloaded"] += 1
 
         # Sync PDFs (array)
         raw_pdfs = row[1]

@@ -14,6 +14,7 @@ export interface Material {
   ply_count: number | null;
   ply_orientations: number[] | null;
   areal_density_g_m2: number | null;
+  areal_density_tolerance: string | null;
   thickness_mm: number | null;
   thickness_tolerance_mm: string | null;
   density_g_cm3: number | null;
@@ -32,6 +33,8 @@ export interface Material {
   created_by_username: string | null;
   mss_file_path: string | null;
   sds_file_path: string | null;
+  mss_file_exists?: boolean | null;
+  sds_file_exists?: boolean | null;
   mss_original_filename: string | null;
   sds_original_filename: string | null;
   notes: string | null;
@@ -56,6 +59,7 @@ export interface MaterialCreate {
   ply_count?: number | null;
   ply_orientations?: number[] | null;
   areal_density_g_m2?: number | null;
+  areal_density_tolerance?: string | null;
   thickness_mm?: number | null;
   thickness_tolerance_mm?: string | null;
   density_g_cm3?: number | null;
@@ -92,6 +96,7 @@ export interface MaterialUpdate {
   ply_count?: number | null;
   ply_orientations?: number[] | null;
   areal_density_g_m2?: number | null;
+  areal_density_tolerance?: string | null;
   thickness_mm?: number | null;
   thickness_tolerance_mm?: string | null;
   density_g_cm3?: number | null;
@@ -129,6 +134,14 @@ export interface MaterialVestUsageResponse {
   material_class: string;
   vest_usage: MaterialVestUsage[];
   total_vests: number;
+}
+
+export interface MaterialDocumentEntry {
+  id: string;
+  material_id: string | null;
+  document_type: string | null;
+  original_filename: string;
+  created_at: string;
 }
 
 export const materialsApi = {
@@ -189,6 +202,29 @@ export const materialsApi = {
     const a = document.createElement('a');
     a.href = url;
     a.download = originalFilename || `${fileType.toUpperCase()}_file`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  },
+
+  getDocuments: (id: string) => apiClient.get<MaterialDocumentEntry[]>(`/api/v1/materials/${id}/documents`),
+
+  uploadDocument: (id: string, file: File, documentType?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (documentType) formData.append('document_type', documentType);
+    return apiClient.post<MaterialDocumentEntry>(`/api/v1/materials/${id}/documents`, formData);
+  },
+
+  deleteDocument: (docId: string) => apiClient.delete<void>(`/api/v1/materials/documents/${docId}`),
+
+  downloadDocument: async (docId: string, originalFilename: string) => {
+    const blob = await apiClient.downloadFile(`/api/v1/materials/documents/${docId}/download`);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = originalFilename;
     document.body.appendChild(a);
     a.click();
     a.remove();

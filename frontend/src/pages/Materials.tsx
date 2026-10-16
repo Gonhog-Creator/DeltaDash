@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMaterials, useCreateMaterial, useUpdateMaterial, useDeleteMaterial, useUploadMaterialFiles, useRemoveMaterialFile } from '../hooks/useMaterials';
-import { Material, MaterialCreate, MaterialUpdate, MaterialVestUsageResponse } from '../api/materials';
+import { Material, MaterialCreate, MaterialUpdate, MaterialVestUsageResponse, MaterialDocumentEntry } from '../api/materials';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { normalizeString } from '../utils/string';
 import { useAuth } from '../hooks/useAuth';
@@ -47,6 +47,10 @@ export function Materials() {
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
   const [vestUsage, setVestUsage] = useState<MaterialVestUsageResponse | null>(null);
+  const [materialDocs, setMaterialDocs] = useState<MaterialDocumentEntry[]>([]);
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [docType, setDocType] = useState('');
+  const [uploadingDoc, setUploadingDoc] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [loadingVestUsage, setLoadingVestUsage] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,6 +59,7 @@ export function Materials() {
     material_class: '',
     manufacturer: '',
     areal_density_g_m2: null,
+    areal_density_tolerance: null,
     thickness_mm: null,
     thickness_tolerance_mm: null,
     material_function: '',
@@ -83,7 +88,7 @@ export function Materials() {
       if (sdsFile) files.sds = sdsFile;
       await createMutation.mutateAsync({ material: formData, files });
       setShowCreateForm(false);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null, created_by_username: '' });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, areal_density_tolerance: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null, created_by_username: '' });
       setErrorInputValues({});
       setMssFile(null);
       setSdsFile(null);
@@ -125,7 +130,7 @@ export function Materials() {
       refetch();
 
       setEditingMaterial(null);
-      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null });
+      setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, areal_density_tolerance: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null });
       setErrorInputValues({});
       setMssFile(null);
       setSdsFile(null);
@@ -216,6 +221,7 @@ export function Materials() {
       material_class: material.material_class || '',
       manufacturer: material.manufacturer || '',
       areal_density_g_m2: material.areal_density_g_m2,
+      areal_density_tolerance: material.areal_density_tolerance,
       thickness_mm: material.thickness_mm,
       thickness_tolerance_mm: material.thickness_tolerance_mm,
       material_function: material.material_function || '',
@@ -243,7 +249,7 @@ export function Materials() {
 
   const cancelEdit = () => {
     setEditingMaterial(null);
-    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null });
+    setFormData({ name: '', material_class: '', manufacturer: '', areal_density_g_m2: null, areal_density_tolerance: null, thickness_mm: null, thickness_tolerance_mm: null, material_function: '', ply_count: null, ply_orientations: null, elongation_longitudinal_percent: null, elongation_longitudinal_error_percent: null, force_longitudinal_newtons: null, force_longitudinal_error_percent: null, elongation_transverse_percent: null, elongation_transverse_error_percent: null, force_transverse_newtons: null, force_transverse_error_percent: null, stretch_test_length: '5cm', fabric_composition_ids: null });
     setErrorInputValues({});
     setMssFile(null);
     setSdsFile(null);
@@ -257,8 +263,9 @@ export function Materials() {
     
     const requiredFields = [
       material.areal_density_g_m2,
+      material.areal_density_tolerance,  // sim uses this as spec window; missing -> assumed ±5%
       material.thickness_mm,
-      material.thickness_tolerance_mm,  // sim uses this as spec window; missing -> assumed ±5%
+      material.thickness_tolerance_mm,
     ];
     
     if (hasElongationFields) {
@@ -422,11 +429,45 @@ export function Materials() {
     } finally {
       setLoadingVestUsage(false);
     }
+    try {
+      const docs = await materialsApi.getDocuments(material.id);
+      setMaterialDocs(docs);
+    } catch (err) {
+      console.error('Failed to fetch material documents:', err);
+      setMaterialDocs([]);
+    }
+  };
+
+  const handleDocUpload = async () => {
+    if (!selectedMaterial || !docFile) return;
+    setUploadingDoc(true);
+    try {
+      const doc = await materialsApi.uploadDocument(selectedMaterial.id, docFile, docType || undefined);
+      setMaterialDocs(prev => [doc, ...prev]);
+      setDocFile(null);
+      setDocType('');
+    } catch (err) {
+      console.error('Failed to upload document:', err);
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+
+  const handleDocDelete = async (docId: string) => {
+    try {
+      await materialsApi.deleteDocument(docId);
+      setMaterialDocs(prev => prev.filter(d => d.id !== docId));
+    } catch (err) {
+      console.error('Failed to delete document:', err);
+    }
   };
 
   const handleCloseDetailsModal = () => {
     setSelectedMaterial(null);
     setVestUsage(null);
+    setMaterialDocs([]);
+    setDocFile(null);
+    setDocType('');
     setShowDetailsModal(false);
   };
 
@@ -529,14 +570,23 @@ export function Materials() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Areal Density (g/m²) *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={formData.areal_density_g_m2 ?? ''}
-                  onChange={(e) => setFormData({ ...formData, areal_density_g_m2: e.target.value ? parseFloat(e.target.value) : null })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={formData.areal_density_g_m2 ?? ''}
+                    onChange={(e) => setFormData({ ...formData, areal_density_g_m2: e.target.value ? parseFloat(e.target.value) : null })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                  />
+                  <input
+                    type="text"
+                    value={formData.areal_density_tolerance || ''}
+                    onChange={(e) => setFormData({ ...formData, areal_density_tolerance: e.target.value })}
+                    placeholder="±"
+                    className="mt-1 w-20 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Thickness (mm) *</label>
@@ -1016,26 +1066,34 @@ export function Materials() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   <div className="space-x-2">
                     {material.mss_file_path && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDownload(material, 'mss');
-                        }}
-                        className="text-indigo-600 hover:text-indigo-900"
-                      >
-                        MSS
-                      </button>
+                      material.mss_file_exists === false ? (
+                        <span className="text-red-600 font-medium" title={`File missing on server: ${material.mss_original_filename || ''} — re-upload to restore`}>MSS missing</span>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownload(material, 'mss');
+                          }}
+                          className="text-indigo-600 hover:text-indigo-900"
+                        >
+                          MSS
+                        </button>
+                      )
                     )}
                     {material.sds_file_path && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDownload(material, 'sds');
-                        }}
-                        className="text-indigo-600 hover:text-indigo-900"
-                      >
-                        SDS
-                      </button>
+                      material.sds_file_exists === false ? (
+                        <span className="text-red-600 font-medium" title={`File missing on server: ${material.sds_original_filename || ''} — re-upload to restore`}>SDS missing</span>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownload(material, 'sds');
+                          }}
+                          className="text-indigo-600 hover:text-indigo-900"
+                        >
+                          SDS
+                        </button>
+                      )
                     )}
                     {!material.mss_file_path && !material.sds_file_path && '-'}
                   </div>
@@ -1257,29 +1315,86 @@ export function Materials() {
             </div>
             
             {/* Documents */}
-            {(selectedMaterial.mss_file_path || selectedMaterial.sds_file_path) && (
-              <div className="mb-6">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">Documents</h4>
-                <div className="flex gap-3">
-                  {selectedMaterial.mss_file_path && (
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-gray-700 mb-3">Documents</h4>
+              <div className="flex gap-3 items-center">
+                {selectedMaterial.mss_file_path && (
+                  selectedMaterial.mss_file_exists === false ? (
+                    <span className="text-sm text-red-600" title={selectedMaterial.mss_original_filename || ''}>MSS file missing on server — re-upload to restore</span>
+                  ) : (
                     <button
                       onClick={() => materialsApi.downloadFile(selectedMaterial.id, 'mss', selectedMaterial.mss_original_filename)}
                       className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                     >
                       Download MSS
                     </button>
-                  )}
-                  {selectedMaterial.sds_file_path && (
+                  )
+                )}
+                {selectedMaterial.sds_file_path && (
+                  selectedMaterial.sds_file_exists === false ? (
+                    <span className="text-sm text-red-600" title={selectedMaterial.sds_original_filename || ''}>SDS file missing on server — re-upload to restore</span>
+                  ) : (
                     <button
                       onClick={() => materialsApi.downloadFile(selectedMaterial.id, 'sds', selectedMaterial.sds_original_filename)}
                       className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                     >
                       Download SDS
                     </button>
-                  )}
-                </div>
+                  )
+                )}
               </div>
-            )}
+              {materialDocs.length > 0 && (
+                <ul className="mt-3 divide-y divide-gray-100 text-sm">
+                  {materialDocs.map(doc => (
+                    <li key={doc.id} className="py-1.5 flex items-center justify-between gap-3">
+                      <span className="truncate text-gray-700">
+                        {doc.original_filename}
+                        {doc.document_type && <span className="ml-2 text-xs text-gray-400">({doc.document_type})</span>}
+                      </span>
+                      <span className="shrink-0 flex gap-3">
+                        <button
+                          onClick={() => materialsApi.downloadDocument(doc.id, doc.original_filename)}
+                          className="text-indigo-600 hover:text-indigo-900 text-xs font-medium"
+                        >
+                          Download
+                        </button>
+                        {canViewComplete && (
+                          <button
+                            onClick={() => handleDocDelete(doc.id)}
+                            className="text-red-600 hover:text-red-900 text-xs font-medium"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {canViewComplete && (
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    type="file"
+                    onChange={(e) => setDocFile(e.target.files?.[0] || null)}
+                    className="text-xs text-gray-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Type (e.g. spec)"
+                    value={docType}
+                    onChange={(e) => setDocType(e.target.value)}
+                    className="w-32 rounded-md border-gray-300 shadow-sm sm:text-xs border p-1.5"
+                  />
+                  <button
+                    onClick={handleDocUpload}
+                    disabled={!docFile || uploadingDoc}
+                    className="px-3 py-1.5 text-xs font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {uploadingDoc ? 'Uploading...' : 'Upload'}
+                  </button>
+                </div>
+              )}
+            </div>
             
             {/* Vest Usage */}
             <div>
