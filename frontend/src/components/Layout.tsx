@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
 import { LocationManagementModal } from './LocationManagementModal';
+import { CalculatorModal } from './CalculatorModal';
 import { useLocations, useCreateLocation, useUpdateLocation, useDeleteLocation } from '../hooks/useLocations';
 
 interface LayoutProps {
@@ -14,7 +15,20 @@ export function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const [version, setVersion] = useState<string>('1.2.0');
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
+  const [showCalculator, setShowCalculator] = useState(false);
   
+  // Global Ctrl+Alt+C shortcut opens the calculator
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey && e.code === 'KeyC') {
+        e.preventDefault();
+        setShowCalculator((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
+
   // Location management state
   const { data: locations } = useLocations();
   const createLocationMutation = useCreateLocation();
@@ -222,6 +236,8 @@ export function Layout({ children }: LayoutProps) {
           }}
         />
       )}
+
+      {showCalculator && <CalculatorModal onClose={() => setShowCalculator(false)} />}
     </div>
   );
 }
