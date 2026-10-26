@@ -1,0 +1,52 @@
+{
+  "evaluated_at": "2026-10-21T15:59:54.683827",
+  "manifest": {
+    "holdout_frac": 0.2,
+    "seed": 13,
+    "group_column": "vest_code",
+    "n_train_rows": 4203,
+    "n_val_rows": 564,
+    "n_val_groups": 2,
+    "val_groups": [
+      "MDS LIGHT II",
+      "STOP FORCE HG2"
+    ]
+  },
+  "bfd_holdout": {
+    "n": 420,
+    "mae_mm": 5.018431861614446,
+    "mape": 0.8997391052329242,
+    "bias_mm": 2.309651406508367,
+    "residual_sigma_mm": 6.3004569414509906,
+    "r": 0.7860100281326736
+  },
+  "bfd_cv": {
+    "folds": 5,
+    "mae_mm_mean": 4.604727899480699,
+    "mae_mm_std": 0.781697422548553,
+    "mape_mean": 0.47861518623464966,
+    "mape_std": 0.15614313911534278
+  },
+  "bfd_per_vest": [
+    {
+      "group": "MDS LIGHT II",
+      "n": 192,
+      "mae_mm": 2.9380830952955606,
+      "bias_mm": 2.372851456363852
+    },
+    {
+      "group": "STOP FORCE HG2",
+      "n": 228,
+      "mae_mm": 6.770304506935611,
+      "bias_mm": 2.2564303118932223
+    }
+  ],
+  "perforation_holdout": {
+    "n": 420,
+    "n_pos": 0,
+    "n_neg": 420,
+    "auc": null,
+    "brier": null,
+    "note": "insufficient class balance in holdout"
+  }
+}

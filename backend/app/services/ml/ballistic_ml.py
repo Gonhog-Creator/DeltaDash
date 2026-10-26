@@ -864,6 +864,7 @@ def train_from_dataframe(
         "test_session_id",
         "vest_code",
         "protocol",
+        "synthetic_source",
         "vest_composition",
         "composition_sequence",
         "composition_first_material",
@@ -1012,16 +1013,23 @@ def train_from_dataframe(
     classification_metrics = {}
 
     if y_classification is not None:
-        # Synthetic anchor/physics rows carry labels from the conservative
-        # membrane model, not measurements — they would dominate the positive
-        # class and poison the classifier. Classifiers train on real rows only.
+        # Physics-generated anchor rows carry labels from the conservative
+        # membrane model — they dominated the positive class and poisoned the
+        # classifier. Hand-authored anchors (curated boundary cases) and real
+        # rows are kept; physics rows are excluded.
         real_row_mask = df["vest_code"].notna() if "vest_code" in df.columns else None
+        authored_anchor_mask = (
+            (df["synthetic_source"] == "anchor")
+            if "synthetic_source" in df.columns else None
+        )
 
         for target in available_classification_targets:
             y = y_classification[target]
             valid_idx = y.notna()
             if real_row_mask is not None:
                 valid_idx &= real_row_mask
+            if authored_anchor_mask is not None:
+                valid_idx |= (y.notna() & authored_anchor_mask)
             X_valid = X[valid_idx]
             y_valid = y[valid_idx]
 

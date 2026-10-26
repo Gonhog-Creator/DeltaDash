@@ -62,7 +62,7 @@ Synthetic rows make up approximately **51.5%** of NPOptimized-6's recorded input
 | `test_sessions` | 267 | Parent/child sessions must be grouped for validation |
 | `vests` | 40 | Catalog/design identifiers are not unique manufactured specimens |
 | `vest_layers` | 129 | Provides ordered material/count relationships |
-| `materials` | 27 | Catalog properties, not a lot measurement history |
+| `materials` | 27 | Catalog properties, not a specimen measurement history |
 | Materials with tensile strength in MPa | **0** | No trained within-material MPa strength sensitivity can be established |
 | Materials with modulus in GPa | **0** | Same limitation for modulus |
 | Materials with thickness tolerance | **0** | Thickness spec bounds must be supplied/recovered |
@@ -79,7 +79,7 @@ Only 14 shot records have qualitative result text: 13 `OK` and one `PERFORO`; 2,
 
 ### 2.4 New and useful information in the scanned material reports
 
-Reports OT 30174, OT 300175, OT 30176, OT 30177, and OT 30178 contain five coupon measurements per direction, grammage measurements, and reported mean/standard deviation. Page 1 has tensile/elongation data; page 2 has tear measurements and notes. The supplied workbook files contain ballistic test results, not a lot-linked manufacturing property history.
+Reports OT 30174, OT 300175, OT 30176, OT 30177, and OT 30178 contain five coupon measurements per direction, grammage measurements, and reported mean/standard deviation. Page 1 has tensile/elongation data; page 2 has tear measurements and notes. The supplied workbook files contain ballistic test results, not a specimen-linked manufacturing property history.
 
 **Confirmed semantic mismatch:** database columns named `force_*_error_percent` contain values matching the reports' absolute standard deviations in N/cm, rather than percentages. For example, CS-3041 has longitudinal mean 1,593.6 N/cm, SD 81.2 N/cm, and the database's percent-named column stores `81.2`. Its relative SD is approximately `100 * 81.2 / 1593.6 = 5.095%`.
 
@@ -95,7 +95,7 @@ The database stores the corresponding mean breaking loads in newtons as 2.5 time
 
 Likewise, an elongation SD such as 0.7 accompanying a mean elongation of 8.8% is 0.7 percentage points, unless the source explicitly says relative percent error. It is not automatically 0.7% of 8.8.
 
-Five coupons from one submitted sample are useful local variation evidence. They cannot establish between-roll variation, lot-to-lot correlation, or one-in-a-thousand tails. The reports do not supply an explicit lot/roll-to-tested-panel linkage. Matching coupon index numbers across directions is not proof that longitudinal and transverse measurements are paired observations.
+Five coupons from one submitted sample are useful local variation evidence. They cannot establish between-unit variation, unit-to-unit correlation, or one-in-a-thousand tails. The reports do not supply an explicit measurement-to-tested-panel linkage. Matching coupon index numbers across directions is not proof that longitudinal and transverse measurements are paired observations.
 
 ### 2.5 Offline replay and sensitivity checks
 
@@ -116,7 +116,7 @@ Existing catalog values also changed since the model snapshot. FLEX_KS3000's sna
 
 Exploratory −2.5% perturbation of all available directional breaking-force means changed 1,367/1,811 predictions. −2.5% thickness changed 1,810/1,811. A tensile-strength perturbation changed **0/1,811**, including no change to the feature matrix, because MPa values were missing. +2.5% velocity changed 1,785/1,811 predictions. These are sensitivity checks across mixed historical records, **not in-spec simulations**: actual property bounds were unavailable, and the velocity perturbation can exceed protocol windows.
 
-The force decrease and velocity increase both reduced average predicted BFD in these mixed-record checks. That is a reason to examine model response and conditional support; it is not a physical conclusion that weaker armor or faster bullets are safer. A tree model can respond to features as catalog/design proxies, and local steps or cross-material associations are not a measured within-roll response law.
+The force decrease and velocity increase both reduced average predicted BFD in these mixed-record checks. That is a reason to examine model response and conditional support; it is not a physical conclusion that weaker armor or faster bullets are safer. A tree model can respond to features as catalog/design proxies, and local steps or cross-material associations are not a measured within-material response law.
 
 ## 3. Repository map and required corrections
 
@@ -133,7 +133,7 @@ Use the main application's paths below. A second pipeline exists under `backend/
 | Analytics UI | `frontend/src/pages/Analytics.tsx` | Add a probability view using existing Plotly |
 | Model UI | `frontend/src/pages/ModelTraining.tsx` | Separate training-fit, replay, and independent-validation metrics |
 | Protocol/material UI | `frontend/src/pages/Protocols.tsx`, `Materials.tsx` | Bounds, units, source type, and data-readiness controls |
-| Existing schema | `backend/app/db/models/` | Add explicit specimen/lot measurements and simulation tables |
+| Existing schema | `backend/app/db/models/` | Add explicit specimen measurements and simulation tables |
 | Migrations | `backend/migrations/versions/` | Additive migrations with provenance-preserving backfill |
 | Earlier platform specification | `ballistic_analytics_platform_spec.md` | Already calls for uncertainty/penetration separation; treat as design intent, not completed capability |
 
@@ -145,7 +145,7 @@ Use the main application's paths below. A second pipeline exists under `backend/
 4. **Training/inference parity:** `prepare_single_input()` does not pass the saved feature toggles to engineering, and its categorical-default list omits composition sequence/name features used in training. Missing-value filling can depend on the current prediction batch's median. Use the fitted training imputer; inference of a row must not change when unrelated rows are added to its batch. Test all derived fields, not only final feature count.
 5. **Model selection:** `load_model_version()` writes shared current artifact files/metadata. Concurrent requests can mix models. Replace prediction-time activation with immutable in-memory bundles resolved by version. Pass metadata, feature toggles, material snapshots, preprocessor, regressor, classifiers, calibration, and hashes explicitly. Do not replace production artifacts while loading a version for simulation.
 6. **Calibration/evaluation:** stored training error, training-set health checks, and synthetic anchor scores must not supply probability distributions or tail confidence. Generate real grouped out-of-sample residuals and evaluation manifests.
-7. **Spec/property linkage:** populate identified material limits and as-tested lot/roll measurements. A strength variable absent from training cannot become learned merely by adding a slider or turning a feature toggle on.
+7. **Spec/property linkage:** populate identified material limits and as-tested specimen measurements. A strength variable absent from training cannot become learned merely by adding a slider or turning a feature toggle on.
 8. **Joint outcomes:** keep penetration separate from numerical BFD. Do not make penetration zero millimeters or turn a raw classifier score into calibrated risk. The current `perforation_probability > 0.9` display suppression is a UI heuristic, not the probabilistic definition.
 9. **Identity/support:** match ammunition by stable projectile identity; handle old names/aliases with a documented mapping, not fuzzy guesses or a caliber dictionary that overwrites multiple projectile types. Reconcile candidate duplicate imports. Keep IDs for splitting while excluding them from predictors.
 10. **Protocol interpretation:** database velocity windows are stored configuration. Require a versioned interpretation of lower/upper accepted velocities, angles, shot patterns, conditioning, and decision rules. Some levels have no configuration; a “± window” must not be inferred where the rule is one-sided. Do not silently treat the stored window as a velocity SD or a certification rule.
@@ -169,7 +169,7 @@ With three independent factors, this event has probability `0.05^3 = 0.000125`: 
 
 Alternatively define a physical band, such as the bottom 0.25% of a property's allowed numeric range. Display the event inequalities and units. A percentile band and a specification-range band are different events.
 
-Never multiply the per-layer tail probabilities when layers come from the same roll. A roll-level weakness can affect every layer together; fixed counts do not remove common material variation.
+Never multiply the per-layer tail probabilities when layers share a correlated property draw. A shared material weakness can affect every layer together; fixed counts do not remove common material variation.
 
 ### 4.2 Minimum outputs, separately named
 
@@ -208,7 +208,7 @@ For a common marginal probability `p`, the expected number among 1,000 is `1000*
 P(at least one) = 1 - (1 - p)^1000
 ```
 
-For 1,000 units from shared production lots, the expected count still follows linearity of expectation, but the binomial count interval and the formula above generally fail. Draw shared lot effects once per lot, then generate units within it. Integrate the conditional count distribution or simulate replicate lots of 1,000. For varying independent `p_i`, use a Poisson-binomial count model, not a single binomial by default.
+When units share specified correlated factors, the expected count still follows linearity of expectation, but the binomial count interval and the formula above generally fail. Draw shared factors once per group, then generate units within it. For varying independent `p_i`, use a Poisson-binomial count model, not a single binomial by default.
 
 Keep these three types of uncertainty separate in API/UI:
 
@@ -227,12 +227,8 @@ Use UUIDs, existing timestamps/authentication, Alembic conventions, foreign keys
 Add:
 
 ```text
-material_lots
-  id, material_id, supplier_lot_code, received_at, source_document_id
-material_rolls
-  id, material_lot_id, supplier_roll_code
 material_property_measurements
-  id, material_id, lot_id, roll_id, coupon_id, specimen_position
+  id, material_id, coupon_id, specimen_position
   property_key, direction, value, unit, measured_at, method
   specimen_width_mm, gauge_length_mm, test_temperature_c
   measurement_uncertainty, uncertainty_kind, coverage_factor
@@ -248,7 +244,7 @@ Suggested keys: `breaking_force_n_per_cm`, `tensile_strength_mpa`, `thickness_mm
 
 Migrate raw coupon rows from the five reports, not just their means. Store the report's mean and SD as reported summary evidence or derive them reproducibly from the rows. Check sample-SD convention and rounding; do not silently substitute population SD. Keep nominal catalog properties separate from sample averages and approved bounds.
 
-Add `material_property_distributions` with: property/spec reference, population scope (`lot`, `roll`, `coupon`), family, parameters, latent correlation group, measured-versus-assumed provenance, measurement IDs, accepted/pre-QC population, fit diagnostics, sample/group counts, effective dates, version/hash, and approval metadata.
+Add `material_property_distributions` with: property/spec reference, population scope (`accepted_units` or another labeled population), family, parameters, latent correlation group, measured-versus-assumed provenance, measurement IDs, accepted/pre-QC population, fit diagnostics, sample/group counts, effective dates, version/hash, and approval metadata.
 
 **Allowed distribution families:** measured empirical bootstrap, fitted normal, truncated normal, lognormal, bounded uniform, triangular, constant. Assumed distributions must remain visibly labeled. Never infer SD as tolerance/3 or infer a relative percent SD from an ambiguous `error_percent` column.
 
@@ -259,9 +255,8 @@ Reuse/populate `armor_panels` if it can represent unique specimens; otherwise ad
 ```text
 test_specimen_id: unique physical panel identity
 manufactured_unit_id / serial_number: unique vest identity where available
-production_lot_id
 panel_layer_material_assignments:
-  panel_id, layer_start, layer_end, material_id, material_lot_id, roll_id
+  panel_id, layer_start, layer_end, material_id
 as_tested_property_snapshots:
   panel_id, property_key, material_id, direction, value, unit
   measurement_ids, aggregation_method, source_quality
@@ -329,24 +324,22 @@ Do not independently clip each sampled value to a limit. Clipping manufactures p
 Start with shared latent factors:
 
 ```text
-material lot -> roll -> panel/local material positions
-production lot -> unit construction -> matched front/back panels
-test session -> ammunition lot / velocity bias / backing calibration
+material -> unit (vest/panel) -> local layer positions
+test session -> velocity bias / backing calibration
 shot -> residual velocity / local placement / outcome residual
 ```
 
-For a scalar property on a layer cut from roll r:
+For a scalar property on a layer within unit u:
 
 ```text
 property(layer) = reference
-                + lot effect
-                + roll effect
+                + shared material effect
                 + local effect
 ```
 
-Use measured variance components where possible. If only a single coupon sample exists, between-lot/roll components remain unknown. Expose dependency assumptions as scenarios; do not fit unidentifiable components to create false precision. Avoid assigning the entire coupon SD separately to lot, roll, and local components, which would triple-count variance.
+Use measured variance components where possible. If only a single coupon sample exists, shared-versus-local components remain unknown. Expose dependency assumptions as scenarios; do not fit unidentifiable components to create false precision. Avoid assigning the entire coupon SD separately to shared and local components, which would double-count variance.
 
-At minimum, share each sampled roll-level property across all layers assigned to that roll. A material-name dictionary override can support one shared value per material in an exploratory first version; it cannot represent several rolls of the same material or layer-local measurements. Production implementation must use material/lot/roll assignment IDs, not only names.
+At minimum, share each sampled material-level property across all layers of that material within a unit. A material-name dictionary override supports one shared value per material; it cannot represent several distinct batches of the same material or layer-local measurements. If distinct batches ever matter, use explicit assignment/group IDs rather than names alone.
 
 Sample source physical properties once, then derive stack properties. With `n_i` fixed:
 
@@ -358,7 +351,7 @@ effective density (g/cm³) = total_areal_density_kg_m² / total_thickness_mm
 
 Do not sample thickness, grammage, derived density, stack mass, and stack thickness independently if they describe the same underlying state. Preserve mechanical direction/orientation and ordered layer blocks. Where a learned feature aggregate requires weighting, use the exact versioned contract; propose physically improved aggregates only in newly retrained versions.
 
-Velocity can have a session/ammunition-lot bias plus shot variation. Protocol angle, side, conditioning, and shot number normally follow the exposure plan rather than a distribution chosen from the historical dataset. Include measured angle/location variation only where both an allowed range and model support exist.
+Velocity can have a session-level bias plus shot variation. Protocol angle, side, conditioning, and shot number normally follow the exposure plan rather than a distribution chosen from the historical dataset. Include measured angle/location variation only where both an allowed range and model support exist.
 
 ### 6.3 Correlated bounded sampling
 
@@ -371,7 +364,7 @@ A practical supported-input sampler uses a Gaussian copula:
 
 For a truncated normal, SciPy's bounds are standardized as `(lower - mu)/sigma` and `(upper - mu)/sigma`. Its `mu` and `sigma` describe the underlying untruncated normal; after truncation, the accepted-population mean and SD generally differ. Fit the right parameterization and verify resulting moments.
 
-The latent `R` is not automatically the Pearson correlation of the transformed physical properties. Verify achieved correlations and fit the latent dependence if physical-scale correlations are the evidence supplied. Empirical joint bootstrap is preferable when adequate paired lot/roll measurements exist. A Gaussian copula can underrepresent some joint extremes; compare plausible dependency scenarios instead of claiming measured tail dependence from five coupons.
+The latent `R` is not automatically the Pearson correlation of the transformed physical properties. Verify achieved correlations and fit the latent dependence if physical-scale correlations are the evidence supplied. Empirical joint bootstrap is preferable when adequate paired measurements exist. A Gaussian copula can underrepresent some joint extremes; compare plausible dependency scenarios instead of claiming measured tail dependence from five coupons.
 
 ### 6.4 Predictor interface and immutable bundles
 
@@ -405,7 +398,7 @@ Maintain two curves:
 
 Calibrate outcome residuals on real, nonpenetrating, valid measurements excluded from training and tuning. Use matched design/threat/condition groups and a test-session/panel hierarchy where supported. Compare a grouped residual bootstrap, hierarchical model, and conditional heteroscedastic residual model. Do not pool synthetic zero-BFD anchors or known penetrating shots into the residual distribution.
 
-A legacy model trained on nominal catalog properties may have residual spread that already includes unobserved lot/property variation. Adding a newly sampled material distribution plus all that legacy residual spread can double-count the same variability. Until actual covariates are linked and retraining separates them, provide the exploratory input-only curve and a separately qualified empirical predictive baseline; do not merge them into a claimed calibrated manufacturing tail.
+A legacy model trained on nominal catalog properties may have residual spread that already includes unobserved unit/property variation. Adding a newly sampled material distribution plus all that legacy residual spread can double-count the same variability. Until actual covariates are linked and retraining separates them, provide the exploratory input-only curve and a separately qualified empirical predictive baseline; do not merge them into a claimed calibrated manufacturing tail.
 
 For a log-target residual model:
 
@@ -423,7 +416,7 @@ Conformal prediction can be an additional interval layer when its group/exchange
 
 Calibrate penetration using real labeled shots with adequate positives and negatives, stable identities, and grouped validation. In this backup, labels are too sparse to support an empirical manufacturing penetration probability; return `null` with `insufficient_real_outcome_labels` unless stronger linked evidence is recovered. The existing synthetic-anchored classifier can be retained as an exploratory score clearly marked as such.
 
-For each virtual unit, share sampled manufacture state across its panels as specified; share session/ammunition-lot state across relevant shots; vary shot-level state appropriately. Each exposure records penetration or a valid conditional BFD outcome. Any union risk uses those joint outcomes or a justified conditional probability calculation.
+For each virtual unit, share sampled manufacture state across its panels as specified; share session-level state (for example a velocity bias) across relevant shots; vary shot-level state appropriately. Each exposure records penetration or a valid conditional BFD outcome. Any union risk uses those joint outcomes or a justified conditional probability calculation.
 
 Do not compute protocol risk as `1-(1-p_shot)^N` from pooled shots unless independence and identical risk have actually been specified. Preserve shot order and spatial damage where data supports it. The current shot-number feature is not a validated model of arbitrary shot placement or damage evolution. Label these limitations, and return unsupported protocol risk if the requested exposure sequence exceeds validated support.
 
@@ -442,13 +435,13 @@ For probabilistic “worst 1 in 1,000,” report a supported 99.9th percentile o
 
 ### 7.1 Build a reproducible real-data manifest
 
-Retain shot ID, physical specimen ID, parent test group, source file/sheet/row, design revision, manufacture lot/roll, measured properties, protocol revision, and import timestamp in an evaluation manifest. Exclude identity columns from model input but keep them for grouping and audit. Tag anchors as `synthetic_anchor`; they never count as observed panels or strengthen tail calibration.
+Retain shot ID, physical specimen ID, parent test group, source file/sheet/row, design revision, measured properties, protocol revision, and import timestamp in an evaluation manifest. Exclude identity columns from model input but keep them for grouping and audit. Tag anchors as `synthetic_anchor`; they never count as observed panels or strengthen tail calibration.
 
 Review duplicate candidates by provenance. Put all representations of the same physical test into the same partition; mark superseded imports rather than deleting uncertain records. Resolve inconsistent caliber names and source result meanings. Screen missing/invalid numerical values and invalid shots before defining each target population.
 
 ### 7.2 Partition by the question
 
-For predicting new production of an existing design, split at production lot/roll and parent test group. For predicting an unseen layup, additionally hold out complete design groups. A random shot split leaks the repeated-panel and test-session state. `GroupKFold` is available in the existing scikit-learn 1.3 dependency; do not use newer API arguments such as its later-added shuffle option without upgrading explicitly.
+For predicting new production of an existing design, split at parent test group and specimen. For predicting an unseen layup, additionally hold out complete design groups. A random shot split leaks the repeated-panel and test-session state. `GroupKFold` is available in the existing scikit-learn 1.3 dependency; do not use newer API arguments such as its later-added shuffle option without upgrading explicitly.
 
 Use separate development/tuning, calibration, and untouched test groups. Fit imputation, scaling, categorical encoding, feature selection, and any learned material distribution parameters using the appropriate development data only. Use nested group splits when hyperparameter search would otherwise reuse evaluation groups. Anchors may enter training with documented influence but never enter held-out empirical performance metrics. Compare training with and without them.
 
@@ -463,7 +456,7 @@ Record on real untouched groups:
 - Coverage of 80%, 95%, and justified upper-tail predictive intervals.
 - Calibration of `P(BFD > T)` at the selected thresholds, with event counts and uncertainty.
 - Penetration log loss/Brier score plus reliability curves, positive/negative counts, and support by threat; in-sample low Brier score alone is not calibration proof.
-- Parent/lot bootstrap uncertainty rather than treating every shot as independent.
+- Parent-group bootstrap uncertainty rather than treating every shot as independent.
 - Input sensitivity for each requested property within matched material/design contexts, including unsupported/no-response flags.
 
 The average error over synthetic zeros, training rows, and mixed products must not choose the final probability model. Benchmarks should include a matched-group empirical baseline and a simpler regularized model. Compare a hierarchical model when data permits; do not add arbitrary complexity simply to force a Gaussian curve.
@@ -479,7 +472,7 @@ validated_within_support: specified real-data tests/calibration passed
 out_of_support: requested joint state/exposure lacks empirical support
 ```
 
-Show the measured sample count, number of independent lots/rolls/specimens, and calibration event count. Define acceptance criteria before tuning; do not invent universal counts or numerical accuracy thresholds as proof of rare-event readiness. A 0.1% event cannot be empirically validated from five coupons. Support checks must use real matched data, not global min/max ranges inflated by anchors or unrelated materials.
+Show the measured sample count, number of independent specimens/units, and calibration event count. Define acceptance criteria before tuning; do not invent universal counts or numerical accuracy thresholds as proof of rare-event readiness. A 0.1% event cannot be empirically validated from five coupons. Support checks must use real matched data, not global min/max ranges inflated by anchors or unrelated materials.
 
 ## 8. API and user interface specification
 
@@ -517,15 +510,15 @@ Example request shape (illustrative identifiers must be replaced by real IDs):
   "near_worst_event": {
     "type": "percentile_bands",
     "conditions": [
-      {"variable": "identified_roll_strength", "percentile_lte": 0.05},
-      {"variable": "identified_roll_thickness", "percentile_lte": 0.05},
+      {"variable": "material_strength", "percentile_lte": 0.05},
+      {"variable": "material_thickness", "percentile_lte": 0.05},
       {"variable": "shot_velocity", "percentile_gte": 0.95}
     ]
   }
 }
 ```
 
-`simulation_units` counts independently sampled virtual unit/exposure clusters for the Monte Carlo probability estimate, not raw shot rows. When the requested population shares lots, compute population summaries through the corresponding hierarchical batch mode, and label the number of independent replicate batches. Validate correlation/spec feasibility and model support before scheduling.
+`simulation_units` counts independently sampled virtual unit/exposure clusters for the Monte Carlo probability estimate, not raw shot rows. When simulated units share specified correlated factors, compute population summaries over independently drawn units and label the independent unit count. Validate correlation/spec feasibility and model support before scheduling.
 
 Minimum response fields:
 
@@ -551,7 +544,7 @@ Do not omit failed draws and renormalize without showing why. If no-penetration 
 Add an Analytics probability tab, using the existing Plotly integration. Recommended flow:
 
 1. Select fixed armor design/revision, model, protocol/threat, and exposure/population mode. Show material/count table locked for the run.
-2. Review property distributions, spec limits, measured versus assumed source, sample/group counts, and shared-roll/lot assumptions. Allow explicit assumption edits in exploratory mode.
+2. Review property distributions, spec limits, measured versus assumed source, sample/group counts, and shared-factor/correlation-group assumptions. Allow explicit assumption edits in exploratory mode.
 3. Set an engineering BFD screen and define a finite near-worst event. Prescribed dry/wet conditions are separate or protocol-defined; do not assign prevalence from the historical database.
 4. Run, monitor progress, and inspect outcomes.
 
@@ -579,7 +572,7 @@ Use Wilson or exact binomial MC intervals for independent Bernoulli unit-event s
 
 At N=100,000 it is approximately 0.00002996, or 0.02996 per 1,000. Report “zero observed simulated events; MC upper bound ... under the specified model,” not zero real-world risk. This bound says nothing about unmodeled production changes or model bias.
 
-For pooled dependent units within a simulated lot, use independent replicate-lot event samples, cluster-aware intervals, or a hierarchical calculation. Raw shot count is never an appropriate independent-trial denominator for whole-vest event probability.
+For pooled dependent units, use cluster-aware intervals or a hierarchical calculation. Raw shot count is never an appropriate independent-trial denominator for whole-vest event probability.
 
 If probabilities are too small for ordinary Monte Carlo, initially report resolution limits. A later importance-sampling implementation must preserve the joint target distribution and likelihood weights, report effective sample size, and be tested against cases with known answers. Do not generate only adverse corners and count them as ordinary population frequencies. Quasi-Monte Carlo estimates also need appropriate replicate-based uncertainty; ordinary binomial intervals are not automatically valid for dependent quasi-random draws.
 
@@ -617,7 +610,7 @@ Work in a branch against the actual current checkout. Preserve the existing prod
 
 ### Milestone D: validated predictive distributions
 
-1. Collect/link actual lot/roll properties to panels; sample several independent manufacture groups, spanning accepted-property variation rather than changing only nominal catalog materials.
+1. Collect measured accepted-unit properties spanning real accepted-property variation, and link measurements to tested panels/specimens where records allow; sample several independent manufacture groups rather than changing only nominal catalog materials.
 2. Retrain with real grouped partitions and immutable feature/property manifests; compare simpler baselines and anchor influence.
 3. Fit residual distributions on separate calibration groups; calibrate penetration only after adequate labeled data is available.
 4. Validate threshold/tail/protocol behavior on untouched groups and enable only outputs meeting predefined acceptance criteria within support.
@@ -639,8 +632,8 @@ Benchmark worst requested exposure sizes, memory, cancellations, permissions, an
 | Elongation spread | Absolute percentage points versus relative percent preserved |
 | Stack units | 40 × 130 g/m² = 5.2 kg/m²; absent volumetric density does not zero it |
 | Fixed construction | Counts, IDs, ordered layer groups identical before/after every draw |
-| Same roll | Shared roll factor across all assigned layers, plus only defined local variation |
-| Several rolls, same material | Different assignment IDs preserve different sampled roll states |
+| Shared correlation group | One shared draw across all member variables of the group |
+| Independent groups | Members of different groups draw independently |
 | Missing MPa strength | Returns unsupported response; no fabricated sensitivity or fake measured zero |
 | Labels | Positive/negative/negated/`OK`/unknown cases tested; missing BFD cannot imply penetration |
 | Batch invariance | A row's features and prediction unchanged when another row is added/reordered |
@@ -656,10 +649,10 @@ Benchmark worst requested exposure sizes, memory, cancellations, permissions, an
 3. Non-PSD, nonsymmetric, non-unit-diagonal, and incorrectly sized correlation matrices are rejected. Exact perfect-correlation/singular matrices are accepted without arbitrary noise.
 4. For `Y = a + beta.T * X` with multivariate-normal X, verify mean, variance `beta.T * Sigma * beta`, and threshold probabilities against analytic answers with statistical tolerances.
 5. Lowest-5% strength/thickness/highest-5% velocity event gives about `0.05³` when independent and `0.05²` when the first two share one factor.
-6. A shared roll variance contribution to sum-of-layer strength does not vanish by multiplying independent-layer probabilities; compare common-factor versus independent-layer analytical variance.
+6. A shared correlation-group variance contribution to sum-of-layer strength does not vanish by multiplying independent-layer probabilities; compare common-factor versus independent-layer analytical variance.
 7. Finite near-worst regions are distinguished from exact endpoints and from outcome exceedance events.
-8. For `p=0.002`, 1,000 identical independent unit exposures give expected count 2, plus the correct binomial count range and at-least-one probability. Repeat with shared lots and verify the count distribution changes.
-9. Zero-event intervals use independent unit/lot-replicate counts, not raw number of shots. Test p=0, p=1, and small-p numerics.
+8. For `p=0.002`, 1,000 identical independent unit exposures give expected count 2, plus the correct binomial count range and at-least-one probability. Repeat with a shared correlation factor and verify the count distribution changes.
+9. Zero-event intervals use independent unit counts, not raw number of shots. Test p=0, p=1, and small-p numerics.
 10. Joint one-shot example `p_pen=0.02`, `p_bfd_given_no_pen=0.01` yields combined risk `0.0298`, not `0.03` or `0.0002`.
 11. For two perfectly dependent identical shot-event states, protocol union risk equals the single-shot risk; it must not become `1-(1-p)^2`.
 12. Gaussian copula tests distinguish latent correlation from transformed physical correlation and accepted-marginal sampling from joint pre-QC acceptance conditioning.
@@ -774,8 +767,8 @@ The initial reference verification produced analytic variance 18.6 versus sample
 The most useful next work is a linked dataset, rather than another hyperparameter optimization on catalog values:
 
 1. Identify which strength metric carries the −2.5% requirement: longitudinal/transverse breaking force per width, MPa tensile stress, or another specified property. Attach its reference value and approved bounds.
-2. Obtain thickness and grammage specs and raw accepted-roll QC measurements, including multiple independent lots/rolls and sampling positions. Preserve paired-property information where measurements actually share a coupon or location.
-3. Record lot/roll assignments for the layers in each tested panel and preserve unique physical specimen/vest IDs. Recover available shipment/production records for older tests where feasible.
+2. Obtain thickness and grammage specs and raw accepted-unit QC measurements, including multiple independent samples and sampling positions. Preserve paired-property information where measurements actually share a coupon or location.
+3. Preserve unique physical specimen/vest IDs for each tested panel. Recover available production records for older tests where feasible.
 4. Link actual measured properties and QC selection to matched ballistic panels under a fixed threat/exposure. Include useful variation within specification so a model can distinguish same-material property effects from material identity.
 5. Collect explicit penetration/nonpenetration labels, valid-shot status, measured velocities, conditioning, and backing/test-session measurements. Do not infer those labels from blank fields.
 6. Reserve new manufacture/test groups for untouched validation and threshold calibration before inspecting their model errors.

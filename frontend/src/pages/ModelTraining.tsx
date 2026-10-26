@@ -6,6 +6,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { LoadingOverlay } from '../components/LoadingOverlay';
 import { AnchorPointsTab } from '../components/AnchorPointsTab';
 import { TestPlannerTab } from '../components/TestPlannerTab';
+import { DataGapsTab } from '../components/DataGapsTab';
 import { MetricsGuideTab } from '../components/MetricsGuideTab';
 import Plot from 'react-plotly.js';
 
@@ -45,7 +46,7 @@ export function ModelTraining() {
   // Model Health state - initialize from URL query param
   const searchParams = new URLSearchParams(location.search);
   const tabParam = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState<'training' | 'health' | 'anchor' | 'planner' | 'guide'>(tabParam === 'health' ? 'health' : tabParam === 'anchor' ? 'anchor' : tabParam === 'planner' ? 'planner' : tabParam === 'guide' ? 'guide' : 'training');
+  const [activeTab, setActiveTab] = useState<'training' | 'health' | 'anchor' | 'planner' | 'guide' | 'gaps'>(tabParam === 'health' ? 'health' : tabParam === 'anchor' ? 'anchor' : tabParam === 'planner' ? 'planner' : tabParam === 'guide' ? 'guide' : tabParam === 'gaps' ? 'gaps' : 'training');
   const [selectedModelVersion, setSelectedModelVersion] = useState<string>('');
   const [selectedProtocol, setSelectedProtocol] = useState<string>('all');
   const [selectedVests, setSelectedVests] = useState<string[]>([]);
@@ -553,6 +554,8 @@ export function ModelTraining() {
       params.set('tab', 'planner');
     } else if (activeTab === 'guide') {
       params.set('tab', 'guide');
+    } else if (activeTab === 'gaps') {
+      params.set('tab', 'gaps');
     } else {
       params.delete('tab');
     }
@@ -1858,12 +1861,22 @@ export function ModelTraining() {
             >
               Metrics Guide
             </button>
+            <button
+              onClick={() => setActiveTab('gaps')}
+              className={`${
+                activeTab === 'gaps'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              Data Gaps
+            </button>
           </nav>
         </div>
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'training' ? renderTrainingTab() : activeTab === 'health' ? renderHealthTab(showAnchorPointDetails, setShowAnchorPointDetails) : activeTab === 'guide' ? <MetricsGuideTab /> : activeTab === 'planner' ? <TestPlannerTab selectedModelVersion={selectedModelVersion} modelVersions={modelVersions} onError={setError} /> : <AnchorPointsTab onError={setError} />}
+      {activeTab === 'training' ? renderTrainingTab() : activeTab === 'health' ? renderHealthTab(showAnchorPointDetails, setShowAnchorPointDetails) : activeTab === 'guide' ? <MetricsGuideTab /> : activeTab === 'planner' ? <TestPlannerTab selectedModelVersion={selectedModelVersion} modelVersions={modelVersions} onError={setError} /> : activeTab === 'gaps' ? <DataGapsTab onError={setError} /> : <AnchorPointsTab onError={setError} />}
 
       {/* Success Modal */}
       {showSuccessModal && (

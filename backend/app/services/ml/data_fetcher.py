@@ -421,6 +421,7 @@ def fetch_anchor_points_as_training_data(db: Session) -> tuple[pd.DataFrame, dic
                 'total_modulus_gpa': None,
                 'primary_weave_type': None,
                 'has_coating': 0,
+                'synthetic_source': 'anchor',
             }
             
             rows.append(row)
@@ -540,6 +541,7 @@ def generate_physics_anchor_rows(db: Session) -> pd.DataFrame:
                     'total_modulus_gpa': None,
                     'primary_weave_type': None,
                     'has_coating': 0,
+                    'synthetic_source': 'physics',
                 })
 
     return pd.DataFrame(rows)

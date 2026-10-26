@@ -260,7 +260,26 @@ export default function LotRiskTab() {
               <select
                 className="w-full border rounded px-2 py-1.5 text-sm"
                 value={vestId}
-                onChange={(e) => setVestId(e.target.value)}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setVestId(id);
+                  // autofill protocol/level from the vest's assigned threat_level
+                  // (stored as "<protocol name> - <level>", e.g. "ANMaC 2023 - RB3")
+                  const tl = sortedVests.find((x) => x.id === id)?.threat_level;
+                  if (!tl || !protocols) return;
+                  const combos = protocols.flatMap((p) =>
+                    (p.levels ?? []).map((l) => ({ p, l })),
+                  );
+                  const m =
+                    combos.find(({ p, l }) => tl === `${p.name} - ${l.level_name}`) ??
+                    combos.find(({ p, l }) => tl === `${p.name}-${l.level_name}`) ??
+                    combos.find(({ l }) => tl === l.level_name);
+                  if (m) {
+                    setProtocolId(m.p.id);
+                    setLevel(m.l.level_name);
+                    setAmmoId('');
+                  }
+                }}
               >
                 <option value="">Select vest…</option>
                 {sortedVests.map((v) => (

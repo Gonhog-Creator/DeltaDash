@@ -5,6 +5,10 @@ from sqlalchemy import func
 
 from app.db.session import get_db
 from app.db.models import ShotData as ShotDataModel, TestSession as TestSessionModel, Ammunition as AmmunitionModel, Vest as VestModel, VestLayer as VestLayerModel, Material as MaterialModel
+from app.db.models.material_property_spec import MaterialPropertySpec as MaterialPropertySpecModel
+from app.db.models.material_property_distribution import MaterialPropertyDistribution as MaterialPropertyDistributionModel
+from app.db.models.material_property_measurement import MaterialPropertyMeasurement as MaterialPropertyMeasurementModel
+from app.db.models.material_document import MaterialDocument as MaterialDocumentModel
 from app.api.v1.auth import get_current_active_user
 from app.schemas.analytics import AnalyticsData, AnalyticsPoint
 from app.db.models.user import User as UserModel
@@ -268,3 +272,188 @@ def get_material_analytics(
     ]
     
     return MaterialAnalyticsData(material_classes=material_classes, materials=materials)
+
+
+# ---------------------------------------------------------------------------
+# Data completeness ("what are we missing") report
+# ---------------------------------------------------------------------------
+# Curated lists of fields the models/sims rely on, plus fields that matter for
+# engineering traceability. Each entry: (column, human label, critical?).
+_MATERIAL_FIELDS = [
+    ("areal_density_g_m2",       "areal density (g/m²)",            True),
+    ("thickness_mm",             "thickness (mm)",                  True),
+    ("density_g_cm3",            "density (g/cm³)",                 False),
+    ("tensile_strength_mpa",     "tensile strength (MPa)",          True),
+    ("modulus_gpa",              "modulus (GPa)",                   True),
+    ("areal_density_tolerance",  "areal density tolerance",         False),
+    ("thickness_tolerance_mm",   "thickness tolerance (mm)",        False),
+    ("supplier",                 "supplier",                        False),
+    ("manufacturer",             "manufacturer",                    False),
+    ("fiber_type",               "fiber type",                      False),
+    ("weave_type",               "weave type",                      False),
+    ("material_class",           "material class",                  False),
+    ("mss_file_path",            "MSS document",                    False),
+    ("sds_file_path",            "SDS document",                    False),
+]
+_VEST_FIELDS = [
+    ("total_layers",             "total layers",                    True),
+    ("total_thickness_mm",       "total thickness (mm)",            True),
+    ("weight_g",                 "weight (g)",                      True),
+    ("threat_level",             "threat level",                    True),
+    ("protection_class",         "protection class",                False),
+    ("trauma_homologation",      "trauma homologation",             False),
+    ("size_curve",               "size curve",                      False),
+    ("compatible_geometry_ids",  "compatible geometries",           False),
+    ("is_panel_sewn",            "panel sewn flag",                 False),
+    ("stitch_pattern",           "stitch pattern",                  False),
+    ("is_female",                "male/female flag",                False),
+]
+_AMMO_FIELDS = [
+    ("projectile_mass_grams",    "projectile mass (g)",             True),
+    ("nominal_velocity_m_s",     "nominal velocity (m/s)",          True),
+    ("caliber_diameter_mm",      "caliber diameter (mm)",           True),
+    ("caliber_length_mm",        "caliber length (mm)",             True),
+    ("caliber_inch",             "caliber (in)",                    False),
+    ("lot_number",               "lot number",                      False),
+    ("standard_reference",       "standard reference",              False),
+]
+_SESSION_FIELDS = [
+    ("excel_file_path",          "source Excel file",               False),
+    ("vest_id",                  "linked vest",                     True),
+    ("geometry_id",              "geometry",                        False),
+    ("ballistic_limit",          "ballistic limit",                 False),
+    ("clay_temperature_c",       "clay temperature",                False),
+    ("ambient_temperature_c",    "ambient temperature",             False),
+    ("humidity_percent",         "humidity",                        False),
+    ("conditioning",             "conditioning",                    False),
+]
+
+
+def _missing_fields(row, spec):
+    """Return [{'field', 'label', 'critical'}] for fields that are null/empty."""
+    out = []
+    for col, label, critical in spec:
+        v = getattr(row, col, None)
+        if v is None or (isinstance(v, str) and not v.strip()) or v == [] or v == {}:
+            out.append({"field": col, "label": label, "critical": critical})
+    return out
+
+
+@router.get("/data-gaps")
+def get_data_gaps(
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user),
+):
+    """Per-entity completeness report: which fields are missing per material,
+    vest, ammunition, and test session — so an engineer can see exactly what
+    data still needs to be collected.
+    """
+    # ---- materials -----------------------------------------------------------
+    spec_counts = dict(
+        db.query(MaterialPropertySpecModel.material_id, func.count())
+        .group_by(MaterialPropertySpecModel.material_id).all()
+    )
+    dist_counts = dict(
+        db.query(MaterialPropertyDistributionModel.material_id, func.count())
+        .group_by(MaterialPropertyDistributionModel.material_id).all()
+    )
+    meas_counts = dict(
+        db.query(MaterialPropertyMeasurementModel.material_id, func.count())
+        .group_by(MaterialPropertyMeasurementModel.material_id).all()
+    )
+    doc_counts = dict(
+        db.query(MaterialDocumentModel.material_id, func.count())
+        .group_by(MaterialDocumentModel.material_id).all()
+    )
+    # materials actually used in vests — gaps here matter most
+    used_material_ids = {
+        r[0] for r in db.query(VestLayerModel.material_id)
+        .filter(VestLayerModel.material_id.isnot(None)).all()
+    }
+    materials = []
+    for m in db.query(MaterialModel).all():
+        missing = _missing_fields(m, _MATERIAL_FIELDS)
+        if not spec_counts.get(m.id):
+            missing.append({"field": "property_specs", "label": "property spec limits", "critical": False})
+        if not dist_counts.get(m.id):
+            missing.append({"field": "property_distributions",
+                            "label": "property distributions (MC sampling)", "critical": True})
+        if not meas_counts.get(m.id):
+            missing.append({"field": "property_measurements",
+                            "label": "coupon/measurement data", "critical": True})
+        if not doc_counts.get(m.id):
+            missing.append({"field": "documents", "label": "linked documents", "critical": False})
+        materials.append({
+            "id": str(m.id), "name": m.name, "used_in_vests": m.id in used_material_ids,
+            "missing": missing,
+        })
+    materials.sort(key=lambda r: (not r["used_in_vests"], -len(r["missing"])))
+
+    # ---- vests ----------------------------------------------------------------
+    layer_counts = dict(
+        db.query(VestLayerModel.vest_id, func.sum(VestLayerModel.layer_count))
+        .group_by(VestLayerModel.vest_id).all()
+    )
+    session_counts = dict(
+        db.query(TestSessionModel.vest_id, func.count())
+        .group_by(TestSessionModel.vest_id).all()
+    )
+    shot_counts = dict(
+        db.query(TestSessionModel.vest_id, func.count(ShotDataModel.id))
+        .join(ShotDataModel, ShotDataModel.test_session_id == TestSessionModel.id)
+        .group_by(TestSessionModel.vest_id).all()
+    )
+    vests = []
+    for v in db.query(VestModel).all():
+        missing = _missing_fields(v, _VEST_FIELDS)
+        if not layer_counts.get(v.id):
+            missing.append({"field": "vest_layers", "label": "layer configuration", "critical": True})
+        vests.append({
+            "id": str(v.id), "name": v.vest_code or str(v.id),
+            "threat_level": v.threat_level,
+            "layers_configured": int(layer_counts.get(v.id) or 0),
+            "test_sessions": int(session_counts.get(v.id) or 0),
+            "shots": int(shot_counts.get(v.id) or 0),
+            "missing": missing,
+        })
+    vests.sort(key=lambda r: (-len(r["missing"])))
+
+    # ---- ammunition -------------------------------------------------------------
+    ammo = []
+    for a in db.query(AmmunitionModel).all():
+        ammo.append({
+            "id": str(a.id), "name": a.name or str(a.id), "caliber": a.caliber,
+            "missing": _missing_fields(a, _AMMO_FIELDS),
+        })
+    ammo.sort(key=lambda r: -len(r["missing"]))
+
+    # ---- test sessions -----------------------------------------------------------
+    sessions = []
+    for s in db.query(TestSessionModel).all():
+        sessions.append({
+            "id": str(s.id), "name": s.name or str(s.id), "test_date": str(s.test_date),
+            "missing": _missing_fields(s, _SESSION_FIELDS),
+        })
+    sessions.sort(key=lambda r: -len(r["missing"]))
+
+    # shot-level aggregate gaps (too many rows for per-shot listing)
+    total_shots = db.query(func.count()).select_from(ShotDataModel).scalar() or 0
+    shot_gaps = {
+        "total_shots": total_shots,
+        "missing_velocity": db.query(func.count()).select_from(ShotDataModel)
+            .filter(ShotDataModel.velocity_m_s.is_(None)).scalar(),
+        "missing_bfd": db.query(func.count()).select_from(ShotDataModel)
+            .filter(ShotDataModel.trauma_mm.is_(None)).scalar(),
+        "missing_outcome": db.query(func.count()).select_from(ShotDataModel)
+            .filter(ShotDataModel.outcome.is_(None)).scalar(),
+        "missing_ammo": db.query(func.count()).select_from(ShotDataModel)
+            .filter(ShotDataModel.ammunition_id.is_(None)).scalar(),
+    }
+
+    return {
+        "materials": materials,
+        "vests": vests,
+        "ammunition": ammo,
+        "test_sessions": sessions,
+        "shot_data": shot_gaps,
+    }
